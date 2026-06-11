@@ -367,7 +367,7 @@ td.L{text-align:left}
   </div>
 
   <div class="notice-bar" id="notice-bar">
-    ⚠ Цены действительны 3 дня · 价格有效期3天 · Мин. заказ — 1 коробка/вид · Цены не включают 15% 
+    ⚠ Цены действительны 3 дня · 价格有效期3天 · Мин. заказ — 1 коробка/вид
   </div>
 
   <!-- PAGE: PRICE LIST -->
@@ -381,6 +381,7 @@ td.L{text-align:left}
         <button class="btn btn-secondary" id="btn-hide-out" onclick="toggleHide()">👁 Скрыть нет в наличии / 隐藏无货</button>
         <span class="btn btn-secondary mgr-only" onclick="saveAllPrices()" id="btn-save-prices" style="display:none">💾 Сохранить цены / 保存价格</span>
         <span class="btn btn-secondary mgr-only" onclick="openPriceImport()" id="btn-import-prices" style="display:none">📥 Импорт цен / 导入价格</span>
+        <span class="btn btn-primary mgr-only" onclick="showAddFlowerModal()" id="btn-add-flower" style="display:none">+ Добавить цветок / 添加花材</span>
         <span style="font-size:11px;color:var(--light)" id="price-count"></span>
       </div>
       <div class="tbl-wrap">
@@ -679,13 +680,14 @@ async function initApp() {
     `;
     document.getElementById('btn-save-prices').style.display = 'inline-flex';
     document.getElementById('btn-import-prices').style.display = 'inline-flex';
+    document.getElementById('btn-add-flower').style.display = 'inline-flex';
     // load clients for filters
     loadClients();
   } else {
     tabs.innerHTML = `
       <div class="nav-tab active" onclick="showPage('price',this)">📋 Прайс / 价格单</div>
       <div class="nav-tab" onclick="showPage('my-order',this)">🛒 Заказ / 订单 <span class="cnt" id="cnt-cart">0</span></div>
-      <div class="nav-tab" onclick="showPage('my-waybills',this)">📦 Накладные / 出货单</div>
+      <div class="nav-tab" onclick="showPage('my-waybills',this)">📦 Накладные / 出货单 <span class="cnt" id="cnt-waybills">0</span></div>
       <div class="nav-tab" onclick="showPage('my-invoices',this)">🧾 Счета / 发票</div>
     `;
     document.getElementById('cart-footer').style.display = 'flex';
@@ -806,7 +808,7 @@ function renderPrice() {
     const pa = f.price_a, pap = f.price_ap;
     const pab = (pa * f.boxes_per_box).toFixed(0);
     const papb = (pap * f.boxes_per_box).toFixed(0);
-    const thumb = THUMBS[f.en];
+    const thumb = f.photo_url || THUMBS[f.en];
     const imgH = thumb
       ? `<img class="fimg" src="${thumb}" alt="${f.ru}" loading="lazy">`
       : `<div class="fimg-ph">🌸</div>`;
@@ -829,13 +831,16 @@ function renderPrice() {
            <div class="price-box">📦 ¥${pab} / ¥${papb}</div>
          </div>`;
 
+    const editBtn = isMgr
+      ? `<button class="btn-icon" style="margin-left:4px;font-size:11px;padding:4px 7px" onclick="showEditFlowerModal(${f.id})" title="Редактировать / 编辑">✏️</button>`
+      : '';
     const addCell = inStock
       ? `<select class="grade-sel" id="gs${f.id}">
            <option value="a">A — ¥${pab}/кор</option>
            <option value="ap">A+ — ¥${papb}/кор</option>
          </select>
-         <button class="add-btn ${inCart?'in-order':''}" onclick="addToCart(${f.id})">${inCart?'✓ В заказе/已添加':'+ В заказ/加入订单'}</button>`
-      : `<span style="color:var(--light);font-size:11px">нет в наличии</span>`;
+         <button class="add-btn ${inCart?'in-order':''}" onclick="addToCart(${f.id})">${inCart?'✓ В заказе/已添加':'+ В заказ/加入订单'}</button>${editBtn}`
+      : `<span style="color:var(--light);font-size:11px">нет в наличии</span>${editBtn}`;
 
     const tr = document.createElement('tr');
     if (even) tr.classList.add('stripe');
@@ -859,6 +864,203 @@ function renderPrice() {
   // Also add search listener
   document.getElementById('srch').oninput = renderPrice;
   document.getElementById('cat-filter').onchange = renderPrice;
+}
+
+
+// ══════════════════════════════════════════════════════════
+//  MANAGER: ADD NEW FLOWER TO PRICE LIST
+// ══════════════════════════════════════════════════════════
+function showAddFlowerModal() {
+  const cats = [...new Set(flowers.map(f => f.cat_ru))];
+  const catOptions = cats.map(c => `<option value="${c}">${c}</option>`).join('');
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">+ Новый цветок / 添加新花材</div>
+    <div class="field-row">
+      <div class="field"><label>Название RU / 俄语名称</label><input class="inp" id="nf-ru" placeholder="Роза Красная..."></div>
+      <div class="field"><label>Название CN / 中文名称</label><input class="inp" id="nf-cn" placeholder="红玫瑰..."></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Название EN / 英语名称</label><input class="inp" id="nf-en" placeholder="Red Rose..."></div>
+      <div class="field"><label>Категория / 类别</label>
+        <select class="inp" id="nf-cat">${catOptions}<option value="__new__">+ Новая категория...</option></select>
+      </div>
+    </div>
+    <div class="field-row" id="nf-cat-new-row" style="display:none">
+      <div class="field"><label>Новая категория RU</label><input class="inp" id="nf-cat-new-ru" placeholder="🌸 Новый вид..."></div>
+      <div class="field"><label>Новая категория EN</label><input class="inp" id="nf-cat-new-en" placeholder="New type..."></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Цена A (¥/банч) / A级价格</label><input class="inp" type="number" id="nf-price-a" step="0.5" min="0" placeholder="0"></div>
+      <div class="field"><label>Цена A+ (¥/банч) / A+价格</label><input class="inp" type="number" id="nf-price-ap" step="0.5" min="0" placeholder="0"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Банчей в коробке / 扎/件</label><input class="inp" type="number" id="nf-bpb" min="1" placeholder="10"></div>
+      <div class="field"><label>Стеблей в банче / 枝/扎</label><input class="inp" type="number" id="nf-stems" min="1" placeholder="20"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Упаковка / 规格</label><input class="inp" id="nf-pack" placeholder="20ст/банч..."></div>
+      <div class="field">
+        <label>Фото цветка / 花材图片</label>
+        <input type="file" id="nf-photo" accept="image/*" style="padding:6px 0;font-size:12px;color:var(--mid)">
+        <div id="nf-photo-preview" style="margin-top:6px"></div>
+      </div>
+    </div>
+    <div style="margin-top:8px;padding:10px;background:var(--sage-l);border-radius:6px;font-size:12px;color:var(--sage-d)">
+      ℹ Цветок будет сразу виден всем клиентам и менеджерам / 花材添加后所有客户和经理均可查看
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+      <button class="btn btn-primary" onclick="addNewFlower()">✅ Добавить / 添加</button>
+    </div>`;
+
+  // Show/hide new category row
+  document.getElementById('nf-cat').onchange = function() {
+    document.getElementById('nf-cat-new-row').style.display = this.value === '__new__' ? 'flex' : 'none';
+  };
+
+  // Photo preview
+  document.getElementById('nf-photo').onchange = function() {
+    const file = this.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('nf-photo-preview').innerHTML =
+        `<img src="${e.target.result}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  openModal();
+}
+
+async function addNewFlower() {
+  const ru    = document.getElementById('nf-ru')?.value.trim();
+  const cn    = document.getElementById('nf-cn')?.value.trim();
+  const en    = document.getElementById('nf-en')?.value.trim();
+  const catSel = document.getElementById('nf-cat')?.value;
+  const catRu = catSel === '__new__'
+    ? (document.getElementById('nf-cat-new-ru')?.value.trim() || '')
+    : catSel;
+  const catEn = catSel === '__new__'
+    ? (document.getElementById('nf-cat-new-en')?.value.trim() || '')
+    : (flowers.find(f=>f.cat_ru===catSel)?.cat_en || '');
+  const priceA   = parseFloat(document.getElementById('nf-price-a')?.value) || 0;
+  const priceAp  = parseFloat(document.getElementById('nf-price-ap')?.value) || priceA;
+  const bpb      = parseInt(document.getElementById('nf-bpb')?.value) || 10;
+  const stems    = parseInt(document.getElementById('nf-stems')?.value) || null;
+  const pack     = document.getElementById('nf-pack')?.value.trim() || null;
+
+  if (!ru || !catRu) { toast('❌ Введите название и категорию / 请填写名称和类别'); return; }
+
+  // Photo → base64 (if provided)
+  let photoBase64 = null;
+  const photoFile = document.getElementById('nf-photo')?.files[0];
+  if (photoFile) {
+    photoBase64 = await new Promise((res) => {
+      const reader = new FileReader();
+      reader.onload = e => res(e.target.result);
+      reader.readAsDataURL(photoFile);
+    });
+  }
+
+  const payload = {
+    ru, cn: cn||null, en: en||null,
+    cat_ru: catRu, cat_en: catEn||catRu,
+    price_a: priceA, price_ap: priceAp,
+    boxes_per_box: bpb,
+    stems: stems,
+    pack: pack,
+    in_stock: true,
+    photo_url: photoBase64 || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await sb.from('flowers').insert(payload).select().single();
+  if (error) { toast('❌ Ошибка: ' + error.message); return; }
+
+  // Add to local array and refresh
+  if (data) flowers.push(data);
+  closeModal();
+  renderPrice();
+  const updDate = new Date().toLocaleDateString('ru-RU');
+  localStorage.setItem('ammaPriceUpdated', updDate);
+  document.getElementById('price-updated').textContent = `Актуальные цены AMMA FLOWERS · Обновлено: ${updDate}`;
+  toast('✅ Цветок добавлен: ' + ru + ' / 花材已添加');
+}
+
+// ── Edit flower (manager only) ────────────────────────────────────
+function showEditFlowerModal(flowerId) {
+  const f = flowers.find(x => x.id === flowerId);
+  if (!f) return;
+  const cats = [...new Set(flowers.map(fl => fl.cat_ru))];
+  const catOptions = cats.map(c => `<option value="${c}" ${c===f.cat_ru?'selected':''}>${c}</option>`).join('');
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">✏️ Редактировать: ${f.ru}</div>
+    <div class="field-row">
+      <div class="field"><label>Название RU</label><input class="inp" id="ef-ru" value="${f.ru||''}"></div>
+      <div class="field"><label>Название CN</label><input class="inp" id="ef-cn" value="${f.cn||''}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Название EN</label><input class="inp" id="ef-en" value="${f.en||''}"></div>
+      <div class="field"><label>Категория</label>
+        <select class="inp" id="ef-cat">${catOptions}</select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Цена A (¥/банч)</label><input class="inp" type="number" id="ef-pa" step="0.5" value="${f.price_a||0}"></div>
+      <div class="field"><label>Цена A+ (¥/банч)</label><input class="inp" type="number" id="ef-pap" step="0.5" value="${f.price_ap||0}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Банчей в коробке</label><input class="inp" type="number" id="ef-bpb" value="${f.boxes_per_box||10}"></div>
+      <div class="field"><label>Стеблей в банче</label><input class="inp" type="number" id="ef-stems" value="${f.stems||''}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Упаковка</label><input class="inp" id="ef-pack" value="${f.pack||''}"></div>
+      <div class="field">
+        <label>Фото / 图片</label>
+        ${f.photo_url ? `<img src="${f.photo_url}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;display:block;margin-bottom:6px">` : ''}
+        <input type="file" id="ef-photo" accept="image/*" style="font-size:12px;color:var(--mid)">
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveEditFlower(${flowerId})">💾 Сохранить</button>
+    </div>`;
+  openModal();
+}
+
+async function saveEditFlower(flowerId) {
+  const f = flowers.find(x => x.id === flowerId);
+  if (!f) return;
+  const updates = {
+    ru:    document.getElementById('ef-ru')?.value.trim()  || f.ru,
+    cn:    document.getElementById('ef-cn')?.value.trim()  || null,
+    en:    document.getElementById('ef-en')?.value.trim()  || null,
+    cat_ru: document.getElementById('ef-cat')?.value       || f.cat_ru,
+    price_a:   parseFloat(document.getElementById('ef-pa')?.value)  || f.price_a,
+    price_ap:  parseFloat(document.getElementById('ef-pap')?.value) || f.price_ap,
+    boxes_per_box: parseInt(document.getElementById('ef-bpb')?.value) || f.boxes_per_box,
+    stems:  parseInt(document.getElementById('ef-stems')?.value) || null,
+    pack:   document.getElementById('ef-pack')?.value.trim() || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  // Photo
+  const photoFile = document.getElementById('ef-photo')?.files[0];
+  if (photoFile) {
+    updates.photo_url = await new Promise((res) => {
+      const reader = new FileReader();
+      reader.onload = e => res(e.target.result);
+      reader.readAsDataURL(photoFile);
+    });
+  }
+
+  const { error } = await sb.from('flowers').update(updates).eq('id', flowerId);
+  if (error) { toast('❌ Ошибка: ' + error.message); return; }
+  Object.assign(f, updates);
+  closeModal();
+  renderPrice();
+  toast('✅ Обновлено: ' + updates.ru);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -2421,6 +2623,19 @@ function wbStatusLabel(s) {
   return {draft:'📝 Черновик/草稿', sent:'📤 Отправлена/已发送', confirmed:'✅ Подтверждена/已确认'}[s] || s;
 }
 
+
+// ── Client: confirm waybill ────────────────────────────────────────
+async function confirmWaybill(wbId) {
+  if (!confirm('Подтвердить получение накладной? / 确认收到出货单?')) return;
+  const { error } = await sb.from('waybills')
+    .update({ status: 'confirmed', updated_at: new Date().toISOString() })
+    .eq('id', wbId);
+  if (error) { toast('❌ Ошибка: ' + error.message); return; }
+  toast('✅ Накладная подтверждена / 出货单已确认');
+  loadMyWaybills();
+}
+
+// ── Manager: waybills list: show all statuses + client filter ─────
 // ── Create waybill from order ──────────────────────────────────────
 async function createWaybillFromOrder(orderId) {
   currentWaybillOrderId = orderId;
@@ -2970,11 +3185,29 @@ async function loadMyWaybills() {
     return;
   }
 
-  const { data } = await sb.from('waybills')
+  // Try loading by client_id first (more reliable)
+  let wbData = null;
+  const { data: d1 } = await sb.from('waybills')
     .select('*, order:orders(order_number)')
-    .in('order_id', orderIds)
-    .eq('status', 'sent')
+    .eq('client_id', currentUser.id)
+    .in('status', ['sent', 'confirmed'])
     .order('created_at', {ascending: false});
+  if (d1?.length) {
+    wbData = d1;
+  } else if (orderIds.length) {
+    // fallback: by order_id
+    const { data: d2 } = await sb.from('waybills')
+      .select('*, order:orders(order_number)')
+      .in('order_id', orderIds)
+      .in('status', ['sent', 'confirmed'])
+      .order('created_at', {ascending: false});
+    wbData = d2;
+  }
+  const data = wbData;
+
+  // Update counter
+  const cntWb = document.getElementById('cnt-waybills');
+  if (cntWb) cntWb.textContent = data?.length || 0;
 
   if (!data?.length) {
     list.innerHTML = `<div class="empty-state"><div class="icon">📦</div>
@@ -3000,6 +3233,9 @@ async function loadMyWaybills() {
         <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();openWaybill('${wb.id}')">
           👁 Просмотр / 查看
         </button>
+        ${wb.status !== 'confirmed' ? `<button class="btn btn-gold btn-sm" onclick="event.stopPropagation();confirmWaybill('${wb.id}')">
+          ✅ Подтвердить / 确认
+        </button>` : `<span class="badge" style="background:var(--sage-l);color:var(--sage-d);margin-left:4px">✅ Подтверждена</span>`}
       </div>
     </div>`).join('');
 }
@@ -3053,15 +3289,13 @@ async function loadWaybills() {
       return;
     }
 
-    // Test 3: find paid orders
+    // Test 3: find confirmed/invoiced/paid orders (all relevant statuses)
     const { data: paidOrders, error: pErr } = await sb.from('orders')
       .select('id,order_number,status,client_id,date_order,client:users!orders_client_id_fkey(company_name,login)')
-      .eq('status','paid')
+      .in('status', ['confirmed','invoiced','paid','needs_revision'])
       .order('created_at', {ascending:false});
 
-    console.log('WB: paid orders =', pErr ? 'ERROR: '+pErr.message : (paidOrders?.length||0)+' rows');
-    console.log('WB: all order statuses:');
-    testResult.data?.forEach(o => console.log('  -', o.id.slice(0,8), o.status));
+    console.log('WB: eligible orders =', pErr ? 'ERROR: '+pErr.message : (paidOrders?.length||0)+' rows');
 
     if (pErr) {
       list.innerHTML = `<div style="padding:16px;background:#FFEBEE;border-radius:8px">
@@ -3071,24 +3305,12 @@ async function loadWaybills() {
     }
 
     if (!paidOrders?.length) {
-      // Show ALL orders for debugging
-      const { data: allOrders } = await sb.from('orders')
-        .select('id,order_number,status').order('created_at',{ascending:false}).limit(10);
-
       list.innerHTML = `<div style="padding:16px;background:var(--gold-l);border-radius:8px;border-left:4px solid var(--gold)">
-        <b>📦 Нет заказов со статусом "Оплачен" / 没有「已付款」订单</b><br>
+        <b>📦 Нет подходящих заказов / 暂无符合条件的订单</b><br>
         <p style="font-size:12px;margin-top:8px;color:var(--mid)">
-          Накладные создаются только для оплаченных заказов.<br>
-          Сначала поставьте заказу статус <b>«Оплачен / 已付款»</b> в разделе Заказы.<br><br>
-          Текущие заказы в системе:
+          Накладные создаются для заказов со статусом: Подтверждён, Выставлен счёт, Оплачен.<br>
+          Поставьте заказу один из этих статусов в разделе «Заказы / 订单»。
         </p>
-        <div style="margin-top:8px">
-          ${(allOrders||[]).map(o=>
-            `<div style="font-size:11px;padding:4px 8px;background:#fff;border-radius:4px;margin-bottom:4px">
-              <b>${o.order_number}</b> — <span style="color:var(--mid)">${o.status}</span>
-            </div>`
-          ).join('') || '<div style="font-size:12px;color:var(--light)">Заказов нет / 暂无订单</div>'}
-        </div>
       </div>`;
       return;
     }
