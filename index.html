@@ -381,6 +381,14 @@ td.L{text-align:left}
         <button class="btn btn-secondary" id="btn-hide-out" onclick="toggleHide()">👁 Скрыть нет в наличии / 隐藏无货</button>
         <span class="btn btn-secondary mgr-only" onclick="saveAllPrices()" id="btn-save-prices" style="display:none">💾 Сохранить цены / 保存价格</span>
         <span class="btn btn-secondary mgr-only" onclick="openPriceImport()" id="btn-import-prices" style="display:none">📥 Импорт цен / 导入价格</span>
+        <span class="mgr-only" id="markup-controls" style="display:none;align-items:center;gap:8px;background:var(--sage-l);border:1px solid var(--border);border-radius:var(--r);padding:5px 12px;font-size:12px">
+          <label style="font-weight:600;color:var(--sage-d)">+15% к прайсу / 加价15%:</label>
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" id="apply-markup-toggle" onchange="applyMarkupToAll(this.checked)"
+              style="width:16px;height:16px;accent-color:var(--sage-d)">
+            <span>Автонаценка / 自动加价</span>
+          </label>
+        </span>
         <span class="btn btn-primary mgr-only" onclick="showAddFlowerModal()" id="btn-add-flower" style="display:none">+ Добавить цветок / 添加花材</span>
         <span style="font-size:11px;color:var(--light)" id="price-count"></span>
       </div>
@@ -680,6 +688,7 @@ async function initApp() {
     `;
     document.getElementById('btn-save-prices').style.display = 'inline-flex';
     document.getElementById('btn-import-prices').style.display = 'inline-flex';
+    document.getElementById('markup-controls').style.display = 'flex';
     document.getElementById('btn-add-flower').style.display = 'inline-flex';
     // load clients for filters
     loadClients();
@@ -783,6 +792,36 @@ function toggleHide() {
   renderPrice();
 }
 
+
+// ══════════════════════════════════════════════════════════
+//  MANAGER: GLOBAL +15% MARKUP TOGGLE (applies to all clients)
+// ══════════════════════════════════════════════════════════
+
+let globalMarkupActive = false;
+
+async function applyMarkupToAll(enabled) {
+  globalMarkupActive = enabled;
+  // Update all clients' show_markup field in DB
+  const clientIds = allClients.filter(c => c.role === 'client').map(c => c.id);
+  if (clientIds.length === 0) {
+    toast(enabled ? '✅ Наценка включена (нет клиентов для обновления)' : '✅ Наценка выключена');
+    renderPrice();
+    return;
+  }
+  // Update all clients at once
+  const { error } = await sb.from('users').update({ show_markup: enabled }).in('id', clientIds);
+  if (error) {
+    toast('Ошибка обновления клиентов: ' + error.message);
+    return;
+  }
+  // Refresh local data
+  await loadClients();
+  toast(enabled
+    ? '✅ Наценка +15% включена для всех клиентов / 所有客户已开启15%加价'
+    : '✅ Наценка снята для всех клиентов / 已关闭所有客户加价');
+  renderPrice();
+}
+
 function renderPrice() {
   const q = document.getElementById('srch').value.toLowerCase().trim();
   const cf = document.getElementById('cat-filter').value;
@@ -825,19 +864,31 @@ function renderPrice() {
              oninput="queuePrice(${f.id},'ap',this.value)" title="Цена A+/банч"></div>
            <div class="price-box" id="pbox-${f.id}">📦 ¥${pab} / ¥${papb}</div>
          </div>`
-      : `<div style="text-align:center">
-           <div><span class="price-static">¥${pa}</span><span style="font-size:9px;color:var(--light)"> A</span>
-                &nbsp;<span class="price-static" style="color:var(--sage-m)">¥${pap}</span><span style="font-size:9px;color:var(--light)"> A+</span></div>
-           <div class="price-box">📦 ¥${pab} / ¥${papb}</div>
+      : (() => {
+          // Check if this client should see markup prices
+          const clientMarkup = (currentUser?.show_markup || globalMarkupActive) ? 1.15 : 1;
+          const dpa  = (pa  * clientMarkup).toFixed(1);
+          const dpap = (pap * clientMarkup).toFixed(1);
+          const dpab = (pa  * f.boxes_per_box * clientMarkup).toFixed(0);
+          const dpapb= (pap * f.boxes_per_box * clientMarkup).toFixed(0);
+          const mkLabel = clientMarkup > 1 ? ' <span style="font-size:9px;color:var(--or)">+15%</span>' : '';
+          return `<div style="text-align:center">
+           <div><span class="price-static">¥${dpa}</span><span style="font-size:9px;color:var(--light)"> A</span>${mkLabel}
+                &nbsp;<span class="price-static" style="color:var(--sage-m)">¥${dpap}</span><span style="font-size:9px;color:var(--light)"> A+</span></div>
+           <div class="price-box">📦 ¥${dpab} / ¥${dpapb}</div>
          </div>`;
+        })();
 
     const editBtn = isMgr
       ? `<button class="btn-icon" style="margin-left:4px;font-size:11px;padding:4px 7px" onclick="showEditFlowerModal(${f.id})" title="Редактировать / 编辑">✏️</button>`
       : '';
+    const clientMarkup2 = (!isMgr && (currentUser?.show_markup || globalMarkupActive)) ? 1.15 : 1;
+    const dispPab  = (pa  * f.boxes_per_box * clientMarkup2).toFixed(0);
+    const dispPapb = (pap * f.boxes_per_box * clientMarkup2).toFixed(0);
     const addCell = inStock
       ? `<select class="grade-sel" id="gs${f.id}">
-           <option value="a">A — ¥${pab}/кор</option>
-           <option value="ap">A+ — ¥${papb}/кор</option>
+           <option value="a">A — ¥${dispPab}/кор</option>
+           <option value="ap">A+ — ¥${dispPapb}/кор</option>
          </select>
          <button class="add-btn ${inCart?'in-order':''}" onclick="addToCart(${f.id})">${inCart?'✓ В заказе/已添加':'+ В заказ/加入订单'}</button>${editBtn}`
       : `<span style="color:var(--light);font-size:11px">нет в наличии</span>${editBtn}`;
@@ -1408,6 +1459,115 @@ async function submitOrder(existingOrderId = null) {
 // Track if client is editing existing order
 // currentEditOrderId declared above
 
+
+// ══════════════════════════════════════════════════════════
+//  MANAGER: DELETE ORDER (with password confirmation)
+// ══════════════════════════════════════════════════════════
+
+// Password required to delete an order (same as manager login password)
+function confirmDeleteOrder(orderId, orderNumber) {
+  document.getElementById('modal-content').innerHTML = `
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="font-size:40px;margin-bottom:8px">⚠️</div>
+      <div class="modal-title" style="color:var(--red);margin-bottom:6px">Удалить заказ? / 确认删除订单?</div>
+      <div style="font-size:14px;font-weight:700;color:var(--charcoal);margin-bottom:4px">${orderNumber}</div>
+      <div style="font-size:12px;color:var(--mid);line-height:1.6">
+        Это действие <b>необратимо</b>. Заказ, все его позиции,<br>
+        накладные и счета будут удалены навсегда.<br>
+        Клиент больше не увидит этот заказ.<br><br>
+        此操作<b>不可撤销</b>，订单、明细、出货单和发票将被永久删除。
+      </div>
+    </div>
+    <div style="background:var(--red-l);border:1px solid #C48A8A;border-radius:var(--r);padding:14px;margin-bottom:16px">
+      <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px">
+        🔐 Введите ваш пароль для подтверждения / 请输入您的密码确认删除
+      </div>
+      <input class="inp" type="password" id="delete-confirm-pass"
+        placeholder="Ваш пароль / 您的密码"
+        style="border-color:var(--red);width:100%;box-sizing:border-box"
+        onkeydown="if(event.key==='Enter')executeDeleteOrder('${orderId}','${orderNumber}')">
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">↩ Отмена / 取消</button>
+      <button class="btn btn-danger" onclick="executeDeleteOrder('${orderId}','${orderNumber}')">
+        🗑 Удалить навсегда / 永久删除
+      </button>
+    </div>`;
+  openModal();
+  setTimeout(() => document.getElementById('delete-confirm-pass')?.focus(), 100);
+}
+
+async function executeDeleteOrder(orderId, orderNumber) {
+  const passInput = document.getElementById('delete-confirm-pass');
+  const pass = passInput?.value;
+  if (!pass) {
+    passInput?.style.setProperty('border-color','var(--red)');
+    passInput?.setAttribute('placeholder','❌ Введите пароль / 请输入密码');
+    passInput?.focus();
+    return;
+  }
+
+  // Verify password against current user's hash
+  const hash = await sha256(pass);
+  const { data: user, error: authErr } = await sb.from('users')
+    .select('id')
+    .eq('id', currentUser.id)
+    .eq('password_hash', hash)
+    .single();
+
+  if (authErr || !user) {
+    passInput.value = '';
+    passInput.style.borderColor = 'var(--red)';
+    passInput.style.background = 'var(--red-l)';
+    passInput.placeholder = '❌ Неверный пароль / 密码错误';
+    passInput.focus();
+    toast('❌ Неверный пароль / 密码错误');
+    return;
+  }
+
+  // Show progress
+  document.getElementById('modal-content').innerHTML = `
+    <div style="text-align:center;padding:30px">
+      <div class="spinner" style="margin:0 auto 16px"></div>
+      <div style="color:var(--mid);font-size:13px">Удаление заказа ${orderNumber}...<br>正在删除订单...</div>
+    </div>`;
+
+  try {
+    // 1. Delete waybill_items for waybills of this order
+    const { data: waybills } = await sb.from('waybills')
+      .select('id').eq('order_id', orderId);
+    if (waybills?.length) {
+      const wbIds = waybills.map(w => w.id);
+      await sb.from('waybill_items').delete().in('waybill_id', wbIds);
+    }
+
+    // 2. Delete waybills
+    await sb.from('waybills').delete().eq('order_id', orderId);
+
+    // 3. Delete invoices
+    await sb.from('invoices').delete().eq('order_id', orderId);
+
+    // 4. Delete order_items
+    await sb.from('order_items').delete().eq('order_id', orderId);
+
+    // 5. Delete the order itself
+    const { error: delErr } = await sb.from('orders').delete().eq('id', orderId);
+    if (delErr) throw delErr;
+
+    closeModal();
+    toast(`🗑 Заказ ${orderNumber} удалён / 订单已删除`);
+
+    // Navigate back to orders list
+    goBack();
+    await loadOrders();
+
+  } catch (err) {
+    closeModal();
+    toast('❌ Ошибка удаления: ' + (err.message || err));
+    console.error('Delete order error:', err);
+  }
+}
+
 // ══════════════════════════════════════════════════════════
 //  MANAGER: ORDERS LIST
 // ══════════════════════════════════════════════════════════
@@ -1444,6 +1604,10 @@ async function loadOrders() {
       </div>
       <span class="badge badge-${o.status}">${statusLabel(o.status)}</span>
       <div class="order-sum">¥ ${total.toFixed(2)}</div>
+      <button class="btn btn-danger btn-sm" style="margin-left:4px"
+        onclick="event.stopPropagation();confirmDeleteOrder('${o.id}','${o.order_number}')">
+        🗑 Удалить / 删除
+      </button>
     </div>`;
   }).join('');
 }
@@ -1639,6 +1803,10 @@ function renderOrderDetail(order) {
       <button class="btn btn-gold" onclick="openInvoice('${id}')">🧾 Инвойс / 创建发票</button>
       <button class="btn btn-secondary" onclick="createWaybillFromOrder('${id}');showPage('waybills',document.querySelectorAll('.nav-tab')[2])">📦 Накладная / 出货单</button>
       <button class="btn btn-secondary" onclick="exportOrderExcel('${id}')">📊 Excel / 导出</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-danger" onclick="confirmDeleteOrder('${id}','${order.order_number}')">
+        🗑 Удалить заказ / 删除订单
+      </button>
     </div>`;
 }
 
@@ -2290,8 +2458,10 @@ async function addClient() {
   if (!login || !pass) { toast('Заполните логин и пароль'); return; }
   if (pass.length < 6) { toast('Пароль минимум 6 символов'); return; }
   const hash = await sha256(pass);
+  const showMk = document.getElementById('nc-show-markup')?.checked || false;
   const { error } = await sb.from('users').insert({
-    login, password_hash: hash, role: 'client', company_name: company, contact
+    login, password_hash: hash, role: 'client', company_name: company, contact,
+    show_markup: showMk
   });
   if (error) { toast('Ошибка: ' + error.message); return; }
   closeModal();
@@ -2324,6 +2494,13 @@ function showEditClientModal(id) {
     <div style="margin-top:8px;padding:10px;background:#FFF3E0;border-radius:6px;font-size:12px;color:#E65100">
       ⚠ Логин нельзя изменить / 账号不可修改. Для нового — удалите и создайте заново / 如需新账号请删除后重新创建.
     </div>
+    <div style="margin-top:10px;padding:10px 12px;background:var(--sage-l);border-radius:6px;display:flex;align-items:center;gap:10px">
+      <label style="font-weight:600;font-size:12px;color:var(--sage-d)">💰 Показывать цены с 15% наценкой / 显示加价15%价格:</label>
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px">
+        <input type="checkbox" id="ec-show-markup" ${user.show_markup?'checked':''} style="width:15px;height:15px;accent-color:var(--sage-d)">
+        <span>Да / 是</span>
+      </label>
+    </div>
     <div class="modal-btns">
       <button class="btn btn-danger btn-sm" onclick="deleteClient('${id}','${user.login}')">🗑 Удалить</button>
       <div style="flex:1"></div>
@@ -2337,7 +2514,8 @@ async function saveClient(id) {
   const company = document.getElementById('ec-company').value.trim();
   const pass    = document.getElementById('ec-pass').value;
   const contact = document.getElementById('ec-contact').value.trim();
-  const updates = { company_name: company, contact };
+  const showMk = document.getElementById('ec-show-markup')?.checked || false;
+  const updates = { company_name: company, contact, show_markup: showMk };
   if (pass) {
     if (pass.length < 6) { toast('Пароль минимум 6 символов'); return; }
     updates.password_hash = await sha256(pass);
