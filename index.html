@@ -699,7 +699,12 @@ async function initApp() {
       <div class="nav-tab" onclick="showPage('my-waybills',this)">📦 Накладные / 出货单 <span class="cnt" id="cnt-waybills">0</span></div>
       <div class="nav-tab" onclick="showPage('my-invoices',this)">🧾 Счета / 发票</div>
     `;
-    document.getElementById('cart-footer').style.display = 'flex';
+    // Явно скрываем все менеджерские контролы (на случай остатков от предыдущей сессии)
+    document.getElementById('btn-save-prices').style.display  = 'none';
+    document.getElementById('btn-import-prices').style.display = 'none';
+    document.getElementById('markup-controls').style.display  = 'none';
+    document.getElementById('btn-add-flower').style.display   = 'none';
+    document.getElementById('cart-footer').style.display = 'none'; // скрыта пока корзина пуста
     await loadMyOrders();
     loadMyInvoices();
   }
@@ -842,7 +847,7 @@ function renderPrice() {
     }
     vis++; row++;
     const inStock = f.in_stock;
-    const inCart = cart[f.id] != null;
+    const inCart = cart[parseInt(f.id)] != null;
     const even = row % 2 === 0;
     const pa = f.price_a, pap = f.price_ap;
     const pab = (pa * f.boxes_per_box).toFixed(0);
@@ -1172,11 +1177,12 @@ async function toggleStock(id) {
 //  CLIENT: CART
 // ══════════════════════════════════════════════════════════
 function addToCart(id) {
+  id = parseInt(id); // normalize to number always
   const f = flowers.find(x => x.id === id); if (!f) return;
   const sel = document.getElementById('gs' + id);
   const pt = sel ? sel.value : 'a';
-  const price = pt === 'a' ? f.price_a : f.price_ap;
-  const pbox = +(price * f.boxes_per_box).toFixed(2);
+  const price = pt === 'a' ? (f.price_a || 0) : (f.price_ap || 0);
+  const pbox = +(price * (f.boxes_per_box || 1)).toFixed(2);
   if (cart[id]) cart[id].qty += 1;
   else cart[id] = {flower: f, qty: 1, priceType: pt, price, pbox, client_name: '', comment: ''};
   updateCartUI();
@@ -1185,10 +1191,9 @@ function addToCart(id) {
 }
 
 function removeFromCart(id) {
-  // Support both string and number keys
+  id = parseInt(id);
   delete cart[id];
   delete cart[String(id)];
-  delete cart[parseInt(id)];
   updateCartUI();
   // Re-render order page if active
   const orderPage = document.getElementById('page-my-order');
@@ -1199,6 +1204,7 @@ function removeFromCart(id) {
 }
 
 function updateCartQty(id, v) {
+  id = parseInt(id);
   const q = parseInt(v) || 1;
   if (q < 1) { removeFromCart(id); return; }
   if (cart[id]) cart[id].qty = q;
@@ -1206,6 +1212,7 @@ function updateCartQty(id, v) {
 }
 
 function updateCartField(id, field, val) {
+  id = parseInt(id);
   if (cart[id]) cart[id][field] = val;
 }
 
