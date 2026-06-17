@@ -381,6 +381,8 @@ td.L{text-align:left}
         <button class="btn btn-secondary" id="btn-hide-out" onclick="toggleHide()">👁 Скрыть нет в наличии / 隐藏无货</button>
         <span class="btn btn-secondary mgr-only" onclick="saveAllPrices()" id="btn-save-prices" style="display:none">💾 Сохранить цены / 保存价格</span>
         <span class="btn btn-secondary mgr-only" onclick="openPriceImport()" id="btn-import-prices" style="display:none">📥 Импорт цен / 导入价格</span>
+        <span class="btn btn-secondary" onclick="exportPriceExcel()" id="btn-export-excel">📊 Excel</span>
+        <span class="btn btn-secondary" onclick="exportPricePDF()" id="btn-export-pdf">📄 PDF</span>
         <span class="mgr-only" id="markup-controls" style="display:none;align-items:center;gap:8px;background:var(--sage-l);border:1px solid var(--border);border-radius:var(--r);padding:5px 12px;font-size:12px">
           <label style="font-weight:600;color:var(--sage-d)">+15% к прайсу / 加价15%:</label>
           <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
@@ -405,10 +407,15 @@ td.L{text-align:left}
               <th style="width:120px" id="price-col-header">¥/банч · ¥/КОРОБ<br><small style="opacity:.75;font-weight:400">¥/扎·¥/件</small></th>
               <th style="width:50px">Бан./扎<br><small style="opacity:.75;font-weight:400">Bunch</small></th>
               <th style="width:55px">Стеб./枝<br><small style="opacity:.75;font-weight:400">Stems</small></th>
+              <th style="width:60px">Стеб./кор.<br><small style="opacity:.75;font-weight:400">枝/件</small></th>
+              <th style="width:65px">Длина<br><small style="opacity:.75;font-weight:400">长度/Length</small></th>
+              <th style="width:60px">Заказ кол.<br><small style="opacity:.75;font-weight:400">订购数量</small></th>
+              <th style="width:60px">Вес цв.<br><small style="opacity:.75;font-weight:400">花重量</small></th>
+              <th style="width:70px">Размер кор.<br><small style="opacity:.75;font-weight:400">箱型</small></th>
               <th style="width:135px">В заказ / 订单 / Order</th>
             </tr>
           </thead>
-          <tbody id="price-tbody"><tr><td colspan="10" style="text-align:center;padding:40px"><div class="spinner" style="margin:0 auto 10px"></div><div style="color:var(--mid);font-size:13px">Загрузка / 加载中...</div></td></tr></tbody>
+          <tbody id="price-tbody"><tr><td colspan="14" style="text-align:center;padding:40px"><div class="spinner" style="margin:0 auto 10px"></div><div style="color:var(--mid);font-size:13px">Загрузка / 加载中...</div></td></tr></tbody>
         </table>
       </div>
     </div>
@@ -911,6 +918,11 @@ function renderPrice() {
       <td>${priceCell}</td>
       <td style="color:var(--mid)">${f.boxes_per_box}</td>
       <td style="color:var(--mid)">${f.stems||''}</td>
+      <td style="color:var(--mid);font-size:10px">${(f.stems && f.boxes_per_box) ? (f.stems * f.boxes_per_box) : ''}</td>
+      <td style="color:var(--mid);font-size:10px">${f.length||''}</td>
+      <td style="color:var(--mid);font-size:10px">${f.order_qty||''}</td>
+      <td style="color:var(--mid);font-size:10px">${f.flower_weight||''}</td>
+      <td style="color:var(--mid);font-size:10px">${f.box_size||''}</td>
       <td>${addCell}</td>`;
     tbody.appendChild(tr);
   });
@@ -961,6 +973,14 @@ function showAddFlowerModal() {
         <div id="nf-photo-preview" style="margin-top:6px"></div>
       </div>
     </div>
+    <div class="field-row">
+      <div class="field"><label>Длина / 长度</label><input class="inp" id="nf-length" placeholder="70CM+"></div>
+      <div class="field"><label>Заказ. кол-во / 订购数量</label><input class="inp" id="nf-order-qty" placeholder="160"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Вес цветка / 花重量</label><input class="inp" id="nf-flower-weight" placeholder="1KG"></div>
+      <div class="field"><label>Размер коробки / 箱型</label><input class="inp" id="nf-box-size" placeholder="100*40*30"></div>
+    </div>
     <div style="margin-top:8px;padding:10px;background:var(--sage-l);border-radius:6px;font-size:12px;color:var(--sage-d)">
       ℹ Цветок будет сразу виден всем клиентам и менеджерам / 花材添加后所有客户和经理均可查看
     </div>
@@ -1005,6 +1025,10 @@ async function addNewFlower() {
   const bpb      = parseInt(document.getElementById('nf-bpb')?.value) || 10;
   const stems    = parseInt(document.getElementById('nf-stems')?.value) || null;
   const pack     = document.getElementById('nf-pack')?.value.trim() || null;
+  const length   = document.getElementById('nf-length')?.value.trim() || null;
+  const orderQty = document.getElementById('nf-order-qty')?.value.trim() || null;
+  const flowerWeight = document.getElementById('nf-flower-weight')?.value.trim() || null;
+  const boxSize  = document.getElementById('nf-box-size')?.value.trim() || null;
 
   if (!ru || !catRu) { toast('❌ Введите название и категорию / 请填写名称和类别'); return; }
 
@@ -1026,6 +1050,10 @@ async function addNewFlower() {
     boxes_per_box: bpb,
     stems: stems,
     pack: pack,
+    length: length,
+    order_qty: orderQty,
+    flower_weight: flowerWeight,
+    box_size: boxSize,
     in_stock: true,
     photo_url: photoBase64 || null,
     updated_at: new Date().toISOString(),
@@ -1072,6 +1100,14 @@ function showEditFlowerModal(flowerId) {
     </div>
     <div class="field-row">
       <div class="field"><label>Упаковка</label><input class="inp" id="ef-pack" value="${f.pack||''}"></div>
+      <div class="field"><label>Длина / 长度</label><input class="inp" id="ef-length" value="${f.length||''}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Заказ. кол-во / 订购数量</label><input class="inp" id="ef-order-qty" value="${f.order_qty||''}"></div>
+      <div class="field"><label>Вес цветка / 花重量</label><input class="inp" id="ef-flower-weight" value="${f.flower_weight||''}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Размер коробки / 箱型</label><input class="inp" id="ef-box-size" value="${f.box_size||''}"></div>
       <div class="field">
         <label>Фото / 图片</label>
         ${f.photo_url ? `<img src="${f.photo_url}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;display:block;margin-bottom:6px">` : ''}
@@ -1098,6 +1134,10 @@ async function saveEditFlower(flowerId) {
     boxes_per_box: parseInt(document.getElementById('ef-bpb')?.value) || f.boxes_per_box,
     stems:  parseInt(document.getElementById('ef-stems')?.value) || null,
     pack:   document.getElementById('ef-pack')?.value.trim() || null,
+    length: document.getElementById('ef-length')?.value.trim() || null,
+    order_qty: document.getElementById('ef-order-qty')?.value.trim() || null,
+    flower_weight: document.getElementById('ef-flower-weight')?.value.trim() || null,
+    box_size: document.getElementById('ef-box-size')?.value.trim() || null,
     updated_at: new Date().toISOString(),
   };
 
@@ -3737,6 +3777,122 @@ function applyImportedPrices() {
   document.getElementById('btn-save-prices').style.background = 'var(--red)';
   document.getElementById('btn-save-prices').textContent = '💾 Сохранить цены / 保存价格 *';
   toast(`📥 Загружено ${importedPrices.length} цен. Нажмите "Сохранить цены" / 已导入${importedPrices.length}个价格，请点击保存`);
+}
+
+// ══════════════════════════════════════════════════════════
+//  EXPORT PRICE LIST — EXCEL & PDF
+// ══════════════════════════════════════════════════════════
+function exportPriceExcel() {
+  if (!flowers.length) { toast('Нет данных / 没有数据'); return; }
+  const isMgr = currentUser?.role === 'manager';
+  const markup = (!isMgr && (currentUser?.show_markup || globalMarkupActive)) ? 1.15 : 1;
+  const today = new Date().toLocaleDateString('ru-RU');
+
+  const header = [
+    'Product Name', '花材名称', 'Packing / 规格',
+    'Grade A ¥/bunch', 'Grade A+ ¥/bunch',
+    '¥/box A', '¥/box A+',
+    'Bunch/Box 扎数/件', 'Stems/Bunch 枝/扎', 'Stems/Box 枝/件',
+    'Length 长度', 'Order Qty 订购数量', 'Flower Weight 花重量', 'Box Size 箱型'
+  ];
+
+  const rows = [['AMMA FLOWERS — Price List / 价格单', '', '', '', '', '', '', '', '', '', '', '', '', '']];
+  rows.push([`Date / 日期: ${today}`, '', '', '', '', '', '', '', '', '', '', '', '', '']);
+  rows.push([]);
+  rows.push(header);
+
+  let lastCat = null;
+  flowers.forEach(f => {
+    if (!f.in_stock && hiddenOut) return;
+    if (f.cat_ru !== lastCat) {
+      rows.push([f.cat_ru || '', f.cat_en || '']);
+      lastCat = f.cat_ru;
+    }
+    const pa  = (f.price_a  * markup);
+    const pap = (f.price_ap * markup);
+    const pab  = (pa  * (f.boxes_per_box || 1));
+    const papb = (pap * (f.boxes_per_box || 1));
+    rows.push([
+      f.ru || '', f.cn || '', f.pack || '',
+      pa.toFixed(1), pap.toFixed(1),
+      pab.toFixed(0), papb.toFixed(0),
+      f.boxes_per_box || '', f.stems || '',
+      (f.stems && f.boxes_per_box) ? (f.stems * f.boxes_per_box) : '',
+      f.length || '', f.order_qty || '', f.flower_weight || '', f.box_size || ''
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [
+    {wch:28},{wch:18},{wch:18},{wch:12},{wch:12},
+    {wch:12},{wch:12},{wch:12},{wch:12},{wch:12},
+    {wch:12},{wch:14},{wch:14},{wch:16}
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Price List');
+  XLSX.writeFile(wb, `AMMA_PriceList_${today.replace(/\./g,'-')}.xlsx`);
+  toast('✅ Excel скачан / 已下载Excel');
+}
+
+function exportPricePDF() {
+  if (!flowers.length) { toast('Нет данных / 没有数据'); return; }
+  // Build HTML table, open in new window for printing as PDF
+  const isMgr = currentUser?.role === 'manager';
+  const markup = (!isMgr && (currentUser?.show_markup || globalMarkupActive)) ? 1.15 : 1;
+  const today = new Date().toLocaleDateString('ru-RU');
+
+  let html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>AMMA FLOWERS Price List</title>
+<style>
+  body{font-family:Arial,sans-serif;font-size:9px;margin:10px}
+  h2{font-size:13px;margin:0 0 4px}
+  p{margin:0 0 8px;font-size:9px;color:#666}
+  table{border-collapse:collapse;width:100%;font-size:8px}
+  th{background:#2d6a4f;color:#fff;padding:4px 5px;text-align:left;border:1px solid #ccc;white-space:nowrap}
+  td{padding:3px 5px;border:1px solid #ddd;white-space:nowrap}
+  .cat{background:#d8f3dc;font-weight:700;font-size:8px}
+  tr:nth-child(even) td{background:#f9f9f9}
+  @media print{@page{size:A3 landscape;margin:8mm}}
+</style></head><body>
+<h2>AMMA FLOWERS — Price List / 价格单</h2>
+<p>Дата / 日期: ${today}</p>
+<table>
+<thead><tr>
+<th>Product Name</th><th>名称</th><th>规格</th>
+<th>A ¥/扎</th><th>A+ ¥/扎</th>
+<th>A ¥/件</th><th>A+ ¥/件</th>
+<th>扎/件</th><th>枝/扎</th><th>枝/件</th>
+<th>长度</th><th>订购数量</th><th>花重量</th><th>箱型</th>
+</tr></thead><tbody>`;
+
+  let lastCat = null;
+  flowers.forEach(f => {
+    if (!f.in_stock && hiddenOut) return;
+    if (f.cat_ru !== lastCat) {
+      html += `<tr><td colspan="14" class="cat">${f.cat_ru||''} · ${f.cat_en||''}</td></tr>`;
+      lastCat = f.cat_ru;
+    }
+    const pa  = (f.price_a  * markup).toFixed(1);
+    const pap = (f.price_ap * markup).toFixed(1);
+    const pab  = (f.price_a  * (f.boxes_per_box||1) * markup).toFixed(0);
+    const papb = (f.price_ap * (f.boxes_per_box||1) * markup).toFixed(0);
+    const stemsPerBox = (f.stems && f.boxes_per_box) ? (f.stems * f.boxes_per_box) : '';
+    html += `<tr>
+<td>${f.ru||''}</td><td>${f.cn||''}</td><td>${f.pack||''}</td>
+<td>¥${pa}</td><td>¥${pap}</td>
+<td>¥${pab}</td><td>¥${papb}</td>
+<td>${f.boxes_per_box||''}</td><td>${f.stems||''}</td><td>${stemsPerBox}</td>
+<td>${f.length||''}</td><td>${f.order_qty||''}</td><td>${f.flower_weight||''}</td><td>${f.box_size||''}</td>
+</tr>`;
+  });
+
+  html += '</tbody></table></body></html>';
+
+  const w = window.open('', '_blank');
+  if (!w) { toast('⚠️ Разрешите всплывающие окна / 请允许弹出窗口'); return; }
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => { w.print(); }, 400);
 }
 
 </script>
