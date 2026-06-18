@@ -105,6 +105,12 @@ btn,button{font-family:var(--font-b);cursor:pointer}
 
 /* ═══ TABLE ═══ */
 .tbl-wrap{overflow-x:auto;border-radius:var(--r);box-shadow:var(--shadow)}
+.lbl-tbl th{background:var(--sage-d);color:#fff;padding:9px 10px;font-size:11px;font-weight:600;border:1px solid rgba(255,255,255,.12);white-space:normal;vertical-align:bottom;text-align:left}
+.lbl-tbl td{padding:8px 10px;border:1px solid var(--border);vertical-align:middle;font-size:13px}
+.lbl-tbl tbody tr:nth-child(even) td{background:var(--bg)}
+.lbl-tbl tbody tr:hover td{background:#d8f3dc}
+.lbl-tbl tbody tr.section-row td{background:#1b4332!important;color:#fff;font-weight:700;font-size:12px;padding:5px 10px}
+.lbl-tbl tbody tr.section-row:hover td{background:#2d6a4f!important}
 table{width:100%;border-collapse:collapse;background:#fff;min-width:800px}
 thead th{background:var(--sage-d);color:#fff;padding:10px 9px;font-size:11px;text-align:center;font-weight:600;border-right:1px solid rgba(255,255,255,.08);white-space:nowrap}
 thead th.L{text-align:left}
@@ -524,6 +530,31 @@ td.L{text-align:left}
   </div>
 
 
+  <!-- PAGE: LABELS (manager) -->
+  <div class="page" id="page-labels">
+    <div class="page-inner">
+      <div class="page-title">Транспортные этикетки / 运输标签 / Shipping Labels</div>
+      <div class="page-sub">Таблица для этикеток по заказу(ам) — выберите один или несколько / 按订单生成标签表格</div>
+      <div class="ctrl-bar" style="flex-wrap:wrap;gap:10px">
+        <select class="inp" id="lbl-client-filter" onchange="loadLabelOrders()" style="min-width:170px">
+          <option value="">Все клиенты / 所有客户</option>
+        </select>
+        <button class="btn btn-secondary" onclick="toggleAllLabelOrders()" style="font-size:12px">☑️ Все / 全选</button>
+        <button class="btn btn-primary" onclick="buildLabelsFromSelected()" style="font-size:12px">👁 Показать / 显示</button>
+        <button class="btn btn-primary" onclick="exportLabelsExcel()" id="btn-export-labels" style="display:none;background:var(--sage-d)">
+          📊 Скачать Excel / 下载Excel
+        </button>
+      </div>
+      <!-- Order checklist -->
+      <div id="lbl-orders-list" style="margin:10px 0;max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px 12px;background:#fff;display:none">
+        <div style="font-size:11px;color:var(--mid);margin-bottom:6px">Выберите заказы для таблицы этикеток / 请选择订单:</div>
+        <div id="lbl-orders-checkboxes"></div>
+      </div>
+      <div id="labels-order-info" style="display:none;margin:12px 0 8px;background:var(--sage-l);border-radius:8px;padding:10px 16px;font-size:13px;color:var(--sage-d)"></div>
+      <div id="labels-table-wrap" style="overflow-x:auto;margin-top:8px"></div>
+    </div>
+  </div>
+
   <!-- PAGE: WAYBILLS LIST (manager) -->
   <div class="page" id="page-waybills">
     <div class="page-inner">
@@ -691,6 +722,7 @@ async function initApp() {
       <div class="nav-tab" onclick="showPage('orders',this)">📦 Заказы / 订单 <span class="cnt" id="cnt-orders">0</span></div>
       <div class="nav-tab" onclick="showPage('invoices',this)">🧾 Инвойсы / 发票</div>
       <div class="nav-tab" onclick="showPage('waybills',this)">📦 Накладные / 出货单 <span class="cnt" id="cnt-waybills">0</span></div>
+      <div class="nav-tab" onclick="showPage('labels',this)">🏷 Этикетки / 标签</div>
       <div class="nav-tab" onclick="showPage('clients',this)">👥 Клиенты / 客户</div>
     `;
     document.getElementById('btn-save-prices').style.display = 'inline-flex';
@@ -744,6 +776,7 @@ function showPage(name, tabEl) {
   if (name === 'invoices') loadInvoices();
   if (name === 'waybills') loadWaybills();
   if (name === 'clients') renderClients();
+  if (name === 'labels') loadLabelOrders();
   if (name === 'my-order') { loadMyOrders().then(() => renderMyOrder()); }
   if (name === 'my-waybills') loadMyWaybills();
   if (name === 'my-invoices') loadMyInvoices();
@@ -3778,6 +3811,314 @@ function applyImportedPrices() {
   document.getElementById('btn-save-prices').textContent = '💾 Сохранить цены / 保存价格 *';
   toast(`📥 Загружено ${importedPrices.length} цен. Нажмите "Сохранить цены" / 已导入${importedPrices.length}个价格，请点击保存`);
 }
+
+// ══════════════════════════════════════════════════════════
+//  LABELS PAGE — ТРАНСПОРТНЫЕ ЭТИКЕТКИ / 运输标签
+// ══════════════════════════════════════════════════════════
+let _labelsCurrentOrder = null;
+let _labelsAllOrders    = []; // loaded orders list
+
+async function loadLabelOrders() {
+  const cf = document.getElementById('lbl-client-filter')?.value;
+  let q = sb.from('orders').select(`
+    id, order_number, date_order, date_ship, status,
+    client:users!orders_client_id_fkey(company_name, login)
+  `).in('status', ['confirmed','invoiced','paid','sent'])
+    .order('created_at', {ascending: false});
+  if (cf) q = q.eq('client_id', cf);
+  const { data } = await q;
+  _labelsAllOrders = data || [];
+
+  // Populate client filter
+  const cf2 = document.getElementById('lbl-client-filter');
+  if (cf2 && allClients.length) {
+    const prevCf = cf2.value;
+    cf2.innerHTML = '<option value="">Все клиенты / 所有客户</option>';
+    allClients.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.id; o.textContent = c.company_name || c.login;
+      if (c.id === prevCf) o.selected = true;
+      cf2.appendChild(o);
+    });
+  }
+
+  // Render checkboxes
+  const listEl = document.getElementById('lbl-orders-list');
+  const cbWrap = document.getElementById('lbl-orders-checkboxes');
+  if (!_labelsAllOrders.length) {
+    listEl.style.display = 'none';
+    document.getElementById('labels-table-wrap').innerHTML =
+      `<div class="empty-state"><div class="icon">🏷</div><p>Нет подтверждённых заказов / 没有已确认的订单</p></div>`;
+    return;
+  }
+  listEl.style.display = '';
+  cbWrap.innerHTML = _labelsAllOrders.map(o => {
+    const client = o.client?.company_name || o.client?.login || '?';
+    return `<label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;font-size:13px">
+      <input type="checkbox" value="${o.id}" class="lbl-order-cb" style="width:16px;height:16px;cursor:pointer">
+      <span><b>#${o.order_number}</b> · ${client} · <span style="color:var(--mid)">${o.date_order||''}</span></span>
+    </label>`;
+  }).join('');
+
+  // Reset
+  document.getElementById('labels-order-info').style.display = 'none';
+  document.getElementById('labels-table-wrap').innerHTML = '';
+  document.getElementById('btn-export-labels').style.display = 'none';
+  _labelsCurrentOrder = null;
+}
+
+function toggleAllLabelOrders() {
+  const cbs = document.querySelectorAll('.lbl-order-cb');
+  const anyUnchecked = [...cbs].some(c => !c.checked);
+  cbs.forEach(c => c.checked = anyUnchecked);
+}
+
+async function buildLabelsFromSelected() {
+  const selected = [...document.querySelectorAll('.lbl-order-cb:checked')].map(c => c.value);
+  if (!selected.length) { toast('Выберите хотя бы один заказ / 请至少选择一个订单'); return; }
+
+  const wrap   = document.getElementById('labels-table-wrap');
+  const info   = document.getElementById('labels-order-info');
+  const btnExp = document.getElementById('btn-export-labels');
+
+  wrap.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
+
+  // Load all selected orders with items
+  const { data: orders, error } = await sb.from('orders').select(`
+    *, client:users!orders_client_id_fkey(company_name, login),
+    order_items(*, flower:flowers(ru,cn,stems,boxes_per_box,pack,length,order_qty,flower_weight,box_size))
+  `).in('id', selected);
+
+  if (error || !orders?.length) {
+    wrap.innerHTML = `<div class="empty-state"><p>Ошибка загрузки / 加载错误</p></div>`; return;
+  }
+
+  // Sort orders by order_number
+  orders.sort((a,b) => (a.order_number||0) - (b.order_number||0));
+
+  _labelsCurrentOrder = orders; // store array
+
+  // Info bar
+  const names = orders.map(o => `#${o.order_number} — ${o.client?.company_name||o.client?.login||'?'}`).join(', ');
+  info.style.display = '';
+  info.innerHTML = `<b>📦 ${orders.length} заказ(ов) / 订单:</b> ${names}`;
+
+  renderLabelsTable(orders);
+  btnExp.style.display = '';
+}
+
+// Alias for single-order backward compat
+async function loadLabelOrder() { await buildLabelsFromSelected(); }
+
+function renderLabelsTable(orders) {
+  const wrap = document.getElementById('labels-table-wrap');
+
+  // Collect all items across orders (grouped by order)
+  let allRows = [];
+  orders.forEach(order => {
+    const client = order.client?.company_name || order.client?.login || '—';
+    // Section header per order
+    allRows.push({ _section: true, label: `Заказ #${order.order_number} · ${client} · ${order.date_order||''}` });
+    (order.order_items || []).forEach(item => {
+      const snap = item.flower_snapshot || {};
+      const flower = item.flower || {};
+      const ru  = flower.ru  || snap.ru  || '—';
+      const cn  = flower.cn  || snap.cn  || '—';
+      const stemsPerBunch = parseInt(flower.stems || snap.stems) || '';
+      const bunchPerBox   = parseInt(item.bunches_per_box) || parseInt(flower.boxes_per_box || snap.boxes_per_box) || '';
+      const totalStems    = (stemsPerBunch && bunchPerBox) ? stemsPerBunch * bunchPerBox : '';
+      const qtyBoxes      = parseInt(item.qty_boxes) || 1;
+      const packInfo      = flower.pack || snap.pack || '';
+      const remarks = [];
+      if (packInfo) remarks.push(packInfo);
+      if (item.comment) remarks.push(item.comment);
+      allRows.push({ cn, ru, stemsPerBunch, bunchPerBox, totalStems, qtyBoxes, remarks: remarks.join(' · ') });
+    });
+  });
+
+  const tbody = allRows.map((row, idx) => {
+    if (row._section) {
+      return `<tr class="section-row"><td colspan="8">
+        📦 ${row.label}
+      </td></tr>`;
+    }
+    // Count display index (skip section rows)
+    const rowNum = allRows.slice(0, idx).filter(r => !r._section).length + 1;
+    return `<tr>
+      <td style="text-align:center;color:var(--mid);font-size:11px">${rowNum}</td>
+      <td style="font-weight:700;font-size:12px;color:#1b4332">${row.cn}</td>
+      <td style="font-size:12px">${row.ru}</td>
+      <td style="text-align:center">${row.stemsPerBunch}</td>
+      <td style="text-align:center">${row.bunchPerBox}</td>
+      <td style="text-align:center;font-weight:700;color:var(--sage-d)">${row.totalStems}</td>
+      <td style="text-align:center;background:#f0fdf4;font-weight:700;font-size:14px">${row.qtyBoxes}</td>
+      <td style="font-size:11px;color:var(--mid)">${row.remarks}</td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table class="lbl-tbl" style="border-collapse:collapse;width:100%;font-size:13px">
+      <thead>
+        <tr>
+          <th style="width:32px">№</th>
+          <th style="min-width:120px">Наименование на китайском<br><small style="opacity:.8;font-weight:400">花卉品名</small></th>
+          <th style="min-width:200px">Наименование на русском<br><small style="opacity:.8;font-weight:400">品名（俄语）</small></th>
+          <th style="width:75px">Стеблей в связке<br><small style="opacity:.8;font-weight:400">数量/扎</small></th>
+          <th style="width:85px">Связок/банчей в коробе<br><small style="opacity:.8;font-weight:400">一箱扎数</small></th>
+          <th style="width:80px">Всего стеблей<br><small style="opacity:.8;font-weight:400">总枝数</small></th>
+          <th style="width:75px">Коробок<br><small style="opacity:.8;font-weight:400">箱数</small></th>
+          <th>Примечание<br><small style="opacity:.8;font-weight:400">备注</small></th>
+        </tr>
+      </thead>
+      <tbody>${tbody}</tbody>
+    </table>`;
+}
+
+function exportLabelsExcel() {
+  const orders = _labelsCurrentOrder;
+  if (!orders?.length) { toast('Нет данных / 没有数据'); return; }
+
+  const today = new Date().toLocaleDateString('ru-RU');
+  const wb = XLSX.utils.book_new();
+
+  // ── Header info
+  const orderNums = orders.map(o => `#${o.order_number}`).join(', ');
+  const clients   = [...new Set(orders.map(o => o.client?.company_name || o.client?.login || '?'))].join(', ');
+
+  const aoa = []; // array of arrays for sheet
+
+  // Title rows
+  aoa.push(['AMMA FLOWERS — Транспортные этикетки / 运输标签']);
+  aoa.push([`Заказы / 订单: ${orderNums}   |   Клиент(ы): ${clients}   |   Дата / 日期: ${today}`]);
+  aoa.push([]); // blank
+
+  // Column header (matching the sample file exactly)
+  aoa.push([
+    'Наименование на китайском',
+    'Наименование на русском\n花卉品名',
+    'стеблей в связке\n数量/扎',
+    'Связок/банчей\nв коробе\n一箱扎数',
+    'всего стеблей',
+    'Коробок в заказе',
+    'Примечание\n备注'
+  ]);
+
+  const HEADER_ROW = 4; // 1-based
+  let dataRowStart = HEADER_ROW + 1;
+  let curRow = dataRowStart;
+  const sectionRows = []; // track section header rows for styling
+  const formulaRows = []; // track data rows for formula E=C*D
+
+  orders.forEach(order => {
+    const client = order.client?.company_name || order.client?.login || '?';
+    // Section header
+    aoa.push([`Заказ #${order.order_number} · ${client} · ${order.date_order||''}`,'','','','','','']);
+    sectionRows.push(curRow);
+    curRow++;
+
+    (order.order_items || []).forEach(item => {
+      const snap = item.flower_snapshot || {};
+      const flower = item.flower || {};
+      const ru  = flower.ru  || snap.ru  || '';
+      const cn  = flower.cn  || snap.cn  || '';
+      const stemsPerBunch = parseInt(flower.stems || snap.stems) || null;
+      const bunchPerBox   = parseInt(item.bunches_per_box) || parseInt(flower.boxes_per_box || snap.boxes_per_box) || null;
+      const qtyBoxes      = parseInt(item.qty_boxes) || 1;
+      const packInfo = flower.pack || snap.pack || '';
+      const remarks  = [packInfo, item.comment].filter(Boolean).join(' / ');
+
+      // Use formula for "всего стеблей" = C*D (like the sample file)
+      aoa.push([cn, ru, stemsPerBunch, bunchPerBox, null, qtyBoxes, remarks]);
+      formulaRows.push(curRow);
+      curRow++;
+    });
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // Apply formulas for column E (всего стеблей = стеблей_в_связке * связок_в_коробе)
+  formulaRows.forEach(r => {
+    const eAddr = `E${r}`;
+    const cAddr = `C${r}`;
+    const dAddr = `D${r}`;
+    if (ws[cAddr]?.v !== null && ws[dAddr]?.v !== null) {
+      ws[eAddr] = { f: `${cAddr}*${dAddr}`, t: 'n',
+        s: { alignment: { horizontal: 'center', vertical: 'center' },
+             font: { bold: true } } };
+    }
+  });
+
+  // Column widths
+  ws['!cols'] = [{wch:28},{wch:38},{wch:14},{wch:16},{wch:14},{wch:14},{wch:48}];
+
+  // Row heights
+  const rowHeights = [{hpt:20},{hpt:20},{hpt:6},{hpt:40}];
+  for (let i = 4; i < aoa.length; i++) rowHeights.push({hpt:22});
+  ws['!rows'] = rowHeights;
+
+  // Title merges
+  ws['!merges'] = [
+    { s:{r:0,c:0}, e:{r:0,c:6} },
+    { s:{r:1,c:0}, e:{r:1,c:6} }
+  ];
+
+  // Styles — header row
+  const COLS = ['A','B','C','D','E','F','G'];
+  COLS.forEach(col => {
+    const addr = `${col}${HEADER_ROW}`;
+    if (!ws[addr]) return;
+    ws[addr].s = {
+      font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
+      fill: { fgColor: { rgb: '1B4332' } },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      border: { bottom: { style: 'thin', color: { rgb: 'AAAAAA' } } }
+    };
+  });
+
+  // Title styles
+  if (ws['A1']) ws['A1'].s = { font: { bold: true, sz: 13 } };
+  if (ws['A2']) ws['A2'].s = { font: { sz: 10, color: { rgb: '555555' } } };
+
+  // Section header rows — green background
+  sectionRows.forEach(r => {
+    COLS.forEach(col => {
+      const addr = `${col}${r}`;
+      if (!ws[addr]) { ws[addr] = { v: '', t: 's' }; }
+      ws[addr].s = {
+        fill: { fgColor: { rgb: 'D8F3DC' } },
+        font: { bold: true, sz: 10, color: { rgb: '1B4332' } },
+        alignment: { vertical: 'center' }
+      };
+    });
+    // Merge section row A:G
+    if (!ws['!merges']) ws['!merges'] = [];
+    ws['!merges'].push({ s:{r:r-1,c:0}, e:{r:r-1,c:6} });
+  });
+
+  // Data rows — center numeric columns + borders
+  formulaRows.forEach(r => {
+    COLS.forEach((col, ci) => {
+      const addr = `${col}${r}`;
+      if (!ws[addr]) ws[addr] = { v: '', t: 's' };
+      const isNum = ci >= 2 && ci <= 5;
+      ws[addr].s = {
+        alignment: { horizontal: isNum ? 'center' : 'left', vertical: 'center', wrapText: true },
+        font: { bold: (ci === 4 || ci === 5), sz: 10 },
+        border: {
+          bottom: { style: 'thin', color: { rgb: 'DDDDDD' } },
+          right:  { style: 'thin', color: { rgb: 'DDDDDD' } }
+        }
+      };
+    });
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Этикетки');
+  const orderStr = orders.map(o => o.order_number).join('-');
+  const fname = `Этикетки_${orderStr}_${today.replace(/\./g,'-')}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  toast(`✅ Excel скачан: ${fname} / 已下载`);
+}
+
 
 // ══════════════════════════════════════════════════════════
 //  EXPORT PRICE LIST — EXCEL & PDF
