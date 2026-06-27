@@ -5799,9 +5799,12 @@ async function loadMyClaims() {
                 const orderNum  = w.order?.order_number || '?';
                 const shipDate  = w.order?.date_ship || '';
                 const items     = (w.order?.order_items||[]).map(i=>({
-                  ru:    i.flower?.ru    || i.flower_snapshot?.ru    || '?',
-                  cn:    i.flower?.cn    || i.flower_snapshot?.cn    || '',
-                  photo: i.flower?.photo_url || ''
+                  ru:        i.flower?.ru    || i.flower_snapshot?.ru    || '?',
+                  cn:        i.flower?.cn    || i.flower_snapshot?.cn    || '',
+                  photo:     i.flower?.photo_url || '',
+                  price:     i.price_per_box || i.subtotal/(i.qty_boxes||1) || 0,
+                  priceType: i.price_type || '',
+                  qty:       i.qty_boxes || 1
                 }));
                 return `<option value="${w.order_id}"
                   data-waybill-id="${w.id}"
@@ -5816,18 +5819,20 @@ async function loadMyClaims() {
         </div>
         <div id="claim-items-wrap" style="margin:10px 0"></div>
         <div class="field">
-          <label>Описание проблемы / 问题描述 <span style="color:var(--red)">*</span></label>
+          <label>Общий комментарий по поставке / 本次供货总体意见 <span style="color:var(--red)">*</span></label>
           <textarea class="inp" id="claim-description" rows="3"
-            placeholder="Опишите детально: какие цветы, в чём проблема, сколько штук / 请详细描述：什么花、什么问题、数量"
+            placeholder="Общая характеристика качества поставки, особые замечания / 总体质量评价及特别说明..."
             style="width:100%;resize:vertical"></textarea>
         </div>
         <div class="field" style="margin-top:10px">
-          <label>Фотографии / 照片 <span style="font-size:10px;color:var(--mid)">(до 5 фото / 最多5张)</span></label>
+          <label>Фотографии / 照片 <span style="font-size:10px;color:var(--mid)">(до 8 фото / 最多8张)</span></label>
           <input type="file" id="claim-photos" multiple accept="image/*" style="margin-top:6px"
             onchange="previewClaimPhotos(this)">
           <div id="claim-photos-preview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
         </div>
-        <div style="display:flex;justify-content:flex-end;margin-top:14px">
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;flex-wrap:wrap">
+          <button class="btn btn-secondary" onclick="exportClaimExcel()">📊 Excel</button>
+          <button class="btn btn-secondary" onclick="exportClaimPDF()">📄 PDF</button>
           <button class="btn btn-danger" onclick="submitClaim()">
             📨 Отправить претензию / 提交投诉
           </button>
@@ -5848,54 +5853,352 @@ function buildClaimItems() {
   const sel  = document.getElementById('claim-order-select');
   const wrap = document.getElementById('claim-items-wrap');
   if (!sel?.value || !wrap) { if(wrap) wrap.innerHTML=''; return; }
-  const opt   = sel.options[sel.selectedIndex];
+  const opt = sel.options[sel.selectedIndex];
   let items = [];
   try { items = JSON.parse(opt.dataset.items||'[]'); } catch{}
   if (!items.length) { wrap.innerHTML=''; return; }
 
   wrap.innerHTML = `
-    <div style="font-size:11px;font-weight:700;color:var(--mid);margin-bottom:6px">
-      Отметьте проблемные позиции / 标记有问题的品种:
+    <div style="font-size:11px;font-weight:700;color:var(--mid);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+      Отметьте проблемные позиции и укажите количество / 标记有问题的品种并填写数量:
     </div>
     ${items.map((item, idx) => `
-      <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;margin-bottom:5px;background:var(--bg)">
-        ${item.photo ? `<img src="${item.photo}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0">` :
-          '<div style="width:32px;height:32px;background:var(--sage-l);border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px">🌸</div>'}
-        <div style="flex:1;min-width:0">
-          <div style="font-size:12px;font-weight:600">${item.ru}</div>
-          ${item.cn ? `<div style="font-size:10px;color:var(--mid)">${item.cn}</div>` : ''}
+      <div class="claim-row" id="crow-${idx}" style="border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden">
+        <!-- Row header — always visible -->
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg);cursor:pointer"
+             onclick="toggleClaimRow(${idx})">
+          <input type="checkbox" class="claim-item-cb" data-idx="${idx}"
+            data-name="${item.ru}" data-price="${item.price||0}" data-price-type="${item.priceType||''}"
+            style="width:16px;height:16px;accent-color:var(--red);flex-shrink:0;cursor:pointer"
+            onclick="event.stopPropagation()"
+            onchange="toggleClaimRowExpand(${idx}, this.checked); recalcClaimTotal()">
+          ${item.photo
+            ? `<img src="${item.photo}" style="width:34px;height:34px;object-fit:cover;border-radius:5px;flex-shrink:0">`
+            : `<div style="width:34px;height:34px;background:var(--sage-l);border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px">🌸</div>`}
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:600">${item.ru}</div>
+            ${item.cn ? `<div style="font-size:10px;color:var(--mid)">${item.cn}</div>` : ''}
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            ${item.qty ? `<div style="font-size:11px;color:var(--mid)">${item.qty} кор.</div>` : ''}
+            ${item.price ? `<div style="font-size:11px;font-weight:700;color:var(--sage-d)">¥${parseFloat(item.price).toFixed(2)}/кор.</div>` : ''}
+          </div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
-          <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer">
-            <input type="checkbox" class="claim-item-cb" data-name="${item.ru}" data-idx="${idx}"
-              style="width:14px;height:14px;accent-color:var(--red)"
-              onchange="this.closest('div.claim-row-wrap')?.querySelector('.claim-item-type')?.style.setProperty('display', this.checked?'':'none')">
-            Есть проблема / 有问题
-          </label>
-          <select class="inp claim-item-type" data-idx="${idx}"
-            style="font-size:10px;padding:2px 6px;display:none">
-            <option value="quality">Некачественный / 质量差</option>
-            <option value="quantity">Нехватка / 数量不足</option>
-            <option value="wrong">Не тот товар / 发货错误</option>
-            <option value="damaged">Повреждён при транспортировке / 运输损坏</option>
-          </select>
+        <!-- Expanded detail — shown when checkbox checked -->
+        <div class="claim-row-detail hidden" id="crow-detail-${idx}"
+             style="padding:10px 12px;background:#fff;border-top:1px solid var(--border)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+            <div>
+              <label style="font-size:10px;font-weight:700;color:var(--mid);letter-spacing:.05em;display:block;margin-bottom:3px">
+                ТИП ПРОБЛЕМЫ / 问题类型
+              </label>
+              <select class="inp claim-item-type" data-idx="${idx}" style="font-size:11px;padding:5px 8px;width:100%">
+                <option value="quality">🥀 Некачественный / 质量差</option>
+                <option value="quantity">📦 Нехватка / 数量不足</option>
+                <option value="wrong">❌ Не тот товар / 发货错误</option>
+                <option value="damaged">💥 Повреждён / 运输损坏</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:10px;font-weight:700;color:var(--mid);letter-spacing:.05em;display:block;margin-bottom:3px">
+                КОЛ-ВО ПРОБЛЕМНЫХ КОРОБОК / 问题箱数
+              </label>
+              <div style="display:flex;align-items:center;gap:6px">
+                <input type="number" min="1" max="${item.qty||99}" value="1"
+                  class="inp claim-item-qty" data-idx="${idx}"
+                  style="width:70px;text-align:center;padding:5px;font-size:13px;font-weight:700"
+                  oninput="recalcClaimTotal()">
+                <span style="font-size:11px;color:var(--mid)">из ${item.qty||'?'} кор.</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:10px;font-weight:700;color:var(--mid);letter-spacing:.05em;display:block;margin-bottom:3px">
+              КОММЕНТАРИЙ К ПОЗИЦИИ / 该品种备注
+            </label>
+            <input type="text" class="inp claim-item-comment" data-idx="${idx}"
+              placeholder="Подробнее о проблеме / 详细说明..."
+              style="width:100%;font-size:12px;padding:6px 10px">
+          </div>
+          <div style="margin-top:8px;text-align:right;font-size:12px;color:var(--sage-d)">
+            Сумма по позиции / 该品种金额:
+            <span class="claim-item-subtotal" data-idx="${idx}" style="font-weight:700;margin-left:6px">
+              ${item.price ? '¥' + parseFloat(item.price).toFixed(2) : '—'}
+            </span>
+          </div>
         </div>
-      </div>`).join('')}`;
+      </div>`).join('')}
+    <!-- Total -->
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:4px;padding:10px 12px;background:var(--sage-l);border-radius:8px">
+      <span style="font-size:12px;color:var(--sage-d)">Итого по претензии / 投诉总金额:</span>
+      <span id="claim-total" style="font-size:18px;font-weight:700;color:var(--sage-d)">¥0.00</span>
+    </div>`;
+}
 
-  // Fix: wrap each row so JS can find sibling
-  wrap.querySelectorAll('[style*="display:flex;align-items:center;gap:8px;padding:7px"]').forEach(row => {
-    row.classList.add('claim-row-wrap');
+function toggleClaimRow(idx) {
+  const cb = document.querySelector(`.claim-item-cb[data-idx="${idx}"]`);
+  if (!cb) return;
+  cb.checked = !cb.checked;
+  toggleClaimRowExpand(idx, cb.checked);
+  recalcClaimTotal();
+}
+
+function toggleClaimRowExpand(idx, show) {
+  const detail = document.getElementById('crow-detail-'+idx);
+  const row    = document.getElementById('crow-'+idx);
+  if (detail) detail.classList.toggle('hidden', !show);
+  if (row)    row.style.borderColor = show ? 'var(--red)' : 'var(--border)';
+}
+
+function recalcClaimTotal() {
+  let total = 0;
+  document.querySelectorAll('.claim-item-cb:checked').forEach(cb => {
+    const idx   = cb.dataset.idx;
+    const price = parseFloat(cb.dataset.price) || 0;
+    const qty   = parseInt(document.querySelector(`.claim-item-qty[data-idx="${idx}"]`)?.value) || 1;
+    const sub   = price * qty;
+    total += sub;
+    const subtotalEl = document.querySelector(`.claim-item-subtotal[data-idx="${idx}"]`);
+    if (subtotalEl) subtotalEl.textContent = '¥' + sub.toFixed(2);
   });
-  wrap.querySelectorAll('.claim-item-cb').forEach(cb => {
-    cb.addEventListener('change', () => {
-      const typeEl = wrap.querySelector(`.claim-item-type[data-idx="${cb.dataset.idx}"]`);
-      if (typeEl) typeEl.style.display = cb.checked ? '' : 'none';
+  const el = document.getElementById('claim-total');
+  if (el) el.textContent = '¥' + total.toFixed(2);
+}
+
+function getClaimFormData() {
+  const sel        = document.getElementById('claim-order-select');
+  const opt        = sel?.options[sel?.selectedIndex];
+  const waybillNum = opt?.dataset?.waybillNum  || '';
+  const orderNum   = opt?.dataset?.orderNum    || '';
+  const desc       = document.getElementById('claim-description')?.value?.trim() || '';
+  const client     = currentUser?.company_name || currentUser?.login || '';
+  const today      = new Date().toLocaleDateString('ru-RU');
+
+  const items = [];
+  let total = 0;
+  document.querySelectorAll('.claim-item-cb:checked').forEach(cb => {
+    const idx    = cb.dataset.idx;
+    const typeEl = document.querySelector(`.claim-item-type[data-idx="${idx}"]`);
+    const qtyEl  = document.querySelector(`.claim-item-qty[data-idx="${idx}"]`);
+    const cmtEl  = document.querySelector(`.claim-item-comment[data-idx="${idx}"]`);
+    const typeMap = { quality:'Некачественный', quantity:'Нехватка', wrong:'Не тот товар', damaged:'Повреждён' };
+    const price  = parseFloat(cb.dataset.price) || 0;
+    const qty    = parseInt(qtyEl?.value) || 1;
+    const sub    = price * qty;
+    total += sub;
+    items.push({
+      name:    cb.dataset.name,
+      type:    typeMap[typeEl?.value] || typeEl?.value || '',
+      qty,
+      price,
+      subtotal: sub,
+      comment: cmtEl?.value?.trim() || ''
     });
   });
+  return { waybillNum, orderNum, desc, client, today, items, total };
+}
+
+function exportClaimExcel() {
+  const d = getClaimFormData();
+  if (!d.items.length) { toast('Отметьте хотя бы одну позицию / 请至少选择一个品种'); return; }
+
+  const wb  = XLSX.utils.book_new();
+  const aoa = [];
+
+  // Header block
+  aoa.push(['ПРЕТЕНЗИЯ / CLAIM / 投诉书']);
+  aoa.push([]);
+  aoa.push(['Клиент / Client / 客户:', d.client]);
+  aoa.push(['Накладная / Waybill / 出货单:', d.waybillNum]);
+  aoa.push(['Заказ / Order / 订单:', '#' + d.orderNum]);
+  aoa.push(['Дата / Date / 日期:', d.today]);
+  aoa.push([]);
+  aoa.push(['Общие замечания / General remarks / 总体意见:']);
+  aoa.push([d.desc]);
+  aoa.push([]);
+
+  // Items table header
+  aoa.push(['№', 'Наименование / 花卉名称', 'Тип проблемы / 问题类型', 'Кол-во кор. / 箱数', '¥ за кор.', 'Сумма / 金额 ¥', 'Комментарий / 备注']);
+
+  d.items.forEach((item, i) => {
+    aoa.push([i+1, item.name, item.type, item.qty,
+      item.price ? item.price.toFixed(2) : '—',
+      item.subtotal ? item.subtotal.toFixed(2) : '—',
+      item.comment]);
+  });
+
+  aoa.push([]);
+  aoa.push(['', '', '', '', 'ИТОГО / TOTAL / 合计:', d.total.toFixed(2), '']);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // Column widths
+  ws['!cols'] = [{wch:4},{wch:32},{wch:22},{wch:14},{wch:12},{wch:14},{wch:36}];
+
+  // Merge title
+  ws['!merges'] = [
+    {s:{r:0,c:0},e:{r:0,c:6}},
+    {s:{r:7,c:0},e:{r:7,c:6}},
+    {s:{r:8,c:0},e:{r:8,c:6}},
+  ];
+
+  // Styles
+  if (ws['A1']) ws['A1'].s = { font:{bold:true,sz:16}, alignment:{horizontal:'center'} };
+
+  const headerRow = 11; // 1-based
+  ['A','B','C','D','E','F','G'].forEach(col => {
+    const addr = col + headerRow;
+    if (ws[addr]) ws[addr].s = {
+      font:{bold:true,color:{rgb:'FFFFFF'}},
+      fill:{fgColor:{rgb:'1B4332'}},
+      alignment:{horizontal:'center',vertical:'center',wrapText:true},
+      border:{bottom:{style:'thin',color:{rgb:'AAAAAA'}}}
+    };
+  });
+
+  // Data rows
+  for (let r = headerRow+1; r <= headerRow + d.items.length; r++) {
+    ['D','E','F'].forEach(col => {
+      const addr = col+r;
+      if (ws[addr]) ws[addr].s = {alignment:{horizontal:'center'}};
+    });
+    // Alternating rows
+    if ((r - headerRow) % 2 === 0) {
+      ['A','B','C','D','E','F','G'].forEach(col => {
+        const addr = col+r;
+        if (!ws[addr]) ws[addr] = {v:'',t:'s'};
+        ws[addr].s = Object.assign({}, ws[addr].s||{}, {fill:{fgColor:{rgb:'F0FDF4'}}});
+      });
+    }
+  }
+
+  // Total row style
+  const totRow = headerRow + d.items.length + 2;
+  const totAddr = 'F' + totRow;
+  if (ws[totAddr]) ws[totAddr].s = {font:{bold:true,sz:13},alignment:{horizontal:'center'}};
+  const totLabel = 'E' + totRow;
+  if (ws[totLabel]) ws[totLabel].s = {font:{bold:true},alignment:{horizontal:'right'}};
+
+  ws['!rows'] = [{hpt:24},{hpt:6},{hpt:18},{hpt:18},{hpt:18},{hpt:18},{hpt:6},{hpt:16},{hpt:40},{hpt:6},{hpt:6},{hpt:32}];
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Претензия');
+  XLSX.writeFile(wb, `Претензия_${d.orderNum}_${d.today.replace(/\./g,'-')}.xlsx`);
+  toast('📊 Excel скачан / 已下载');
+}
+
+function exportClaimPDF() {
+  const d = getClaimFormData();
+  if (!d.items.length) { toast('Отметьте хотя бы одну позицию / 请至少选择一个品种'); return; }
+
+  const typeMap_cn = { quality:'质量差', quantity:'数量不足', wrong:'发货错误', damaged:'运输损坏' };
+  const typeMap_en = { quality:'Poor quality', quantity:'Shortage', wrong:'Wrong item', damaged:'Damaged' };
+
+  const itemRows = d.items.map((item, i) => `
+    <tr style="background:${i%2?'#f0fdf4':'#fff'}">
+      <td style="text-align:center;padding:8px 10px;border:1px solid #e0e0e0">${i+1}</td>
+      <td style="padding:8px 10px;border:1px solid #e0e0e0;font-weight:600">${item.name}</td>
+      <td style="padding:8px 10px;border:1px solid #e0e0e0;color:#dc2626">${item.type}<br><span style="font-size:9px;color:#999">${typeMap_cn[item.type]||''}</span></td>
+      <td style="text-align:center;padding:8px 10px;border:1px solid #e0e0e0;font-weight:700">${item.qty}</td>
+      <td style="text-align:center;padding:8px 10px;border:1px solid #e0e0e0">${item.price?'¥'+item.price.toFixed(2):'—'}</td>
+      <td style="text-align:center;padding:8px 10px;border:1px solid #e0e0e0;font-weight:700;color:#1b4332">${item.subtotal?'¥'+item.subtotal.toFixed(2):'—'}</td>
+      <td style="padding:8px 10px;border:1px solid #e0e0e0;font-size:11px;color:#555">${item.comment||''}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>Претензия ${d.orderNum}</title>
+  <style>
+    @page { size: A4; margin: 20mm 18mm; }
+    body { font-family: Arial, sans-serif; color: #111; font-size: 12px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #1b4332; }
+    .logo { font-size: 22px; font-weight: 700; color: #1b4332; letter-spacing: .03em; }
+    .logo-sub { font-size: 10px; color: #555; margin-top: 2px; }
+    .title { font-size: 20px; font-weight: 700; color: #1b4332; margin-bottom: 20px; }
+    .title-cn { font-size: 13px; color: #555; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-bottom: 20px; background: #f9fafb; padding: 14px 16px; border-radius: 8px; border: 1px solid #e5e7eb; }
+    .meta-item { display: flex; gap: 8px; }
+    .meta-k { font-size: 10px; font-weight: 700; color: #6b7280; letter-spacing: .05em; white-space: nowrap; }
+    .meta-v { font-size: 12px; font-weight: 600; color: #111; }
+    .section-title { font-size: 11px; font-weight: 700; color: #6b7280; letter-spacing: .06em; text-transform: uppercase; margin: 18px 0 8px; }
+    .desc-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px 14px; font-size: 12px; line-height: 1.6; margin-bottom: 18px; }
+    table { border-collapse: collapse; width: 100%; font-size: 11px; margin-bottom: 6px; }
+    thead tr { background: #1b4332; color: #fff; }
+    thead th { padding: 9px 10px; text-align: left; font-size: 10px; letter-spacing: .04em; }
+    .total-row { background: #1b4332 !important; color: #fff; }
+    .total-row td { padding: 10px; font-weight: 700; font-size: 13px; border: none !important; }
+    .footer { margin-top: 36px; padding-top: 16px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; font-size: 10px; color: #9ca3af; }
+    .sign-block { margin-top: 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .sign-line { border-bottom: 1px solid #111; height: 28px; margin-bottom: 4px; }
+    .sign-label { font-size: 10px; color: #6b7280; }
+    @media print { button { display: none !important; } }
+  </style>
+  </head><body>
+  <div class="header">
+    <div>
+      <div class="logo">AMMA FLOWERS</div>
+      <div class="logo-sub">Wholesale Flower Import / 鲜花批发进口</div>
+    </div>
+    <div style="text-align:right;font-size:11px;color:#555">
+      <div style="font-weight:700;font-size:13px;color:#1b4332">ПРЕТЕНЗИЯ / CLAIM</div>
+      <div>投诉书</div>
+      <div style="margin-top:4px">${d.today}</div>
+    </div>
+  </div>
+
+  <div class="meta-grid">
+    <div class="meta-item"><span class="meta-k">КЛИЕНТ / CLIENT:</span><span class="meta-v">${d.client}</span></div>
+    <div class="meta-item"><span class="meta-k">НАКЛАДНАЯ / WAYBILL:</span><span class="meta-v">${d.waybillNum}</span></div>
+    <div class="meta-item"><span class="meta-k">ЗАКАЗ / ORDER:</span><span class="meta-v">#${d.orderNum}</span></div>
+    <div class="meta-item"><span class="meta-k">ДАТА / DATE:</span><span class="meta-v">${d.today}</span></div>
+  </div>
+
+  ${d.desc ? `<div class="section-title">Общие замечания / General remarks / 总体意见</div>
+  <div class="desc-box">${d.desc}</div>` : ''}
+
+  <div class="section-title">Проблемные позиции / Defective items / 问题品种 (${d.items.length})</div>
+  <table>
+    <thead><tr>
+      <th style="width:32px">№</th>
+      <th>Наименование / 花卉名称</th>
+      <th style="width:110px">Тип / Type / 类型</th>
+      <th style="width:60px;text-align:center">Кор. / 箱</th>
+      <th style="width:80px;text-align:center">¥/кор.</th>
+      <th style="width:80px;text-align:center">Сумма / 金额</th>
+      <th>Комментарий / 备注</th>
+    </tr></thead>
+    <tbody>${itemRows}</tbody>
+    <tr class="total-row">
+      <td colspan="5" style="text-align:right">ИТОГО / TOTAL / 合计:</td>
+      <td style="text-align:center">¥${d.total.toFixed(2)}</td>
+      <td></td>
+    </tr>
+  </table>
+
+  <div class="sign-block">
+    <div>
+      <div class="sign-line"></div>
+      <div class="sign-label">Подпись клиента / Client signature / 客户签名 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Дата / 日期</div>
+    </div>
+    <div>
+      <div class="sign-line"></div>
+      <div class="sign-label">Подпись менеджера / Manager signature / 经理签名 &nbsp;&nbsp; Дата / 日期</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>AMMA FLOWERS · Kunming, China / 昆明, 中国</span>
+    <span>Претензия / Claim #${d.orderNum} · ${d.today}</span>
+  </div>
+
+  '<scr'+'ipt>setTimeout(()=>window.print(),400)</scr'+'ipt>'
+  </body></html>`;
+
+  const win = window.open('', '_blank', 'width=900,height=750');
+  win.document.write(html);
+  win.document.close();
+  toast('📄 PDF открыт для печати / PDF已打开');
 }
 
 function previewClaimPhotos(input) {
-  const preview = document.getElementById('claim-photos-preview');
   preview.innerHTML = '';
   const files = Array.from(input.files).slice(0, 5);
   files.forEach(file => {
@@ -5924,11 +6227,26 @@ async function submitClaim() {
   const waybillNum = opt?.dataset?.waybillNum  || '';
   const orderNum   = opt?.dataset?.orderNum    || '';
 
-  // Collect checked problem items
+  // Collect checked problem items with qty and comment
   const claimItems = [];
+  let totalAmount = 0;
   document.querySelectorAll('.claim-item-cb:checked').forEach(cb => {
-    const typeEl = document.querySelector(`.claim-item-type[data-idx="${cb.dataset.idx}"]`);
-    claimItems.push({ name: cb.dataset.name, type: typeEl?.value || 'quality' });
+    const idx     = cb.dataset.idx;
+    const typeEl  = document.querySelector(`.claim-item-type[data-idx="${idx}"]`);
+    const qtyEl   = document.querySelector(`.claim-item-qty[data-idx="${idx}"]`);
+    const cmtEl   = document.querySelector(`.claim-item-comment[data-idx="${idx}"]`);
+    const price   = parseFloat(cb.dataset.price) || 0;
+    const qty     = parseInt(qtyEl?.value) || 1;
+    const sub     = price * qty;
+    totalAmount  += sub;
+    claimItems.push({
+      name:     cb.dataset.name,
+      type:     typeEl?.value || 'quality',
+      qty_boxes: qty,
+      price_per_box: price,
+      subtotal: sub,
+      comment:  cmtEl?.value?.trim() || ''
+    });
   });
 
   // Upload photos
@@ -5960,6 +6278,7 @@ async function submitClaim() {
     description:  desc,
     items_json:   JSON.stringify(claimItems),
     photos_json:  JSON.stringify(photosUrls),
+    total_amount: totalAmount,
     status:       'new',
     created_at:   new Date().toISOString()
   });
