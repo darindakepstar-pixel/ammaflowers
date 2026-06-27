@@ -3696,6 +3696,43 @@ async function saveWaybill(sendToClient = false) {
 
 async function sendWaybill() {
   await saveWaybill(true);
+
+  // After saving, notify client and update order status
+  const order = window._wbOrder;
+  if (!order) return;
+
+  try {
+    // Update order status to 'sent'
+    await sb.from('orders')
+      .update({ status: 'sent', updated_at: new Date().toISOString() })
+      .eq('id', order.id);
+
+    // Notify client
+    if (order.client_id) {
+      await sendNotification(
+        order.client_id,
+        `🚚 Заказ #${order.order_number} отправлен / 已发货`,
+        'Накладная готова. Вы можете посмотреть её в разделе «Накладные» / 货运单已准备好，请查看"出货单"',
+        '🚚'
+      );
+    }
+
+    // Notify managers
+    const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+    for (const m of (mgrs || [])) {
+      if (m.id !== currentUser.id) {
+        await sendNotification(
+          m.id,
+          `📤 Накладная отправлена: заказ #${order.order_number}`,
+          `Клиент уведомлён / 已通知客户`, '📤'
+        );
+      }
+    }
+
+    toast(`✅ Клиент уведомлён, статус заказа → Отправлен / 客户已收到通知`);
+  } catch(e) {
+    console.warn('sendWaybill notify error:', e);
+  }
 }
 
 // ── Export waybill to Excel ───────────────────────────────────────
@@ -5685,124 +5722,174 @@ async function loadMyClaims() {
   if (!wrap) return;
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
-  // Load sent orders (claimable)
-  const { data: orders } = await sb.from('orders')
-    .select('id,order_number,date_order,date_ship,order_items(flower_snapshot,flower:flowers(ru,cn,photo_url))')
-    .eq('client_id', currentUser.id)
-    .eq('status', 'sent')
-    .order('date_order', { ascending: false });
+  // Load waybills sent to this client (these are claimable)
+  const [waybillsRes, claimsRes] = await Promise.all([
+    sb.from('waybills')
+      .select('id,waybill_number,created_at,order_id,order:orders(order_number,date_ship,order_items(flower_snapshot,flower:flowers(ru,cn,photo_url)))')
+      .eq('client_id', currentUser.id)
+      .eq('status', 'sent')
+      .order('created_at', { ascending: false }),
+    sb.from('claims')
+      .select('*')
+      .eq('client_id', currentUser.id)
+      .order('created_at', { ascending: false })
+  ]);
 
-  // Load existing claims
-  const { data: claims } = await sb.from('claims')
-    .select('*').eq('client_id', currentUser.id)
-    .order('created_at', { ascending: false });
-
-  const existingClaimOrderIds = new Set((claims||[]).map(c => c.order_id));
+  const waybills = waybillsRes.data || [];
+  const claims   = claimsRes.data || [];
+  const claimedWaybillIds = new Set(claims.map(c => c.waybill_id).filter(Boolean));
+  // Also check by order_id for backwards compat
+  const claimedOrderIds = new Set(claims.map(c => c.order_id).filter(Boolean));
 
   let html = '';
 
-  // Existing claims
-  if (claims?.length) {
-    html += `<div style="font-size:13px;font-weight:700;color:var(--sage-d);margin-bottom:10px">Мои претензии / 我的投诉</div>`;
-    html += (claims).map(c => {
-      const statusMap = { new:'🆕 Новая', review:'🔍 На рассмотрении', resolved:'✅ Решена', rejected:'❌ Отклонена' };
-      const statusC   = { new:'var(--blue)', review:'#d97706', resolved:'var(--sage-d)', rejected:'var(--red)' };
-      const st = statusMap[c.status]||c.status;
-      const sc = statusC[c.status]||'var(--mid)';
+  // ── Existing claims ──
+  if (claims.length) {
+    html += `<div style="font-size:13px;font-weight:700;color:var(--sage-d);margin-bottom:10px">Мои претензии / 我的投诉 (${claims.length})</div>`;
+    const statusMap = { new:'🆕 Новая / 新', review:'🔍 На рассмотрении / 审核中', resolved:'✅ Решена / 已处理', rejected:'❌ Отклонена / 已拒绝' };
+    const statusC   = { new:'var(--blue)', review:'#d97706', resolved:'var(--sage-d)', rejected:'var(--red)' };
+    html += claims.map(c => {
+      const sc  = statusC[c.status] || 'var(--mid)';
+      const st  = statusMap[c.status] || c.status;
       const photos = (() => { try { return JSON.parse(c.photos_json||'[]'); } catch{ return []; } })();
+      const items  = (() => { try { return JSON.parse(c.items_json||'[]');  } catch{ return []; } })();
       return `<div class="card" style="border-left:4px solid ${sc};margin-bottom:10px">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px">
           <div>
             <span style="font-weight:700;color:var(--sage-d)">Заказ #${c.order_number||'—'}</span>
             <span class="badge" style="background:${sc}20;color:${sc};margin-left:8px">${st}</span>
-            <div style="font-size:11px;color:var(--mid);margin-top:4px">${new Date(c.created_at).toLocaleDateString('ru-RU')}</div>
+            <div style="font-size:11px;color:var(--mid);margin-top:3px">${new Date(c.created_at).toLocaleDateString('ru-RU')}</div>
           </div>
         </div>
-        <div style="font-size:12px;margin-top:8px;color:var(--text)">${c.description||''}</div>
-        ${photos.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${photos.map(p=>`<img src="${p}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`).join('')}</div>` : ''}
-        ${c.manager_reply ? `<div style="margin-top:8px;padding:8px 10px;background:var(--sage-l);border-radius:6px;border-left:3px solid var(--sage-d)"><b style="font-size:10px;color:var(--sage-d)">Ответ менеджера / 经理回复:</b><div style="font-size:12px;margin-top:3px">${c.manager_reply}</div></div>` : ''}
+        ${items.length ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin:8px 0">
+          ${items.map(i=>`<span style="font-size:10px;background:#fff3e0;color:#e65100;padding:2px 8px;border-radius:10px">⚠ ${i.name}</span>`).join('')}
+        </div>` : ''}
+        <div style="font-size:12px;margin:6px 0">${c.description||''}</div>
+        ${photos.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+          ${photos.map(p=>`<img src="${p}" style="width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${p}','_blank')">`).join('')}
+        </div>` : ''}
+        ${c.manager_reply ? `<div style="margin-top:10px;padding:8px 12px;background:var(--sage-l);border-radius:6px;border-left:3px solid var(--sage-d)">
+          <b style="font-size:10px;color:var(--sage-d)">💬 Ответ менеджера / 经理回复:</b>
+          <div style="font-size:12px;margin-top:4px">${c.manager_reply}</div>
+        </div>` : ''}
       </div>`;
     }).join('');
   }
 
-  // New claim form
-  if (orders?.length) {
-    const claimableOrders = orders.filter(o => !existingClaimOrderIds.has(o.id));
-    if (claimableOrders.length) {
-      html += `
-        <div style="font-size:13px;font-weight:700;color:var(--sage-d);margin:16px 0 10px">
-          + Новая претензия / 新投诉
-        </div>
-        <div class="card" style="border-left:4px solid var(--red)">
-          <div class="field-row">
-            <div class="field">
-              <label>Заказ / 订单</label>
-              <select class="inp" id="claim-order-select" onchange="buildClaimItems()">
-                <option value="">— Выберите заказ / 请选择 —</option>
-                ${claimableOrders.map(o=>`<option value="${o.id}" data-items='${JSON.stringify((o.order_items||[]).map(i=>({ru:i.flower?.ru||i.flower_snapshot?.ru||'?',cn:i.flower?.cn||i.flower_snapshot?.cn||'',photo:i.flower?.photo_url||''})))}'>#${o.order_number} — ${o.date_ship||o.date_order||''}</option>`).join('')}
-              </select>
-            </div>
-          </div>
-          <div id="claim-items-wrap" style="margin:10px 0"></div>
+  // ── New claim form ──
+  const claimableWaybills = waybills.filter(w =>
+    !claimedWaybillIds.has(w.id) && !claimedOrderIds.has(w.order_id)
+  );
+
+  if (claimableWaybills.length) {
+    html += `
+      <div style="font-size:13px;font-weight:700;color:var(--sage-d);margin:${claims.length?'20px':0} 0 10px">
+        + Новая претензия / 新投诉
+      </div>
+      <div style="font-size:12px;color:var(--mid);margin-bottom:12px;padding:8px 12px;background:var(--sage-l);border-radius:6px">
+        💡 Претензию можно подать в течение 3 дней после получения товара / 收货后3天内可提交投诉
+      </div>
+      <div class="card" style="border-left:4px solid var(--red)">
+        <div class="field-row">
           <div class="field">
-            <label>Описание проблемы / 问题描述</label>
-            <textarea class="inp" id="claim-description" rows="3" placeholder="Опишите проблему с качеством цветов / 描述花卉质量问题..." style="width:100%;resize:vertical"></textarea>
+            <label>Накладная / заказ / 出货单·订单</label>
+            <select class="inp" id="claim-order-select" onchange="buildClaimItems()">
+              <option value="">— Выберите / 请选择 —</option>
+              ${claimableWaybills.map(w => {
+                const orderNum  = w.order?.order_number || '?';
+                const shipDate  = w.order?.date_ship || '';
+                const items     = (w.order?.order_items||[]).map(i=>({
+                  ru:    i.flower?.ru    || i.flower_snapshot?.ru    || '?',
+                  cn:    i.flower?.cn    || i.flower_snapshot?.cn    || '',
+                  photo: i.flower?.photo_url || ''
+                }));
+                return `<option value="${w.order_id}"
+                  data-waybill-id="${w.id}"
+                  data-waybill-num="${w.waybill_number}"
+                  data-order-num="${orderNum}"
+                  data-items='${JSON.stringify(items).replace(/'/g,"&#39;")}'>
+                  ${w.waybill_number} · Заказ #${orderNum}${shipDate?' · '+shipDate:''}
+                </option>`;
+              }).join('')}
+            </select>
           </div>
-          <div class="field" style="margin-top:10px">
-            <label>Фотографии / 照片 (до 5 фото, каждое до 5MB)</label>
-            <input type="file" id="claim-photos" multiple accept="image/*" style="margin-top:6px"
-              onchange="previewClaimPhotos(this)">
-            <div id="claim-photos-preview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
-          </div>
-          <div style="display:flex;justify-content:flex-end;margin-top:14px">
-            <button class="btn btn-danger" onclick="submitClaim()">📨 Отправить претензию / 提交投诉</button>
-          </div>
-        </div>`;
-    }
-  } else {
-    html += `<div class="empty-state"><div class="icon">✅</div><p>Нет доставленных заказов для претензии / 暂无已发货订单</p></div>`;
+        </div>
+        <div id="claim-items-wrap" style="margin:10px 0"></div>
+        <div class="field">
+          <label>Описание проблемы / 问题描述 <span style="color:var(--red)">*</span></label>
+          <textarea class="inp" id="claim-description" rows="3"
+            placeholder="Опишите детально: какие цветы, в чём проблема, сколько штук / 请详细描述：什么花、什么问题、数量"
+            style="width:100%;resize:vertical"></textarea>
+        </div>
+        <div class="field" style="margin-top:10px">
+          <label>Фотографии / 照片 <span style="font-size:10px;color:var(--mid)">(до 5 фото / 最多5张)</span></label>
+          <input type="file" id="claim-photos" multiple accept="image/*" style="margin-top:6px"
+            onchange="previewClaimPhotos(this)">
+          <div id="claim-photos-preview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:14px">
+          <button class="btn btn-danger" onclick="submitClaim()">
+            📨 Отправить претензию / 提交投诉
+          </button>
+        </div>
+      </div>`;
+  } else if (!claims.length) {
+    html += `<div class="empty-state">
+      <div class="icon">✅</div>
+      <p>Нет доставленных заказов для претензии / 暂无已送达订单</p>
+      <p style="font-size:12px;color:var(--light)">Претензию можно подать после получения накладной / 收到出货单后可提交投诉</p>
+    </div>`;
   }
 
-  wrap.innerHTML = html || '<div class="empty-state"><div class="icon">📋</div><p>Нет претензий / 暂无投诉</p></div>';
+  wrap.innerHTML = html;
 }
 
 function buildClaimItems() {
   const sel  = document.getElementById('claim-order-select');
   const wrap = document.getElementById('claim-items-wrap');
-  if (!sel?.value || !wrap) return;
+  if (!sel?.value || !wrap) { if(wrap) wrap.innerHTML=''; return; }
   const opt   = sel.options[sel.selectedIndex];
   let items = [];
   try { items = JSON.parse(opt.dataset.items||'[]'); } catch{}
   if (!items.length) { wrap.innerHTML=''; return; }
 
   wrap.innerHTML = `
-    <div style="font-size:11px;font-weight:700;color:var(--mid);margin-bottom:6px">Отметьте проблемные позиции / 标记有问题的品种:</div>
+    <div style="font-size:11px;font-weight:700;color:var(--mid);margin-bottom:6px">
+      Отметьте проблемные позиции / 标记有问题的品种:
+    </div>
     ${items.map((item, idx) => `
-      <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;margin-bottom:5px;background:var(--bg)">
-        ${item.photo ? `<img src="${item.photo}" style="width:30px;height:30px;object-fit:cover;border-radius:4px;flex-shrink:0">` : '<div style="width:30px;height:30px;background:var(--sage-l);border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px">🌸</div>'}
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;margin-bottom:5px;background:var(--bg)">
+        ${item.photo ? `<img src="${item.photo}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0">` :
+          '<div style="width:32px;height:32px;background:var(--sage-l);border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px">🌸</div>'}
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;font-weight:600">${item.ru}</div>
-          <div style="font-size:10px;color:var(--mid)">${item.cn||''}</div>
+          ${item.cn ? `<div style="font-size:10px;color:var(--mid)">${item.cn}</div>` : ''}
         </div>
-        <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
+        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
           <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer">
-            <input type="checkbox" class="claim-item-cb" data-name="${item.ru}" data-idx="${idx}" style="width:14px;height:14px;accent-color:var(--red)">
-            Проблема / 有问题
+            <input type="checkbox" class="claim-item-cb" data-name="${item.ru}" data-idx="${idx}"
+              style="width:14px;height:14px;accent-color:var(--red)"
+              onchange="this.closest('div.claim-row-wrap')?.querySelector('.claim-item-type')?.style.setProperty('display', this.checked?'':'none')">
+            Есть проблема / 有问题
           </label>
-          <select class="inp claim-item-type" data-idx="${idx}" style="font-size:10px;padding:2px 6px;display:none">
+          <select class="inp claim-item-type" data-idx="${idx}"
+            style="font-size:10px;padding:2px 6px;display:none">
             <option value="quality">Некачественный / 质量差</option>
             <option value="quantity">Нехватка / 数量不足</option>
             <option value="wrong">Не тот товар / 发货错误</option>
-            <option value="damaged">Повреждён / 损坏</option>
+            <option value="damaged">Повреждён при транспортировке / 运输损坏</option>
           </select>
         </div>
       </div>`).join('')}`;
 
-  // Show/hide type selector on checkbox change
+  // Fix: wrap each row so JS can find sibling
+  wrap.querySelectorAll('[style*="display:flex;align-items:center;gap:8px;padding:7px"]').forEach(row => {
+    row.classList.add('claim-row-wrap');
+  });
   wrap.querySelectorAll('.claim-item-cb').forEach(cb => {
     cb.addEventListener('change', () => {
-      const sel = wrap.querySelector(`.claim-item-type[data-idx="${cb.dataset.idx}"]`);
-      if (sel) sel.style.display = cb.checked ? '' : 'none';
+      const typeEl = wrap.querySelector(`.claim-item-type[data-idx="${cb.dataset.idx}"]`);
+      if (typeEl) typeEl.style.display = cb.checked ? '' : 'none';
     });
   });
 }
@@ -5824,41 +5911,52 @@ function previewClaimPhotos(input) {
 }
 
 async function submitClaim() {
-  const orderId  = document.getElementById('claim-order-select')?.value;
+  const sel      = document.getElementById('claim-order-select');
+  const orderId  = sel?.value;
   const desc     = document.getElementById('claim-description')?.value?.trim();
   const photoInp = document.getElementById('claim-photos');
 
-  if (!orderId) { toast('Выберите заказ / 请选择订单'); return; }
+  if (!orderId) { toast('Выберите накладную / заказ / 请选择出货单'); return; }
   if (!desc)    { toast('Опишите проблему / 请描述问题'); return; }
 
-  // Collect checked items
+  const opt        = sel.options[sel.selectedIndex];
+  const waybillId  = opt?.dataset?.waybillId  || null;
+  const waybillNum = opt?.dataset?.waybillNum  || '';
+  const orderNum   = opt?.dataset?.orderNum    || '';
+
+  // Collect checked problem items
   const claimItems = [];
   document.querySelectorAll('.claim-item-cb:checked').forEach(cb => {
     const typeEl = document.querySelector(`.claim-item-type[data-idx="${cb.dataset.idx}"]`);
     claimItems.push({ name: cb.dataset.name, type: typeEl?.value || 'quality' });
   });
 
-  // Get order number from select
-  const sel = document.getElementById('claim-order-select');
-  const orderNum = sel?.options[sel.selectedIndex]?.text?.match(/#(\S+)/)?.[1] || '';
-
-  // Upload photos to Supabase Storage
+  // Upload photos
   const photosUrls = [];
   const files = Array.from(photoInp?.files || []).slice(0, 5);
-  for (const file of files) {
-    const ext  = file.name.split('.').pop();
-    const path = `claims/${currentUser.id}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-    const { data: up, error: upErr } = await sb.storage.from('claim-photos').upload(path, file, { upsert: true });
-    if (!upErr) {
-      const { data: urlData } = sb.storage.from('claim-photos').getPublicUrl(path);
-      if (urlData?.publicUrl) photosUrls.push(urlData.publicUrl);
+
+  if (files.length) {
+    toast('⏳ Загружаем фото / 上传照片中...');
+    for (const file of files) {
+      const ext  = file.name.split('.').pop().toLowerCase();
+      const path = `claims/${currentUser.id}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { data: up, error: upErr } = await sb.storage
+        .from('claim-photos').upload(path, file, { upsert: true, contentType: file.type });
+      if (!upErr) {
+        const { data: urlData } = sb.storage.from('claim-photos').getPublicUrl(path);
+        if (urlData?.publicUrl) photosUrls.push(urlData.publicUrl);
+      }
     }
   }
+
+  toast('⏳ Отправляем претензию / 提交中...');
 
   const { error } = await sb.from('claims').insert({
     client_id:    currentUser.id,
     order_id:     orderId,
+    waybill_id:   waybillId,
     order_number: orderNum,
+    waybill_number: waybillNum,
     description:  desc,
     items_json:   JSON.stringify(claimItems),
     photos_json:  JSON.stringify(photosUrls),
@@ -5867,22 +5965,34 @@ async function submitClaim() {
   });
 
   if (error) {
-    // Table might not exist yet
-    toast('⚠️ Выполните SQL create_claims.sql в Supabase / 请先执行 create_claims.sql');
-    return;
+    if (error.message.includes('waybill_id') || error.message.includes('column')) {
+      // Column doesn't exist yet - try without waybill fields
+      const { error: e2 } = await sb.from('claims').insert({
+        client_id: currentUser.id, order_id: orderId,
+        order_number: orderNum, description: desc,
+        items_json: JSON.stringify(claimItems),
+        photos_json: JSON.stringify(photosUrls),
+        status: 'new', created_at: new Date().toISOString()
+      });
+      if (e2) { toast('⚠️ Ошибка: ' + e2.message); return; }
+    } else {
+      toast('⚠️ Выполните create_claims.sql в Supabase: ' + error.message);
+      return;
+    }
   }
 
   // Notify managers
   try {
     const { data: mgrs } = await sb.from('users').select('id').eq('role','manager');
+    const clientName = currentUser.company_name || currentUser.login;
     for (const m of (mgrs||[])) {
       await sendNotification(m.id,
-        `⚠️ Новая претензия от ${currentUser.company_name||currentUser.login}`,
+        `⚠️ Претензия от ${clientName} / 投诉`,
         `Заказ #${orderNum}: ${desc.slice(0,80)}`, '⚠️');
     }
   } catch(e) {}
 
-  toast('✅ Претензия отправлена / 投诉已提交');
+  toast('✅ Претензия отправлена! Менеджер получил уведомление / 投诉已提交');
   loadMyClaims();
 }
 
