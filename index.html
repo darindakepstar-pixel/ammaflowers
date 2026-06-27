@@ -723,6 +723,50 @@ td.L{text-align:left}
     </div>
   </div>
 
+  <!-- PAGE: DASHBOARD (manager) -->
+  <div class="page" id="page-dashboard">
+    <div class="page-inner">
+      <div class="page-title">Дашборд / 数据看板 / Dashboard</div>
+      <div class="ctrl-bar" style="flex-wrap:wrap;gap:10px;margin-bottom:16px">
+        <select class="inp" id="dash-period" onchange="loadDashboard()" style="min-width:160px">
+          <option value="7">Последние 7 дней / 最近7天</option>
+          <option value="30" selected>Последние 30 дней / 最近30天</option>
+          <option value="90">Последние 90 дней / 最近90天</option>
+          <option value="365">Год / 年</option>
+        </select>
+        <button class="btn btn-secondary" onclick="loadDashboard()">🔄 Обновить / 刷新</button>
+      </div>
+      <div id="dashboard-content"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
+  <!-- PAGE: CLIENT CLAIMS (client submits) -->
+  <div class="page" id="page-my-claims">
+    <div class="page-inner">
+      <div class="page-title">Претензии / 投诉 / Claims</div>
+      <div class="page-sub">Сообщите о проблемах с качеством товара / 质量问题投诉</div>
+      <div id="my-claims-content"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
+  <!-- PAGE: CLAIMS LIST (manager) -->
+  <div class="page" id="page-claims">
+    <div class="page-inner">
+      <div class="page-title">Претензии клиентов / 客户投诉 / Client Claims</div>
+      <div class="ctrl-bar" style="flex-wrap:wrap;gap:10px;margin-bottom:12px">
+        <select class="inp" id="claims-status-filter" onchange="loadClaims()" style="min-width:150px">
+          <option value="">Все / 全部</option>
+          <option value="new">Новые / 新</option>
+          <option value="review">На рассмотрении / 审核中</option>
+          <option value="resolved">Решены / 已处理</option>
+          <option value="rejected">Отклонены / 已拒绝</option>
+        </select>
+        <button class="btn btn-secondary" onclick="loadClaims()">🔄 Обновить / 刷新</button>
+      </div>
+      <div id="claims-list"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
 </div><!-- /screen-app -->
 
 <!-- ══════════ MODALS ══════════ -->
@@ -853,6 +897,8 @@ async function initApp() {
       <div class="nav-tab" onclick="showPage('waybills',this)">📦 Накладные / 出货单 <span class="cnt" id="cnt-waybills">0</span></div>
       <div class="nav-tab" onclick="showPage('labels',this)">🏷 Этикетки / 标签</div>
       <div class="nav-tab" onclick="showPage('clients',this)">👥 Клиенты / 客户</div>
+      <div class="nav-tab" onclick="showPage('claims',this)">⚠️ Претензии <span class="cnt" id="cnt-claims" style="display:none">0</span></div>
+      <div class="nav-tab" onclick="showPage('dashboard',this)">📊 Дашборд</div>
       <div class="nav-tab" onclick="showPage('chat',this)">💬 Чат / 聊天 <span class="cnt" id="cnt-chat" style="display:none">0</span></div>
       <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
     `;
@@ -878,6 +924,7 @@ async function initApp() {
       <div class="nav-tab" onclick="showPage('my-order',this)">🛒 Заказ / 订单 <span class="cnt" id="cnt-cart">0</span></div>
       <div class="nav-tab" onclick="showPage('my-waybills',this)">📦 Накладные / 出货单 <span class="cnt" id="cnt-waybills">0</span></div>
       <div class="nav-tab" onclick="showPage('my-invoices',this)">🧾 Счета / 发票</div>
+      <div class="nav-tab" onclick="showPage('my-claims',this)">⚠️ Претензии / 投诉</div>
       <div class="nav-tab" onclick="showPage('chat',this)">💬 Чат / 聊天 <span class="cnt" id="cnt-chat" style="display:none">0</span></div>
       <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
     `;
@@ -960,6 +1007,9 @@ function showPage(name, tabEl) {
     const el = document.getElementById('cnt-chat');
     if (el) { el.textContent = '0'; el.style.display = 'none'; }
   }
+  if (name === 'dashboard') loadDashboard();
+  if (name === 'claims') loadClaims();
+  if (name === 'my-claims') loadMyClaims();
 }
 
 function showDetailPage(name) {
@@ -5487,6 +5537,434 @@ async function sendNotification(userId, title, body, icon) {
     user_id: userId, title, body, icon: icon||'🔔', is_read: false,
     created_at: new Date().toISOString()
   });
+}
+
+// ══════════════════════════════════════════════════════════
+//  DASHBOARD — ДАШБОРД / 数据看板
+// ══════════════════════════════════════════════════════════
+async function loadDashboard() {
+  const wrap = document.getElementById('dashboard-content');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+  const days = parseInt(document.getElementById('dash-period')?.value || 30);
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0,10);
+
+  // Load all data in parallel
+  const [ordersRes, itemsRes, claimsRes] = await Promise.all([
+    sb.from('orders').select('id,order_number,status,date_order,client_id,client:users!orders_client_id_fkey(company_name,login)').gte('date_order', since),
+    sb.from('order_items').select('order_id,qty_boxes,subtotal,flower_snapshot,flower:flowers(ru,cn)'),
+    sb.from('claims').select('id,status,created_at').gte('created_at', since + 'T00:00:00')
+  ]);
+
+  const orders = ordersRes.data || [];
+  const allItems = itemsRes.data || [];
+  const claims  = claimsRes.data || [];
+
+  // ── KPI ──
+  const sentOrders   = orders.filter(o => ['sent','paid'].includes(o.status));
+  const activeOrders = orders.filter(o => ['pending_review','confirmed','invoiced'].includes(o.status));
+  const newClaims    = claims.filter(c => c.status === 'new').length;
+  const totalBoxes   = allItems.reduce((s,i) => s + (parseInt(i.qty_boxes)||0), 0);
+  const totalRev     = allItems.reduce((s,i) => s + (parseFloat(i.subtotal)||0), 0);
+
+  // ── Top clients ──
+  const clientBoxes = {};
+  orders.forEach(o => {
+    const name = o.client?.company_name || o.client?.login || '?';
+    const items = allItems.filter(i => i.order_id === o.id);
+    const boxes = items.reduce((s,i) => s + (parseInt(i.qty_boxes)||0), 0);
+    clientBoxes[name] = (clientBoxes[name]||0) + boxes;
+  });
+  const topClients = Object.entries(clientBoxes).sort((a,b)=>b[1]-a[1]).slice(0,6);
+
+  // ── Top flowers ──
+  const flowerBoxes = {};
+  allItems.forEach(i => {
+    const name = i.flower?.ru || i.flower_snapshot?.ru || '?';
+    flowerBoxes[name] = (flowerBoxes[name]||0) + (parseInt(i.qty_boxes)||0);
+  });
+  const topFlowers = Object.entries(flowerBoxes).sort((a,b)=>b[1]-a[1]).slice(0,8);
+
+  // ── Status breakdown ──
+  const statusCount = {};
+  orders.forEach(o => { statusCount[o.status] = (statusCount[o.status]||0)+1; });
+
+  const maxClient = topClients[0]?.[1] || 1;
+  const maxFlower = topFlowers[0]?.[1] || 1;
+
+  const statusColors2 = {
+    pending_review:'#3b82f6', confirmed:'#1b4332', invoiced:'#d97706',
+    paid:'#10b981', sent:'#3b82f6', cancelled:'#ef4444', draft:'#9ca3af'
+  };
+
+  wrap.innerHTML = `
+    <!-- KPI Row -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:20px">
+      ${[
+        ['📦', 'Всего заказов', orders.length, '订单总数'],
+        ['✅', 'Отправлено', sentOrders.length, '已发货'],
+        ['⏳', 'В работе', activeOrders.length, '进行中'],
+        ['📊', 'Коробок отгружено', totalBoxes, '箱数'],
+        ['⚠️', 'Новых претензий', newClaims, '新投诉'],
+      ].map(([icon,ru,val,cn]) => `
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;text-align:center">
+          <div style="font-size:20px;margin-bottom:4px">${icon}</div>
+          <div style="font-size:22px;font-weight:700;color:var(--sage-d);font-family:var(--font-h)">${val}</div>
+          <div style="font-size:11px;color:var(--mid)">${ru}</div>
+          <div style="font-size:10px;color:var(--light)">${cn}</div>
+        </div>`).join('')}
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <!-- Top clients -->
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+        <div style="font-size:12px;font-weight:700;color:var(--sage-d);margin-bottom:10px">👤 Топ клиенты / 客户排名</div>
+        ${topClients.map(([name, boxes]) => `
+          <div style="margin-bottom:7px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">
+              <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${name}</span>
+              <span style="color:var(--sage-d);font-weight:700">${boxes} кор.</span>
+            </div>
+            <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+              <div style="height:100%;background:var(--sage-d);border-radius:3px;width:${Math.round(boxes/maxClient*100)}%"></div>
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <!-- Top flowers -->
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+        <div style="font-size:12px;font-weight:700;color:var(--sage-d);margin-bottom:10px">🌸 Топ цветы / 花卉排名</div>
+        ${topFlowers.map(([name, boxes]) => `
+          <div style="margin-bottom:7px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">
+              <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${name}</span>
+              <span style="color:var(--sage-d);font-weight:700">${boxes} кор.</span>
+            </div>
+            <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+              <div style="height:100%;background:#2d6a4f;border-radius:3px;width:${Math.round(boxes/maxFlower*100)}%"></div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <!-- Status breakdown -->
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:12px;font-weight:700;color:var(--sage-d);margin-bottom:10px">📋 Статусы заказов / 订单状态</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${Object.entries(statusCount).map(([s, n]) => `
+          <div style="background:${statusColors2[s]||'#888'}20;border:1px solid ${statusColors2[s]||'#888'}40;border-radius:8px;padding:6px 12px;text-align:center">
+            <div style="font-size:16px;font-weight:700;color:${statusColors2[s]||'#888'}">${n}</div>
+            <div style="font-size:10px;color:var(--mid)">${statusLabel(s).split('/')[0].trim()}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <!-- Active orders needing attention -->
+    ${activeOrders.length ? `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+      <div style="font-size:12px;font-weight:700;color:var(--sage-d);margin-bottom:10px">⏳ Требуют внимания / 需要处理 (${activeOrders.length})</div>
+      ${activeOrders.slice(0,8).map(o => `
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);cursor:pointer"
+             onclick="showPage('orders',document.querySelectorAll('.nav-tab')[1])">
+          <span style="font-size:12px;font-weight:700;color:var(--sage-d)">${o.order_number}</span>
+          <span class="badge badge-${o.status}" style="font-size:10px">${statusLabel(o.status).split('/')[0].trim()}</span>
+          <span style="font-size:11px;color:var(--mid);margin-left:auto">${o.client?.company_name||o.client?.login||'?'}</span>
+        </div>`).join('')}
+    </div>` : ''}
+  `;
+}
+
+// ══════════════════════════════════════════════════════════
+//  CLAIMS — ПРЕТЕНЗИИ / 投诉
+// ══════════════════════════════════════════════════════════
+
+// ── Client: view & submit claims ──
+async function loadMyClaims() {
+  const wrap = document.getElementById('my-claims-content');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+  // Load sent orders (claimable)
+  const { data: orders } = await sb.from('orders')
+    .select('id,order_number,date_order,date_ship,order_items(flower_snapshot,flower:flowers(ru,cn,photo_url))')
+    .eq('client_id', currentUser.id)
+    .eq('status', 'sent')
+    .order('date_order', { ascending: false });
+
+  // Load existing claims
+  const { data: claims } = await sb.from('claims')
+    .select('*').eq('client_id', currentUser.id)
+    .order('created_at', { ascending: false });
+
+  const existingClaimOrderIds = new Set((claims||[]).map(c => c.order_id));
+
+  let html = '';
+
+  // Existing claims
+  if (claims?.length) {
+    html += `<div style="font-size:13px;font-weight:700;color:var(--sage-d);margin-bottom:10px">Мои претензии / 我的投诉</div>`;
+    html += (claims).map(c => {
+      const statusMap = { new:'🆕 Новая', review:'🔍 На рассмотрении', resolved:'✅ Решена', rejected:'❌ Отклонена' };
+      const statusC   = { new:'var(--blue)', review:'#d97706', resolved:'var(--sage-d)', rejected:'var(--red)' };
+      const st = statusMap[c.status]||c.status;
+      const sc = statusC[c.status]||'var(--mid)';
+      const photos = (() => { try { return JSON.parse(c.photos_json||'[]'); } catch{ return []; } })();
+      return `<div class="card" style="border-left:4px solid ${sc};margin-bottom:10px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div>
+            <span style="font-weight:700;color:var(--sage-d)">Заказ #${c.order_number||'—'}</span>
+            <span class="badge" style="background:${sc}20;color:${sc};margin-left:8px">${st}</span>
+            <div style="font-size:11px;color:var(--mid);margin-top:4px">${new Date(c.created_at).toLocaleDateString('ru-RU')}</div>
+          </div>
+        </div>
+        <div style="font-size:12px;margin-top:8px;color:var(--text)">${c.description||''}</div>
+        ${photos.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${photos.map(p=>`<img src="${p}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`).join('')}</div>` : ''}
+        ${c.manager_reply ? `<div style="margin-top:8px;padding:8px 10px;background:var(--sage-l);border-radius:6px;border-left:3px solid var(--sage-d)"><b style="font-size:10px;color:var(--sage-d)">Ответ менеджера / 经理回复:</b><div style="font-size:12px;margin-top:3px">${c.manager_reply}</div></div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  // New claim form
+  if (orders?.length) {
+    const claimableOrders = orders.filter(o => !existingClaimOrderIds.has(o.id));
+    if (claimableOrders.length) {
+      html += `
+        <div style="font-size:13px;font-weight:700;color:var(--sage-d);margin:16px 0 10px">
+          + Новая претензия / 新投诉
+        </div>
+        <div class="card" style="border-left:4px solid var(--red)">
+          <div class="field-row">
+            <div class="field">
+              <label>Заказ / 订单</label>
+              <select class="inp" id="claim-order-select" onchange="buildClaimItems()">
+                <option value="">— Выберите заказ / 请选择 —</option>
+                ${claimableOrders.map(o=>`<option value="${o.id}" data-items='${JSON.stringify((o.order_items||[]).map(i=>({ru:i.flower?.ru||i.flower_snapshot?.ru||'?',cn:i.flower?.cn||i.flower_snapshot?.cn||'',photo:i.flower?.photo_url||''})))}'>#${o.order_number} — ${o.date_ship||o.date_order||''}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div id="claim-items-wrap" style="margin:10px 0"></div>
+          <div class="field">
+            <label>Описание проблемы / 问题描述</label>
+            <textarea class="inp" id="claim-description" rows="3" placeholder="Опишите проблему с качеством цветов / 描述花卉质量问题..." style="width:100%;resize:vertical"></textarea>
+          </div>
+          <div class="field" style="margin-top:10px">
+            <label>Фотографии / 照片 (до 5 фото, каждое до 5MB)</label>
+            <input type="file" id="claim-photos" multiple accept="image/*" style="margin-top:6px"
+              onchange="previewClaimPhotos(this)">
+            <div id="claim-photos-preview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:14px">
+            <button class="btn btn-danger" onclick="submitClaim()">📨 Отправить претензию / 提交投诉</button>
+          </div>
+        </div>`;
+    }
+  } else {
+    html += `<div class="empty-state"><div class="icon">✅</div><p>Нет доставленных заказов для претензии / 暂无已发货订单</p></div>`;
+  }
+
+  wrap.innerHTML = html || '<div class="empty-state"><div class="icon">📋</div><p>Нет претензий / 暂无投诉</p></div>';
+}
+
+function buildClaimItems() {
+  const sel  = document.getElementById('claim-order-select');
+  const wrap = document.getElementById('claim-items-wrap');
+  if (!sel?.value || !wrap) return;
+  const opt   = sel.options[sel.selectedIndex];
+  let items = [];
+  try { items = JSON.parse(opt.dataset.items||'[]'); } catch{}
+  if (!items.length) { wrap.innerHTML=''; return; }
+
+  wrap.innerHTML = `
+    <div style="font-size:11px;font-weight:700;color:var(--mid);margin-bottom:6px">Отметьте проблемные позиции / 标记有问题的品种:</div>
+    ${items.map((item, idx) => `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;margin-bottom:5px;background:var(--bg)">
+        ${item.photo ? `<img src="${item.photo}" style="width:30px;height:30px;object-fit:cover;border-radius:4px;flex-shrink:0">` : '<div style="width:30px;height:30px;background:var(--sage-l);border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px">🌸</div>'}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600">${item.ru}</div>
+          <div style="font-size:10px;color:var(--mid)">${item.cn||''}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
+          <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer">
+            <input type="checkbox" class="claim-item-cb" data-name="${item.ru}" data-idx="${idx}" style="width:14px;height:14px;accent-color:var(--red)">
+            Проблема / 有问题
+          </label>
+          <select class="inp claim-item-type" data-idx="${idx}" style="font-size:10px;padding:2px 6px;display:none">
+            <option value="quality">Некачественный / 质量差</option>
+            <option value="quantity">Нехватка / 数量不足</option>
+            <option value="wrong">Не тот товар / 发货错误</option>
+            <option value="damaged">Повреждён / 损坏</option>
+          </select>
+        </div>
+      </div>`).join('')}`;
+
+  // Show/hide type selector on checkbox change
+  wrap.querySelectorAll('.claim-item-cb').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const sel = wrap.querySelector(`.claim-item-type[data-idx="${cb.dataset.idx}"]`);
+      if (sel) sel.style.display = cb.checked ? '' : 'none';
+    });
+  });
+}
+
+function previewClaimPhotos(input) {
+  const preview = document.getElementById('claim-photos-preview');
+  preview.innerHTML = '';
+  const files = Array.from(input.files).slice(0, 5);
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = document.createElement('img');
+      img.src = e.target.result;
+      img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid var(--border)';
+      preview.appendChild(img);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function submitClaim() {
+  const orderId  = document.getElementById('claim-order-select')?.value;
+  const desc     = document.getElementById('claim-description')?.value?.trim();
+  const photoInp = document.getElementById('claim-photos');
+
+  if (!orderId) { toast('Выберите заказ / 请选择订单'); return; }
+  if (!desc)    { toast('Опишите проблему / 请描述问题'); return; }
+
+  // Collect checked items
+  const claimItems = [];
+  document.querySelectorAll('.claim-item-cb:checked').forEach(cb => {
+    const typeEl = document.querySelector(`.claim-item-type[data-idx="${cb.dataset.idx}"]`);
+    claimItems.push({ name: cb.dataset.name, type: typeEl?.value || 'quality' });
+  });
+
+  // Get order number from select
+  const sel = document.getElementById('claim-order-select');
+  const orderNum = sel?.options[sel.selectedIndex]?.text?.match(/#(\S+)/)?.[1] || '';
+
+  // Upload photos to Supabase Storage
+  const photosUrls = [];
+  const files = Array.from(photoInp?.files || []).slice(0, 5);
+  for (const file of files) {
+    const ext  = file.name.split('.').pop();
+    const path = `claims/${currentUser.id}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const { data: up, error: upErr } = await sb.storage.from('claim-photos').upload(path, file, { upsert: true });
+    if (!upErr) {
+      const { data: urlData } = sb.storage.from('claim-photos').getPublicUrl(path);
+      if (urlData?.publicUrl) photosUrls.push(urlData.publicUrl);
+    }
+  }
+
+  const { error } = await sb.from('claims').insert({
+    client_id:    currentUser.id,
+    order_id:     orderId,
+    order_number: orderNum,
+    description:  desc,
+    items_json:   JSON.stringify(claimItems),
+    photos_json:  JSON.stringify(photosUrls),
+    status:       'new',
+    created_at:   new Date().toISOString()
+  });
+
+  if (error) {
+    // Table might not exist yet
+    toast('⚠️ Выполните SQL create_claims.sql в Supabase / 请先执行 create_claims.sql');
+    return;
+  }
+
+  // Notify managers
+  try {
+    const { data: mgrs } = await sb.from('users').select('id').eq('role','manager');
+    for (const m of (mgrs||[])) {
+      await sendNotification(m.id,
+        `⚠️ Новая претензия от ${currentUser.company_name||currentUser.login}`,
+        `Заказ #${orderNum}: ${desc.slice(0,80)}`, '⚠️');
+    }
+  } catch(e) {}
+
+  toast('✅ Претензия отправлена / 投诉已提交');
+  loadMyClaims();
+}
+
+// ── Manager: view claims ──
+async function loadClaims() {
+  const wrap = document.getElementById('claims-list');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+  const statusFilter = document.getElementById('claims-status-filter')?.value;
+  let q = sb.from('claims')
+    .select('*, client:users!claims_client_id_fkey(company_name,login)')
+    .order('created_at', { ascending: false });
+  if (statusFilter) q = q.eq('status', statusFilter);
+
+  const { data: claims, error } = await q;
+
+  if (error) {
+    wrap.innerHTML = `<div class="empty-state"><p style="color:var(--red)">⚠️ Выполните create_claims.sql в Supabase</p></div>`;
+    return;
+  }
+  if (!claims?.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="icon">✅</div><p>Претензий нет / 暂无投诉</p></div>`;
+    // Reset badge
+    const cnt = document.getElementById('cnt-claims');
+    if (cnt) { cnt.textContent='0'; cnt.style.display='none'; }
+    return;
+  }
+
+  // Badge count for new
+  const newCount = claims.filter(c=>c.status==='new').length;
+  const cnt = document.getElementById('cnt-claims');
+  if (cnt) { cnt.textContent=newCount; cnt.style.display=newCount?'':'none'; }
+
+  const statusMap = { new:'🆕 Новая / 新', review:'🔍 Рассматривается / 审核中', resolved:'✅ Решена / 已处理', rejected:'❌ Отклонена / 已拒绝' };
+  const statusC   = { new:'var(--blue)', review:'#d97706', resolved:'var(--sage-d)', rejected:'var(--red)' };
+
+  wrap.innerHTML = claims.map(c => {
+    const client = c.client?.company_name || c.client?.login || '—';
+    const photos = (() => { try { return JSON.parse(c.photos_json||'[]'); } catch{ return []; } })();
+    const items  = (() => { try { return JSON.parse(c.items_json||'[]'); } catch{ return []; } })();
+    const sc = statusC[c.status]||'var(--mid)';
+    return `<div class="card" style="border-left:4px solid ${sc};margin-bottom:12px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <div>
+          <span style="font-weight:700;color:var(--sage-d);font-size:15px">${client}</span>
+          <span style="font-size:12px;color:var(--mid);margin-left:8px">Заказ #${c.order_number||'—'}</span>
+          <span class="badge" style="background:${sc}20;color:${sc};margin-left:8px">${statusMap[c.status]||c.status}</span>
+          <div style="font-size:10px;color:var(--light);margin-top:3px">${new Date(c.created_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${['new','review','resolved','rejected'].map(s => `
+            <button class="btn btn-sm btn-secondary" style="font-size:10px;${c.status===s?'background:var(--sage-d);color:#fff':''}"
+              onclick="updateClaimStatus('${c.id}','${s}',this)">${statusMap[s].split('/')[0].trim()}</button>`).join('')}
+        </div>
+      </div>
+      <div style="font-size:12px;margin-bottom:8px">${c.description||''}</div>
+      ${items.length ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">${items.map(i=>`<span style="font-size:10px;background:#fff3e0;color:#e65100;padding:2px 8px;border-radius:10px">⚠ ${i.name} (${i.type})</span>`).join('')}</div>` : ''}
+      ${photos.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${photos.map(p=>`<img src="${p}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${p}','_blank')">`).join('')}</div>` : ''}
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+        <input class="inp" id="reply-${c.id}" value="${c.manager_reply||''}" placeholder="Ответ клиенту / 回复客户..." style="flex:1;min-width:200px;font-size:12px">
+        <button class="btn btn-primary btn-sm" onclick="saveClaimReply('${c.id}','${c.client_id}')">💾 Сохранить ответ / 保存回复</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function updateClaimStatus(claimId, status, btn) {
+  await sb.from('claims').update({ status, updated_at: new Date().toISOString() }).eq('id', claimId);
+  btn.closest('.card').querySelector('.badge').textContent =
+    { new:'🆕 Новая', review:'🔍 Рассматривается', resolved:'✅ Решена', rejected:'❌ Отклонена' }[status]||status;
+  toast('Статус обновлён / 状态已更新');
+}
+
+async function saveClaimReply(claimId, clientId) {
+  const reply = document.getElementById('reply-'+claimId)?.value?.trim();
+  if (!reply) return;
+  await sb.from('claims').update({ manager_reply: reply, status: 'review', updated_at: new Date().toISOString() }).eq('id', claimId);
+  try {
+    await sendNotification(clientId, '💬 Ответ на вашу претензию / 您的投诉有回复', reply.slice(0,100), '💬');
+  } catch(e) {}
+  toast('✅ Ответ сохранён, клиент уведомлён / 回复已保存');
 }
 
 // ══════════════════════════════════════════════════════════
