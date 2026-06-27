@@ -105,6 +105,7 @@ btn,button{font-family:var(--font-b);cursor:pointer}
 
 /* ═══ TABLE ═══ */
 .tbl-wrap{overflow-x:auto;border-radius:var(--r);box-shadow:var(--shadow)}
+.cnt.red{background:var(--red)!important;color:#fff!important}
 .lbl-tbl th{background:var(--sage-d);color:#fff;padding:9px 10px;font-size:11px;font-weight:600;border:1px solid rgba(255,255,255,.12);white-space:normal;vertical-align:bottom;text-align:left}
 .lbl-tbl td{padding:8px 10px;border:1px solid var(--border);vertical-align:middle;font-size:13px}
 .lbl-tbl tbody tr:nth-child(even) td{background:var(--bg)}
@@ -515,6 +516,7 @@ td.L{text-align:left}
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="showAddClientModal()">+ Клиент / 客户</button>
         <button class="btn btn-secondary" onclick="showAddManagerModal()">+ Менеджер / 经理</button>
+        <button class="btn btn-secondary" style="background:var(--gold);color:#fff" onclick="showAddWarehouseModal()">🏭 + Склад / 仓库</button>
       </div>
       <div id="clients-list"><div class="loading"><div class="spinner"></div></div></div>
     </div>
@@ -594,6 +596,58 @@ td.L{text-align:left}
       <div class="page-title">Мои накладные / 我的出货单</div>
       <div class="page-sub">Накладные от AMMA FLOWERS / AMMA FLOWERS出货单</div>
       <div id="my-waybills-list"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
+  <!-- PAGE: CHAT -->
+  <div class="page" id="page-chat">
+    <div class="page-inner" style="display:flex;flex-direction:column;height:calc(100vh - 120px);padding-bottom:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+        <div class="page-title" style="margin:0" id="chat-title">Чат / 聊天</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="chat-room-tabs"></div>
+      </div>
+      <!-- Messages -->
+      <div id="chat-messages" style="flex:1;overflow-y:auto;padding:12px;background:var(--bg);border-radius:10px;border:1px solid var(--border);margin-bottom:10px;min-height:200px">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+      <!-- Input -->
+      <div style="display:flex;gap:8px;align-items:flex-end;padding-bottom:12px">
+        <textarea id="chat-input" class="inp" rows="2"
+          placeholder="Сообщение / 消息... (Enter — отправить, Shift+Enter — новая строка)"
+          style="flex:1;resize:none;padding:10px 12px;font-size:13px;line-height:1.4"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage()}"></textarea>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button class="btn btn-primary btn-sm" onclick="sendChatMessage()" style="white-space:nowrap">📤 Отправить</button>
+          <button class="btn btn-secondary btn-sm" onclick="translateLastInput()" style="white-space:nowrap;font-size:11px">🌐 Перевести</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE: WAREHOUSE (assembly tasks) -->
+  <div class="page" id="page-warehouse">
+    <div class="page-inner">
+      <div class="page-title">Сборка заказов / 备货单 / Assembly</div>
+      <div class="page-sub">Подтверждённые заказы для сборки / 已确认订单备货</div>
+      <div class="ctrl-bar" style="flex-wrap:wrap;gap:10px">
+        <select class="inp" id="wh-date-filter" onchange="loadWarehouseOrders()" style="min-width:150px">
+          <option value="">Все даты / 所有日期</option>
+        </select>
+        <button class="btn btn-secondary" onclick="loadWarehouseOrders()">🔄 Обновить / 刷新</button>
+      </div>
+      <div id="warehouse-list"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
+  <!-- PAGE: NOTIFICATIONS -->
+  <div class="page" id="page-notifications">
+    <div class="page-inner">
+      <div class="page-title">Уведомления / 通知 / Notifications</div>
+      <div class="page-sub">Системные уведомления / 系统通知</div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+        <button class="btn btn-secondary btn-sm" onclick="markAllNotifRead()">✓ Отметить все / 全部已读</button>
+      </div>
+      <div id="notif-list"><div class="loading"><div class="spinner"></div></div></div>
     </div>
   </div>
 
@@ -705,13 +759,16 @@ function logout() {
 // ══════════════════════════════════════════════════════════
 async function initApp() {
   const isMgr = currentUser.role === 'manager';
+  const isWh  = currentUser.role === 'warehouse';
 
   // Top bar
   const now = new Date();
   document.getElementById('top-date').textContent =
     now.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'});
   document.getElementById('top-role').textContent =
-    isMgr ? '🔑 Менеджер / 经理' : ('👤 ' + (currentUser.company_name || currentUser.login));
+    isMgr ? '🔑 Менеджер / 经理' :
+    isWh  ? '🏭 Склад / 仓库' :
+    ('👤 ' + (currentUser.company_name || currentUser.login));
   document.getElementById('top-role').className = 'user-pill' + (isMgr ? ' mgr' : '');
 
   // Navigation
@@ -724,26 +781,39 @@ async function initApp() {
       <div class="nav-tab" onclick="showPage('waybills',this)">📦 Накладные / 出货单 <span class="cnt" id="cnt-waybills">0</span></div>
       <div class="nav-tab" onclick="showPage('labels',this)">🏷 Этикетки / 标签</div>
       <div class="nav-tab" onclick="showPage('clients',this)">👥 Клиенты / 客户</div>
+      <div class="nav-tab" onclick="showPage('chat',this)">💬 Чат / 聊天 <span class="cnt" id="cnt-chat" style="display:none">0</span></div>
+      <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
     `;
     document.getElementById('btn-save-prices').style.display = 'inline-flex';
     document.getElementById('btn-import-prices').style.display = 'inline-flex';
     document.getElementById('markup-controls').style.display = 'flex';
     document.getElementById('btn-add-flower').style.display = 'inline-flex';
-    // load clients for filters
     loadClients();
+  } else if (isWh) {
+    tabs.innerHTML = `
+      <div class="nav-tab active" onclick="showPage('warehouse',this)">🏭 Сборка / 备货 <span class="cnt" id="cnt-wh-orders">0</span></div>
+      <div class="nav-tab" onclick="showPage('labels',this)">🏷 Этикетки / 标签</div>
+      <div class="nav-tab" onclick="showPage('chat',this)">💬 Чат / 聊天 <span class="cnt" id="cnt-chat" style="display:none">0</span></div>
+      <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
+    `;
+    document.getElementById('btn-save-prices').style.display  = 'none';
+    document.getElementById('btn-import-prices').style.display = 'none';
+    document.getElementById('markup-controls').style.display  = 'none';
+    document.getElementById('btn-add-flower').style.display   = 'none';
   } else {
     tabs.innerHTML = `
       <div class="nav-tab active" onclick="showPage('price',this)">📋 Прайс / 价格单</div>
       <div class="nav-tab" onclick="showPage('my-order',this)">🛒 Заказ / 订单 <span class="cnt" id="cnt-cart">0</span></div>
       <div class="nav-tab" onclick="showPage('my-waybills',this)">📦 Накладные / 出货单 <span class="cnt" id="cnt-waybills">0</span></div>
       <div class="nav-tab" onclick="showPage('my-invoices',this)">🧾 Счета / 发票</div>
+      <div class="nav-tab" onclick="showPage('chat',this)">💬 Чат / 聊天 <span class="cnt" id="cnt-chat" style="display:none">0</span></div>
+      <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
     `;
-    // Явно скрываем все менеджерские контролы (на случай остатков от предыдущей сессии)
     document.getElementById('btn-save-prices').style.display  = 'none';
     document.getElementById('btn-import-prices').style.display = 'none';
     document.getElementById('markup-controls').style.display  = 'none';
     document.getElementById('btn-add-flower').style.display   = 'none';
-    document.getElementById('cart-footer').style.display = 'none'; // скрыта пока корзина пуста
+    document.getElementById('cart-footer').style.display = 'none';
     await loadMyOrders();
     loadMyInvoices();
   }
@@ -760,6 +830,26 @@ async function initApp() {
     .on('postgres_changes', {event:'UPDATE', schema:'public', table:'flowers'},
       payload => { updateFlowerLocal(payload.new); renderPrice(); })
     .subscribe();
+
+  // Setup notifications realtime + load initial count
+  requestNotifPermission();
+  setupRealtimeNotifications();
+  const uid = currentUser?.id;
+  if (uid) {
+    const { data: notifData } = await sb.from('notifications')
+      .select('id,is_read').eq('user_id', uid).eq('is_read', false).limit(99);
+    _notifications = notifData || [];
+    updateNotifBadge();
+  }
+
+  // Warehouse: load orders and setup realtime
+  if (isWh) {
+    loadWarehouseOrders();
+    sb.channel('wh-orders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' },
+        () => { loadWarehouseOrders(); })
+      .subscribe();
+  }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -780,6 +870,13 @@ function showPage(name, tabEl) {
   if (name === 'my-order') { loadMyOrders().then(() => renderMyOrder()); }
   if (name === 'my-waybills') loadMyWaybills();
   if (name === 'my-invoices') loadMyInvoices();
+  if (name === 'warehouse') loadWarehouseOrders();
+  if (name === 'notifications') loadNotifications();
+  if (name === 'chat') {
+    initChat();
+    const el = document.getElementById('cnt-chat');
+    if (el) { el.textContent = '0'; el.style.display = 'none'; }
+  }
 }
 
 function showDetailPage(name) {
@@ -2088,8 +2185,50 @@ async function updateOrderField(id, field, val) {
 
 
 async function updateOrderStatus(id, status) {
+  // Load order to get client_id and order_number
+  const { data: order } = await sb.from('orders')
+    .select('client_id, order_number').eq('id', id).single();
   await sb.from('orders').update({status, updated_at: new Date().toISOString()}).eq('id', id);
   toast('Статус обновлён: ' + statusLabel(status));
+
+  // Send notifications based on status change
+  if (order) {
+    const notifMap = {
+      confirmed: {
+        // → notify client
+        client: { icon:'✅', title:`Заказ ${order.order_number} подтверждён / 已确认`, body:'Ваш заказ принят и подтверждён / 您的订单已确认' },
+        // → notify all warehouse users
+        warehouse: { icon:'📦', title:`Новый заказ на сборку: ${order.order_number}`, body:'Заказ подтверждён, нужна сборка / 订单已确认，请备货' }
+      },
+      invoiced: {
+        client: { icon:'🧾', title:`Счёт выставлен: ${order.order_number} / 已开票`, body:'Ваш счёт готов / 您的发票已开具' }
+      },
+      paid: {
+        client: { icon:'💰', title:`Оплата получена: ${order.order_number}`, body:'Спасибо за оплату / 感谢您的付款' }
+      },
+      sent: {
+        client: { icon:'🚚', title:`Заказ отправлен: ${order.order_number} / 已发货`, body:'Ваш заказ в пути / 您的订单已发出' }
+      },
+      needs_revision: {
+        client: { icon:'✏️', title:`Требуется уточнение: ${order.order_number}`, body:'Менеджер оставил комментарий / 请查看经理意见' }
+      }
+    };
+
+    const triggers = notifMap[status];
+    if (triggers) {
+      // Notify client
+      if (triggers.client && order.client_id) {
+        await sendNotification(order.client_id, triggers.client.title, triggers.client.body, triggers.client.icon);
+      }
+      // Notify warehouse users
+      if (triggers.warehouse) {
+        const { data: whUsers } = await sb.from('users').select('id').eq('role', 'warehouse');
+        for (const wu of (whUsers || [])) {
+          await sendNotification(wu.id, triggers.warehouse.title, triggers.warehouse.body, triggers.warehouse.icon);
+        }
+      }
+    }
+  }
 }
 
 async function updateOrderComment(id, comment) {
@@ -2573,7 +2712,7 @@ function renderClients() {
         <td class="L"><b>${c.company_name||'—'}</b></td>
         <td class="L" style="color:var(--mid);font-family:monospace">${c.login}</td>
         <td style="font-size:11px;color:var(--mid)">${c.contact||'—'}</td>
-        <td><span class="badge ${c.role==='manager'?'badge-invoiced':'badge-confirmed'}">${c.role==='manager'?'👑 Менеджер / 经理':'👤 Клиент / 客户'}</span></td>
+        <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?'👑 Менеджер / 经理':c.role==='warehouse'?'🏭 Склад / 仓库':'👤 Клиент / 客户'}</span></td>
         <td><button class="btn btn-secondary btn-sm" onclick="showEditClientModal('${c.id}')">✏️ Изменить / 修改</button></td>
       </tr>`).join('')}
     </tbody>
@@ -2721,6 +2860,52 @@ async function addManager() {
     login, password_hash: hash, role: 'manager', company_name: company, contact
   });
   if (error) { toast('Ошибка: ' + (error.message.includes('unique') ? 'Логин уже занят' : error.message)); return; }
+  closeModal();
+  toast('✅ Менеджер создан: ' + (company||login));
+}
+
+function showAddWarehouseModal() {
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">+ Сотрудник склада / 新仓库员工</div>
+    <p style="font-size:12px;color:var(--mid);margin-bottom:16px">
+      Доступ: сборка заказов, этикетки, уведомления. Без доступа к ценам и финансам.<br>
+      <span style="color:var(--sage-d)">权限：备货、标签、通知。无财务权限。</span>
+    </p>
+    <div class="field-row">
+      <div class="field"><label>Имя / 姓名</label>
+        <input class="inp" id="nw-name" placeholder="Иван / 小明..."></div>
+      <div class="field"><label>Логин / 账号</label>
+        <input class="inp" id="nw-login" placeholder="例: sklad1"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Пароль / 密码</label>
+        <input class="inp" id="nw-pass" type="password" placeholder="Мин. 6 символов / 至少6位"></div>
+      <div class="field"><label>Контакт / WeChat</label>
+        <input class="inp" id="nw-contact" placeholder="WeChat / 联系方式..."></div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+      <button class="btn btn-primary" style="background:var(--gold)" onclick="addWarehouseUser()">🏭 Создать / 创建员工</button>
+    </div>`;
+  openModal();
+}
+
+async function addWarehouseUser() {
+  const name    = document.getElementById('nw-name').value.trim();
+  const login   = document.getElementById('nw-login').value.trim();
+  const pass    = document.getElementById('nw-pass').value;
+  const contact = document.getElementById('nw-contact').value.trim();
+  if (!login || !pass) { toast('Заполните логин и пароль / 请填写账号和密码'); return; }
+  if (pass.length < 6) { toast('Пароль минимум 6 символов / 密码至少6位'); return; }
+  const hash = await sha256(pass);
+  const { error } = await sb.from('users').insert({
+    login, password_hash: hash, role: 'warehouse', company_name: name||login, contact
+  });
+  if (error) { toast('Ошибка: ' + (error.message.includes('unique') ? 'Логин уже занят / 账号已存在' : error.message)); return; }
+  closeModal();
+  await loadClients(); renderClients();
+  toast('✅ Сотрудник склада создан: ' + (name||login));
+}
   closeModal();
   toast('✅ Менеджер создан: ' + (company||login));
 }
@@ -4187,6 +4372,466 @@ function exportLabelsExcel() {
   toast(`✅ Excel скачан: ${fname} / 已下载`);
 }
 
+
+// ══════════════════════════════════════════════════════════
+//  CHAT — ЧАТ / 聊天
+// ══════════════════════════════════════════════════════════
+let _chatRoom     = 'office-warehouse';
+let _chatChannel  = null;
+let _chatMessages = [];
+
+function getChatRooms() {
+  const role = currentUser?.role;
+  const id   = currentUser?.id;
+  if (role === 'manager') {
+    // Manager sees: office-warehouse + individual client rooms
+    const rooms = [{ key: 'office-warehouse', label: '🏭 Офис ↔ Склад / 办公室↔仓库' }];
+    allClients.filter(c => c.role === 'client').forEach(c => {
+      rooms.push({ key: `client-${c.id}`, label: `👤 ${c.company_name || c.login}` });
+    });
+    return rooms;
+  }
+  if (role === 'warehouse') {
+    return [{ key: 'office-warehouse', label: '💬 Офис / 办公室' }];
+  }
+  if (role === 'client') {
+    return [{ key: `client-${id}`, label: '💬 Менеджер / 经理' }];
+  }
+  return [];
+}
+
+async function initChat() {
+  const rooms = getChatRooms();
+  if (!rooms.length) return;
+
+  // Render room tabs
+  const tabsEl = document.getElementById('chat-room-tabs');
+  if (tabsEl) {
+    tabsEl.innerHTML = rooms.map((r, i) =>
+      `<button class="btn btn-sm ${i===0?'btn-primary':'btn-secondary'}" style="font-size:11px"
+        onclick="switchChatRoom('${r.key}', this)">${r.label}</button>`
+    ).join('');
+  }
+
+  await switchChatRoom(rooms[0].key);
+}
+
+async function switchChatRoom(room, btnEl) {
+  _chatRoom = room;
+
+  // Update tab styles
+  if (btnEl) {
+    document.querySelectorAll('#chat-room-tabs button').forEach(b => {
+      b.className = 'btn btn-sm btn-secondary';
+      b.style.fontSize = '11px';
+    });
+    btnEl.className = 'btn btn-sm btn-primary';
+    btnEl.style.fontSize = '11px';
+  }
+
+  // Unsubscribe old channel
+  if (_chatChannel) { sb.removeChannel(_chatChannel); _chatChannel = null; }
+
+  // Load messages
+  await loadChatMessages();
+
+  // Subscribe to new messages
+  _chatChannel = sb.channel('chat-' + room)
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'messages',
+      filter: `room=eq.${room}`
+    }, payload => {
+      _chatMessages.push(payload.new);
+      appendChatMessage(payload.new);
+      scrollChatToBottom();
+      // Badge if not on chat page
+      const chatPage = document.getElementById('page-chat');
+      if (!chatPage?.classList.contains('active')) updateChatBadge(1);
+    })
+    .subscribe();
+}
+
+async function loadChatMessages() {
+  const wrap = document.getElementById('chat-messages');
+  wrap.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
+
+  const { data, error } = await sb.from('messages')
+    .select('*').eq('room', _chatRoom)
+    .order('created_at', { ascending: true }).limit(100);
+
+  _chatMessages = data || [];
+  wrap.innerHTML = '';
+
+  if (!_chatMessages.length) {
+    wrap.innerHTML = `<div style="text-align:center;color:var(--light);font-size:13px;padding:40px 0">
+      Нет сообщений / 暂无消息<br>
+      <span style="font-size:11px">Начните диалог / 开始对话</span>
+    </div>`;
+    return;
+  }
+
+  _chatMessages.forEach(m => appendChatMessage(m, false));
+  scrollChatToBottom();
+}
+
+function appendChatMessage(msg, scroll = true) {
+  const wrap = document.getElementById('chat-messages');
+  const isMine = msg.sender_id === currentUser?.id;
+  const dt = new Date(msg.created_at).toLocaleString('ru-RU', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+  });
+  const roleIcon = msg.sender_role === 'manager' ? '🔑' :
+                   msg.sender_role === 'warehouse' ? '🏭' : '👤';
+
+  const el = document.createElement('div');
+  el.style.cssText = `display:flex;flex-direction:column;align-items:${isMine?'flex-end':'flex-start'};margin-bottom:10px`;
+  el.innerHTML = `
+    <div style="font-size:10px;color:var(--light);margin-bottom:2px;${isMine?'text-align:right':''}">
+      ${roleIcon} ${msg.sender_name || msg.sender_role || '?'} · ${dt}
+    </div>
+    <div style="max-width:75%;background:${isMine?'var(--sage-d)':'var(--surface-1, #fff)'};
+      color:${isMine?'#fff':'var(--text)'};border-radius:${isMine?'12px 12px 2px 12px':'12px 12px 12px 2px'};
+      padding:8px 12px;font-size:13px;line-height:1.5;word-break:break-word;
+      border:1px solid ${isMine?'transparent':'var(--border)'}">
+      ${escHtml(msg.body)}
+      ${msg.body_translated ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid ${isMine?'rgba(255,255,255,.3)':'var(--border)'};
+        font-size:11px;opacity:0.85;font-style:italic">🌐 ${escHtml(msg.body_translated)}</div>` : ''}
+    </div>`;
+
+  // Remove empty state if exists
+  const empty = wrap.querySelector('div[style*="暂无消息"]');
+  if (empty) empty.remove();
+
+  wrap.appendChild(el);
+  if (scroll) scrollChatToBottom();
+}
+
+function scrollChatToBottom() {
+  const wrap = document.getElementById('chat-messages');
+  if (wrap) wrap.scrollTop = wrap.scrollHeight;
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById('chat-input');
+  const body = input.value.trim();
+  if (!body) return;
+
+  const role = currentUser?.role;
+  const lang = detectLang(body);
+
+  input.value = '';
+  input.style.height = '';
+
+  const msg = {
+    room: _chatRoom,
+    sender_id: currentUser.id,
+    sender_name: currentUser.company_name || currentUser.login,
+    sender_role: role,
+    body,
+    lang,
+    created_at: new Date().toISOString()
+  };
+
+  const { data, error } = await sb.from('messages').insert(msg).select().single();
+  if (error) { toast('Ошибка отправки / 发送失败: ' + error.message); input.value = body; return; }
+
+  // Notify the other party
+  await notifyChat(data);
+}
+
+async function notifyChat(msg) {
+  const role = currentUser?.role;
+  // Warehouse → notify all managers
+  if (role === 'warehouse') {
+    const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+    for (const m of (mgrs||[])) {
+      await sendNotification(m.id, `🏭 Сообщение от склада / 仓库消息`, msg.body.slice(0,80), '💬');
+    }
+  }
+  // Manager in office-warehouse → notify warehouse
+  if (role === 'manager' && msg.room === 'office-warehouse') {
+    const { data: whs } = await sb.from('users').select('id').eq('role', 'warehouse');
+    for (const w of (whs||[])) {
+      await sendNotification(w.id, `💬 Сообщение от офиса / 办公室消息`, msg.body.slice(0,80), '💬');
+    }
+  }
+  // Manager in client room → notify client
+  if (role === 'manager' && msg.room.startsWith('client-')) {
+    const clientId = msg.room.replace('client-', '');
+    await sendNotification(clientId, `💬 Сообщение от менеджера`, msg.body.slice(0,80), '💬');
+  }
+  // Client → notify all managers
+  if (role === 'client') {
+    const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+    for (const m of (mgrs||[])) {
+      const name = currentUser.company_name || currentUser.login;
+      await sendNotification(m.id, `👤 ${name}: новое сообщение`, msg.body.slice(0,80), '💬');
+    }
+  }
+}
+
+// Simple language detector
+function detectLang(text) {
+  const cnChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+  return cnChars > text.length * 0.2 ? 'cn' : 'ru';
+}
+
+// Translate text via Claude API (embedded)
+async function translateLastInput() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) { toast('Введите текст для перевода / 请输入要翻译的文本'); return; }
+
+  const lang = detectLang(text);
+  const targetLang = lang === 'cn' ? 'русский' : '中文';
+  const btn = event.target;
+  btn.textContent = '⏳';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: `Переведи только текст, без пояснений, на ${targetLang}:\n${text}`
+        }]
+      })
+    });
+    const data = await res.json();
+    const translated = data?.content?.[0]?.text?.trim();
+    if (translated) {
+      input.value = text + '\n\n🌐 ' + translated;
+    }
+  } catch(e) {
+    toast('Ошибка перевода / 翻译失败');
+  }
+  btn.textContent = '🌐 Перевести';
+  btn.disabled = false;
+}
+
+function updateChatBadge(n) {
+  const el = document.getElementById('cnt-chat');
+  if (!el) return;
+  const cur = parseInt(el.textContent) || 0;
+  const next = cur + n;
+  el.textContent = next;
+  el.style.display = next > 0 ? '' : 'none';
+}
+
+// ══════════════════════════════════════════════════════════
+//  WAREHOUSE PAGE — СБОРКА / 备货
+// ══════════════════════════════════════════════════════════
+async function loadWarehouseOrders() {
+  const wrap = document.getElementById('warehouse-list');
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
+
+  const { data: orders, error } = await sb.from('orders')
+    .select(`*, client:users!orders_client_id_fkey(company_name,login),
+      order_items(*, flower:flowers(ru,cn,stems,boxes_per_box,photo_url,pack,length,flower_weight,box_size))`)
+    .in('status', ['confirmed','invoiced','paid'])
+    .order('date_ship', { ascending: true, nullsFirst: false });
+
+  if (error || !orders?.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="icon">🏭</div>
+      <p>Нет заказов для сборки / 暂无备货订单</p></div>`;
+    return;
+  }
+
+  // Fill date filter
+  const dateFilter = document.getElementById('wh-date-filter');
+  if (dateFilter) {
+    const dates = [...new Set(orders.map(o => o.date_ship).filter(Boolean))].sort();
+    const sel = dateFilter.value;
+    dateFilter.innerHTML = '<option value="">Все даты / 所有日期</option>' +
+      dates.map(d => `<option value="${d}" ${d===sel?'selected':''}>${d}</option>`).join('');
+  }
+
+  const filtered = dateFilter?.value
+    ? orders.filter(o => o.date_ship === dateFilter.value)
+    : orders;
+
+  // Update counter
+  const cntEl = document.getElementById('cnt-wh-orders');
+  if (cntEl) cntEl.textContent = filtered.length;
+
+  wrap.innerHTML = filtered.map(order => {
+    const client = order.client?.company_name || order.client?.login || '—';
+    const items = order.order_items || [];
+    const rows = items.map((item, idx) => {
+      const f = item.flower || {};
+      const snap = item.flower_snapshot || {};
+      const ru = f.ru || snap.ru || '—';
+      const cn = f.cn || snap.cn || '';
+      const thumb = f.photo_url || THUMBS[f.en] || '';
+      const imgH = thumb
+        ? `<img src="${thumb}" style="width:36px;height:36px;object-fit:cover;border-radius:5px">`
+        : `<div style="width:36px;height:36px;background:var(--sage-l);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px">🌸</div>`;
+      const bpb = parseInt(item.bunches_per_box) || parseInt(f.boxes_per_box || snap.boxes_per_box) || '';
+      const stems = parseInt(f.stems || snap.stems) || '';
+      const totalStems = (bpb && stems) ? bpb * stems : '';
+      return `<tr class="${idx%2?'stripe':''}">
+        <td style="width:42px">${imgH}</td>
+        <td class="L"><b style="font-size:12px">${ru}</b>
+          <div style="font-size:10px;color:var(--mid)">${cn}</div></td>
+        <td style="text-align:center">${stems||'—'}</td>
+        <td style="text-align:center">${bpb||'—'}</td>
+        <td style="text-align:center;font-weight:700;color:var(--sage-d)">${totalStems||'—'}</td>
+        <td style="text-align:center;font-size:14px;font-weight:700">${item.qty_boxes||1}</td>
+        <td style="font-size:10px;color:var(--mid)">${item.comment||item.client_name||''}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="card" style="border-left:4px solid var(--sage-d);margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div>
+          <span style="font-family:var(--font-h);font-size:17px;font-weight:700;color:var(--sage-d)">${order.order_number}</span>
+          <span class="badge badge-confirmed" style="margin-left:8px">${statusLabel(order.status)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--mid)">
+          👤 ${client}
+          ${order.date_ship ? `&nbsp;·&nbsp; 🚚 ${order.date_ship}` : ''}
+          &nbsp;·&nbsp; ${items.length} поз./件
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table style="min-width:520px">
+          <thead><tr>
+            <th style="width:42px">Фото</th>
+            <th class="L">Название / 花材名称</th>
+            <th>Ст./扎</th><th>Бан./扎数</th><th>Итого ст.</th>
+            <th>Кор./箱</th><th>Примечание</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+//  NOTIFICATIONS — УВЕДОМЛЕНИЯ
+// ══════════════════════════════════════════════════════════
+let _notifChannel = null;
+let _notifications = [];
+
+function setupRealtimeNotifications() {
+  if (_notifChannel) return;
+  const uid = currentUser?.id;
+  if (!uid) return;
+
+  // Subscribe to notifications table (real-time)
+  _notifChannel = sb.channel('user-notifications-' + uid)
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'notifications',
+      filter: `user_id=eq.${uid}`
+    }, payload => {
+      _notifications.unshift(payload.new);
+      updateNotifBadge();
+      showNotifToast(payload.new);
+    })
+    .subscribe();
+}
+
+async function loadNotifications() {
+  const wrap = document.getElementById('notif-list');
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
+
+  const uid = currentUser?.id;
+  const { data, error } = await sb.from('notifications')
+    .select('*').eq('user_id', uid)
+    .order('created_at', { ascending: false }).limit(50);
+
+  _notifications = data || [];
+  updateNotifBadge();
+
+  if (!_notifications.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="icon">🔔</div>
+      <p>Нет уведомлений / 暂无通知</p></div>`;
+    return;
+  }
+
+  wrap.innerHTML = _notifications.map(n => {
+    const isRead = n.is_read;
+    const dt = new Date(n.created_at).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
+        border-radius:8px;margin-bottom:6px;cursor:pointer;
+        background:${isRead?'var(--bg)':'var(--sage-l)'};border:1px solid ${isRead?'var(--border)':'var(--sage)'}"
+        onclick="markNotifRead('${n.id}', this)">
+      <div style="font-size:20px;flex-shrink:0">${n.icon||'🔔'}</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:${isRead?400:700}">${n.title||''}</div>
+        <div style="font-size:12px;color:var(--mid);margin-top:2px">${n.body||''}</div>
+        <div style="font-size:10px;color:var(--light);margin-top:4px">${dt}</div>
+      </div>
+      ${!isRead ? `<div style="width:8px;height:8px;border-radius:50%;background:var(--sage-d);flex-shrink:0;margin-top:4px"></div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function markNotifRead(id, el) {
+  await sb.from('notifications').update({ is_read: true }).eq('id', id);
+  const n = _notifications.find(x => x.id === id);
+  if (n) n.is_read = true;
+  if (el) {
+    el.style.background = 'var(--bg)';
+    el.style.border = '1px solid var(--border)';
+    const dot = el.querySelector('div[style*="border-radius:50%"]');
+    if (dot) dot.remove();
+    const title = el.querySelector('div[style*="font-weight:700"]');
+    if (title) title.style.fontWeight = '400';
+  }
+  updateNotifBadge();
+}
+
+async function markAllNotifRead() {
+  const uid = currentUser?.id;
+  await sb.from('notifications').update({ is_read: true }).eq('user_id', uid).eq('is_read', false);
+  _notifications.forEach(n => n.is_read = true);
+  updateNotifBadge();
+  loadNotifications();
+}
+
+function updateNotifBadge() {
+  const unread = _notifications.filter(n => !n.is_read).length;
+  const cntEl = document.getElementById('notif-cnt');
+  if (!cntEl) return;
+  if (unread > 0) {
+    cntEl.textContent = unread;
+    cntEl.style.display = '';
+    cntEl.className = 'cnt red';
+  } else {
+    cntEl.style.display = 'none';
+  }
+}
+
+function showNotifToast(n) {
+  toast(`${n.icon||'🔔'} ${n.title||''}`);
+  // Browser notification (if allowed)
+  if (Notification?.permission === 'granted') {
+    new Notification('AMMA FLOWERS — ' + (n.title||''), { body: n.body||'', icon: '/favicon.ico' });
+  }
+}
+
+// Ask for browser notification permission
+async function requestNotifPermission() {
+  if (Notification?.permission === 'default') {
+    await Notification.requestPermission();
+  }
+}
+
+// Send notification helper (called from order status changes)
+async function sendNotification(userId, title, body, icon) {
+  await sb.from('notifications').insert({
+    user_id: userId, title, body, icon: icon||'🔔', is_read: false,
+    created_at: new Date().toISOString()
+  });
+}
 
 // ══════════════════════════════════════════════════════════
 //  EXPORT PRICE LIST — EXCEL & PDF
