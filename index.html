@@ -641,10 +641,12 @@ td.L{text-align:left}
     <div class="page-inner">
       <div class="page-title">Склад / 仓库 / Warehouse</div>
       <!-- Sub-tabs -->
-      <div style="display:flex;gap:6px;margin-bottom:16px;border-bottom:2px solid var(--border);padding-bottom:0">
+      <div style="display:flex;gap:6px;margin-bottom:16px;border-bottom:2px solid var(--border);padding-bottom:0;flex-wrap:wrap">
         <button class="wh-tab active" id="whtab-assembly"   onclick="switchWhTab('assembly',this)">🏭 Сборка / 备货</button>
         <button class="wh-tab"        id="whtab-receiving"  onclick="switchWhTab('receiving',this)">📥 Приёмка / 收货</button>
         <button class="wh-tab"        id="whtab-labels"     onclick="switchWhTab('labels',this)">🏷 Этикетки / 标签</button>
+        <button class="wh-tab"        id="whtab-claims"     onclick="switchWhTab('claims',this)">⚠️ Претензии <span class="cnt" id="cnt-wh-claims" style="display:none">0</span></button>
+        <button class="wh-tab"        id="whtab-stats"      onclick="switchWhTab('stats',this)">📊 Сводка / 统计</button>
       </div>
 
       <!-- ── ASSEMBLY ── -->
@@ -670,7 +672,24 @@ td.L{text-align:left}
         <div id="receiving-content"></div>
       </div>
 
-      <!-- ── LABELS / ЭТИКЕТКИ ── -->
+      <!-- ── CLAIMS / ПРЕТЕНЗИИ ── -->
+      <div id="whpanel-claims" class="hidden">
+        <div class="page-sub" style="margin-bottom:12px">Претензии клиентов по качеству сборки / 客户关于分拣质量的投诉</div>
+        <div id="wh-claims-content"><div class="loading"><div class="spinner"></div></div></div>
+      </div>
+
+      <!-- ── STATS / СВОДКА ── -->
+      <div id="whpanel-stats" class="hidden">
+        <div class="ctrl-bar" style="flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          <select class="inp" id="wh-stats-period" onchange="loadWhStats()" style="min-width:160px">
+            <option value="7">Последние 7 дней</option>
+            <option value="30" selected>Последние 30 дней</option>
+            <option value="90">Последние 90 дней</option>
+          </select>
+          <button class="btn btn-secondary" onclick="loadWhStats()">🔄 Обновить / 刷新</button>
+        </div>
+        <div id="wh-stats-content"><div class="loading"><div class="spinner"></div></div></div>
+      </div>
       <div id="whpanel-labels" class="hidden">
         <div class="ctrl-bar" style="flex-wrap:wrap;gap:10px;margin-bottom:12px">
           <select class="inp" id="wh-label-order" onchange="loadWhLabelOrder()" style="min-width:220px">
@@ -975,6 +994,11 @@ async function initApp() {
   // Warehouse: load orders and setup realtime
   if (isWh) {
     loadWarehouseOrders();
+    // Load claims badge
+    sb.from('claims').select('id,status').eq('status','new').then(({data}) => {
+      const cnt = document.getElementById('cnt-wh-claims');
+      if (cnt && data?.length) { cnt.textContent=data.length; cnt.style.display=''; }
+    }).catch(()=>{});
     sb.channel('wh-orders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' },
         () => { loadWarehouseOrders(); })
@@ -4831,13 +4855,15 @@ let _whOrders = [];
 function switchWhTab(name, btn) {
   document.querySelectorAll('.wh-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  ['assembly','receiving','labels'].forEach(p => {
+  ['assembly','receiving','labels','claims','stats'].forEach(p => {
     const el = document.getElementById('whpanel-' + p);
     if (el) el.classList.toggle('hidden', p !== name);
   });
   if (name === 'assembly')  loadWarehouseOrders();
   if (name === 'receiving') loadReceivingOrders();
   if (name === 'labels')    loadWhLabelOrders();
+  if (name === 'claims')    loadWhClaims();
+  if (name === 'stats')     loadWhStats();
 }
 
 async function loadWarehouseOrders() {
@@ -5290,6 +5316,259 @@ async function whPrintLabels(orderId) {
   await loadWhLabelOrders();
   const sel = document.getElementById('wh-label-order');
   if (sel) { sel.value = orderId; await loadWhLabelOrder(); }
+}
+
+// ── WAREHOUSE CLAIMS / ПРЕТЕНЗИИ СКЛАДА ──
+async function loadWhClaims() {
+  const wrap = document.getElementById('wh-claims-content');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+  try {
+    const { data: claims, error } = await sb.from('claims')
+      .select('*, client:users!claims_client_id_fkey(company_name,login)')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+
+    // Update badge
+    const newCnt = (claims||[]).filter(c=>c.status==='new').length;
+    const badge = document.getElementById('cnt-wh-claims');
+    if (badge) { badge.textContent=newCnt; badge.style.display=newCnt?'':'none'; }
+
+    if (!claims?.length) {
+      wrap.innerHTML = `<div class="empty-state"><div class="icon">✅</div><p>Претензий нет / 暂无投诉</p></div>`;
+      return;
+    }
+
+    const typeLabel = { quality:'🥀 Некачественный', quantity:'📦 Нехватка', wrong:'❌ Не тот товар', damaged:'💥 Повреждён' };
+    // Fault attribution: which types are warehouse responsibility
+    const whFault   = new Set(['quality','damaged','quantity']);
+    const statusC   = { new:'var(--blue)', review:'#d97706', resolved:'var(--sage-d)', rejected:'var(--red)' };
+    const statusMap = { new:'🆕 Новая', review:'🔍 Рассматривается', resolved:'✅ Решена', rejected:'❌ Отклонена' };
+
+    wrap.innerHTML = claims.map(c => {
+      const client = c.client?.company_name || c.client?.login || '—';
+      const items  = (() => { try { return JSON.parse(c.items_json||'[]'); } catch{ return []; } })();
+      const sc     = statusC[c.status] || 'var(--mid)';
+      const total  = c.total_amount ? parseFloat(c.total_amount) : items.reduce((s,i)=>s+(parseFloat(i.subtotal)||0),0);
+      const dt     = new Date(c.created_at).toLocaleDateString('ru-RU');
+
+      // Determine warehouse responsibility per item
+      const whItems    = items.filter(i => whFault.has(i.type));
+      const supplyItems = items.filter(i => !whFault.has(i.type));
+      const whTotal    = whItems.reduce((s,i)=>s+(parseFloat(i.subtotal)||0),0);
+      const supTotal   = supplyItems.reduce((s,i)=>s+(parseFloat(i.subtotal)||0),0);
+
+      const faultBadge = whItems.length && supplyItems.length
+        ? `<span style="font-size:10px;background:#fff3e0;color:#c2410c;padding:2px 8px;border-radius:4px;font-weight:600">⚠️ Смешанная ответственность</span>`
+        : whItems.length
+          ? `<span style="font-size:10px;background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:4px;font-weight:600">🏭 Ошибка склада</span>`
+          : supplyItems.length
+            ? `<span style="font-size:10px;background:#eff6ff;color:#1d4ed8;padding:2px 8px;border-radius:4px;font-weight:600">🚚 Ошибка поставщика</span>`
+            : '';
+
+      const itemsRows = items.map(item => {
+        const isWh = whFault.has(item.type);
+        return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--border)">
+          <span style="font-size:11px;flex:1;font-weight:600">${item.name||'—'}</span>
+          <span style="font-size:10px;padding:2px 8px;border-radius:4px;
+            background:${isWh?'#fef2f2':'#eff6ff'};color:${isWh?'#dc2626':'#1d4ed8'}">
+            ${typeLabel[item.type]||item.type}
+          </span>
+          <span style="font-size:10px;font-weight:700;min-width:32px;text-align:center">${item.qty_boxes||item.qty||''} кор.</span>
+          ${item.subtotal?`<span style="font-size:11px;font-weight:700;color:var(--red)">¥${parseFloat(item.subtotal).toFixed(2)}</span>`:''}
+          <span style="font-size:10px;padding:2px 6px;border-radius:3px;
+            background:${isWh?'#fef2f2':'#f0f9ff'};color:${isWh?'#991b1b':'#0369a1'};font-weight:600">
+            ${isWh?'🏭 склад':'🚚 поставщик'}
+          </span>
+        </div>`;
+      }).join('');
+
+      return `<div class="card" style="border-left:4px solid ${sc};margin-bottom:12px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+          <div>
+            <span style="font-weight:700;font-size:14px;color:var(--sage-d)">${client}</span>
+            <span style="font-size:11px;color:var(--mid);margin-left:8px">Заказ #${c.order_number||'—'} · ${dt}</span>
+            <span class="badge" style="background:${sc}20;color:${sc};margin-left:6px">${statusMap[c.status]||c.status}</span>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            ${total?`<span style="font-size:14px;font-weight:700;color:var(--red)">¥${total.toFixed(2)}</span>`:''}
+            ${faultBadge}
+          </div>
+        </div>
+        ${c.description?`<div style="font-size:12px;color:var(--mid);margin-bottom:8px;font-style:italic">"${c.description}"</div>`:''}
+        <div style="padding:6px 0">${itemsRows}</div>
+        ${whItems.length ? `<div style="margin-top:8px;padding:8px 12px;background:#fef2f2;border-radius:6px;border-left:3px solid #dc2626;font-size:12px">
+          <b style="color:#dc2626">🏭 Ответственность склада / 仓库责任:</b>
+          ${whItems.map(i=>`<span style="margin-left:6px">${i.name} (${i.qty_boxes||i.qty||1} кор.${i.subtotal?', ¥'+parseFloat(i.subtotal).toFixed(2):''})</span>`).join(' ·')}
+          ${whTotal?`<b style="color:#dc2626;margin-left:8px">Итого: ¥${whTotal.toFixed(2)}</b>`:''}
+        </div>` : ''}
+        ${supplyItems.length ? `<div style="margin-top:6px;padding:8px 12px;background:#eff6ff;border-radius:6px;border-left:3px solid #3b82f6;font-size:12px">
+          <b style="color:#1d4ed8">🚚 Ответственность поставщика / 供应商责任:</b>
+          ${supplyItems.map(i=>`<span style="margin-left:6px">${i.name}</span>`).join(' ·')}
+          ${supTotal?`<b style="color:#1d4ed8;margin-left:8px">Итого: ¥${supTotal.toFixed(2)}</b>`:''}
+        </div>` : ''}
+        ${c.manager_reply?`<div style="margin-top:8px;padding:6px 10px;background:var(--sage-l);border-radius:6px;font-size:11px">
+          <b style="color:var(--sage-d)">Ответ менеджера:</b> ${c.manager_reply}
+        </div>`:''}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    wrap.innerHTML = `<div class="empty-state"><p style="color:var(--red)">⚠️ Выполните create_claims.sql в Supabase</p></div>`;
+  }
+}
+
+// ── WAREHOUSE STATS / СВОДКА СКЛАДА ──
+async function loadWhStats() {
+  const wrap = document.getElementById('wh-stats-content');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+  const days  = parseInt(document.getElementById('wh-stats-period')?.value || 30);
+  const since = new Date(Date.now() - days*86400000).toISOString().slice(0,10);
+
+  const [ordersRes, claimsRes] = await Promise.all([
+    sb.from('orders').select('id,order_number,status,date_ship,wh_assembled,wh_received,wh_shortages,client:users!orders_client_id_fkey(company_name,login)').gte('date_ship', since),
+    sb.from('claims').select('*,client:users!claims_client_id_fkey(company_name,login)').gte('created_at', since+'T00:00:00').catch(()=>({data:[]}))
+  ]);
+
+  const orders = ordersRes.data || [];
+  const claims = (claimsRes.data || claimsRes?.data) || [];
+
+  // KPIs
+  const assembled   = orders.filter(o=>o.wh_assembled).length;
+  const received    = orders.filter(o=>o.wh_received).length;
+  const sent        = orders.filter(o=>o.status==='sent').length;
+  const totalOrders = orders.length;
+
+  // Shortages analysis
+  let totalShortages = 0, shortageBoxes = 0;
+  orders.forEach(o => {
+    try {
+      const sh = JSON.parse(o.wh_shortages||'[]');
+      sh.filter(s=>s.diff<0).forEach(s => { totalShortages++; shortageBoxes += Math.abs(s.diff); });
+    } catch{}
+  });
+
+  // Claims fault analysis
+  const whFault = new Set(['quality','damaged','quantity']);
+  let whClaimCount=0, supClaimCount=0, whClaimTotal=0, supClaimTotal=0;
+  claims.forEach(c => {
+    try {
+      const items = JSON.parse(c.items_json||'[]');
+      items.forEach(i => {
+        const sub = parseFloat(i.subtotal)||0;
+        if (whFault.has(i.type)) { whClaimCount++; whClaimTotal+=sub; }
+        else { supClaimCount++; supClaimTotal+=sub; }
+      });
+    } catch{}
+  });
+
+  // Assembly rate
+  const assemblyRate = totalOrders ? Math.round(assembled/totalOrders*100) : 0;
+
+  // Recent problems timeline
+  const problemOrders = orders.filter(o => {
+    try { return JSON.parse(o.wh_shortages||'[]').some(s=>s.diff<0); } catch{ return false; }
+  }).slice(0,5);
+
+  wrap.innerHTML = `
+    <!-- KPI row -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:20px">
+      ${[
+        ['📦','Заказов','за период',totalOrders,'#1b4332'],
+        ['✅','Собрано',`${assemblyRate}%`,assembled,'#059669'],
+        ['📥','Принято','приёмок',received,'#0891b2'],
+        ['⚠️','Нехватки','позиций',totalShortages,totalShortages?'#dc2626':'#059669'],
+        ['🏭','Ошибки склада','претензий',whClaimCount,whClaimCount?'#dc2626':'#059669'],
+        ['🚚','Ошибки поставщика','претензий',supClaimCount,supClaimCount?'#d97706':'#059669'],
+      ].map(([icon,label,sub,val,color])=>`
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;text-align:center">
+          <div style="font-size:18px;margin-bottom:4px">${icon}</div>
+          <div style="font-size:22px;font-weight:700;color:${color};font-family:var(--font-h)">${val}</div>
+          <div style="font-size:11px;font-weight:600;color:var(--text)">${label}</div>
+          <div style="font-size:10px;color:var(--mid)">${sub}</div>
+        </div>`).join('')}
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <!-- Fault breakdown -->
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+        <div style="font-size:12px;font-weight:700;color:var(--sage-d);margin-bottom:12px">⚖️ Разбивка ответственности / 责任分析</div>
+        ${whClaimCount+supClaimCount === 0
+          ? `<div style="color:var(--mid);font-size:12px;text-align:center;padding:20px 0">✅ Претензий нет / 暂无投诉</div>`
+          : `<div style="margin-bottom:10px">
+              <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+                <span style="color:#dc2626;font-weight:600">🏭 Ошибки склада</span>
+                <span style="font-weight:700;color:#dc2626">${whClaimCount} поз. · ¥${whClaimTotal.toFixed(2)}</span>
+              </div>
+              <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+                <div style="height:100%;background:#dc2626;border-radius:4px;width:${whClaimCount+supClaimCount?Math.round(whClaimCount/(whClaimCount+supClaimCount)*100):0}%"></div>
+              </div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+                <span style="color:#1d4ed8;font-weight:600">🚚 Ошибки поставщика</span>
+                <span style="font-weight:700;color:#1d4ed8">${supClaimCount} поз. · ¥${supClaimTotal.toFixed(2)}</span>
+              </div>
+              <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+                <div style="height:100%;background:#3b82f6;border-radius:4px;width:${whClaimCount+supClaimCount?Math.round(supClaimCount/(whClaimCount+supClaimCount)*100):0}%"></div>
+              </div>
+            </div>
+            <div style="margin-top:10px;padding:8px;background:var(--sage-l);border-radius:6px;text-align:center;font-size:11px">
+              Общая сумма претензий: <b style="color:var(--red)">¥${(whClaimTotal+supClaimTotal).toFixed(2)}</b>
+            </div>`}
+      </div>
+
+      <!-- Assembly progress -->
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+        <div style="font-size:12px;font-weight:700;color:var(--sage-d);margin-bottom:12px">🏭 Прогресс сборки / 备货进度</div>
+        ${[
+          ['📦 Всего заказов', totalOrders, totalOrders, '#6b7280'],
+          ['✅ Собрано', assembled, totalOrders, '#059669'],
+          ['📥 Приёмка проведена', received, totalOrders, '#0891b2'],
+          ['🚚 Отправлено', sent, totalOrders, '#1b4332'],
+        ].map(([label, val, max, color]) => `
+          <div style="margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+              <span>${label}</span>
+              <span style="font-weight:700;color:${color}">${val} / ${max}</span>
+            </div>
+            <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+              <div style="height:100%;background:${color};border-radius:3px;width:${max?Math.round(val/max*100):0}%"></div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <!-- Problem orders -->
+    ${problemOrders.length ? `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+      <div style="font-size:12px;font-weight:700;color:var(--sage-d);margin-bottom:10px">⚠️ Заказы с нехватками при приёмке / 收货短缺订单</div>
+      ${problemOrders.map(o => {
+        let shortages = [];
+        try { shortages = JSON.parse(o.wh_shortages||'[]').filter(s=>s.diff<0); } catch{}
+        const client = o.client?.company_name || o.client?.login || '—';
+        return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1">
+            <span style="font-weight:700;color:var(--sage-d)">${o.order_number}</span>
+            <span style="font-size:11px;color:var(--mid);margin-left:8px">👤 ${client} · ${o.date_ship||'—'}</span>
+          </div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            ${shortages.slice(0,3).map(s=>`
+              <span style="font-size:10px;background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:4px">
+                ${s.diff} кор.
+              </span>`).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>` : `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px;text-align:center;color:var(--mid);font-size:13px">
+      ✅ За выбранный период нехватки при приёмке не зафиксированы / 所选期间无收货短缺
+    </div>`}
+  `;
 }
 
 // ── RECEIVING / ПРИЁМКА ──
