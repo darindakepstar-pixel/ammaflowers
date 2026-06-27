@@ -373,7 +373,7 @@ td.L{text-align:left}
   </div>
 
   <div class="notice-bar" id="notice-bar">
-    ⚠ Цены действительны 3 дня · 价格有效期3天 · Мин. заказ — 1 коробка/вид · Идут тех.работы уточняйте актуальные характеристики у менеджера
+    ⚠ Цены действительны 3 дня · 价格有效期3天 · Мин. заказ — 1 коробка/вид
   </div>
 
   <!-- PAGE: PRICE LIST -->
@@ -1358,8 +1358,13 @@ function renderMyOrder() {
     let total = 0, rows = '';
     cartItems.forEach((o, i) => {
       const sub = o.pbox * o.qty; total += sub;
+      const thumb = o.flower.photo_url || THUMBS[o.flower.en] || '';
+      const imgCell = thumb
+        ? `<img src="${thumb}" style="width:38px;height:38px;object-fit:cover;border-radius:5px;display:block">`
+        : `<div style="width:38px;height:38px;background:var(--sage-l);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:16px">🌸</div>`;
       rows += `<tr class="${i%2?'stripe':''}">
         <td style="color:var(--light);font-size:10px">${i+1}</td>
+        <td style="width:44px;padding:4px">${imgCell}</td>
         <td class="L"><b style="font-size:12px">${o.flower.ru}</b>
           <div style="font-size:10px;color:var(--mid)">${o.flower.cn||''}</div></td>
         <td style="font-size:10px;color:var(--mid)">${o.flower.pack||''}</td>
@@ -1394,6 +1399,7 @@ function renderMyOrder() {
         <table style="min-width:660px">
           <thead><tr>
             <th style="width:28px">№</th>
+            <th style="width:44px">Фото</th>
             <th class="L">Название / 名称</th>
             <th>Упак.</th><th>¥/кор.</th>
             <th>Кол.</th><th>Итого</th>
@@ -1429,11 +1435,43 @@ function renderMyOrder() {
   }
 
   // ── PAST ORDERS ──
+  const STATUS_STEPS = [
+    { key: 'pending_review', icon: '📨', ru: 'На проверке',  cn: '待审核' },
+    { key: 'confirmed',      icon: '✅', ru: 'Подтверждён',  cn: '已确认' },
+    { key: 'invoiced',       icon: '🧾', ru: 'Счёт',         cn: '已开票' },
+    { key: 'paid',           icon: '💰', ru: 'Оплачен',      cn: '已付款' },
+    { key: 'sent',           icon: '🚚', ru: 'Отправлен',    cn: '已发货' },
+  ];
   const statusColors = {
     pending_review:'var(--blue)',needs_revision:'var(--red)',
     confirmed:'var(--sage-d)',invoiced:'#8B6914',
-    paid:'var(--sage)',cancelled:'var(--light)',draft:'var(--mid)',
+    paid:'var(--sage)',cancelled:'var(--light)',draft:'var(--mid)',sent:'var(--blue)',
   };
+
+  function buildStatusBar(status) {
+    if (['cancelled','draft','needs_revision'].includes(status)) return '';
+    const idx = STATUS_STEPS.findIndex(s => s.key === status);
+    return `<div style="display:flex;align-items:center;gap:0;margin:10px 0 4px;overflow-x:auto">
+      ${STATUS_STEPS.map((s, i) => {
+        const done = i < idx;
+        const active = i === idx;
+        const c = active ? 'var(--sage-d)' : done ? 'var(--sage)' : 'var(--border)';
+        const tc = (done||active) ? (active ? 'var(--sage-d)' : 'var(--sage)') : 'var(--light)';
+        return `<div style="display:flex;align-items:center;flex:1;min-width:0">
+          <div style="display:flex;flex-direction:column;align-items:center;min-width:44px">
+            <div style="width:26px;height:26px;border-radius:50%;background:${done?'var(--sage)':active?'var(--sage-d)':'var(--bg)'};
+              border:2px solid ${c};display:flex;align-items:center;justify-content:center;font-size:11px">
+              ${done ? '✓' : s.icon}
+            </div>
+            <div style="font-size:9px;color:${tc};text-align:center;margin-top:2px;line-height:1.2">${s.ru}</div>
+            <div style="font-size:8px;color:${tc};text-align:center">${s.cn}</div>
+          </div>
+          ${i < STATUS_STEPS.length-1 ? `<div style="flex:1;height:2px;background:${done?'var(--sage)':'var(--border)'};margin-bottom:20px;min-width:8px"></div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
   const ordersHTML = myOrders.map(o => {
     const total = (o.order_items||[]).reduce((s,i)=>s+(i.subtotal||0),0);
     const canEdit = ['needs_revision','draft'].includes(o.status);
@@ -1446,6 +1484,27 @@ function renderMyOrder() {
            <b style="font-size:10px;color:var(--or)">💬 Комментарий менеджера / 经理意见:</b>
            <div style="font-size:12px;margin-top:3px">${o.revision_comment}</div>
          </div>` : '';
+
+    // Full items list (hidden by default)
+    const itemsDetail = (o.order_items||[]).map((item, idx) => {
+      const snap = item.flower_snapshot || {};
+      const thumb = item.flower?.photo_url || THUMBS[item.flower?.en] || THUMBS[snap.en] || '';
+      const imgH = thumb ? `<img src="${thumb}" style="width:34px;height:34px;object-fit:cover;border-radius:5px;flex-shrink:0">` :
+        `<div style="width:34px;height:34px;background:var(--sage-l);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">🌸</div>`;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;${idx?'border-top:1px solid var(--border)':''}">
+        ${imgH}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:700">${snap.ru||item.flower?.ru||'—'}</div>
+          <div style="font-size:10px;color:var(--mid)">${snap.cn||item.flower?.cn||''}</div>
+        </div>
+        <div style="text-align:right;font-size:11px;flex-shrink:0">
+          <div style="color:var(--mid)">${item.qty_boxes||1} кор. / 箱</div>
+          <div style="font-weight:700;color:var(--sage-d)">¥${(item.subtotal||0).toFixed(2)}</div>
+          ${item.client_name ? `<div style="font-size:9px;color:var(--light)">${item.client_name}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
     return `<div class="card" style="border-left:4px solid ${col};margin-bottom:10px">
       <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div style="flex:1;min-width:180px">
@@ -1457,15 +1516,24 @@ function renderMyOrder() {
             📅 ${o.date_order}${o.date_ship?' → 🚚 '+o.date_ship:''}
           </div>
           <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">${itemsPreview}</div>
+          ${buildStatusBar(o.status)}
           ${revComment}
         </div>
         <div style="text-align:right;min-width:100px">
           <div style="font-size:17px;font-weight:700;color:var(--sage-d);font-family:var(--font-h)">¥${total.toFixed(2)}</div>
           <div style="font-size:10px;color:var(--light)">${(o.order_items||[]).length} поз./件</div>
-          ${canEdit ? `<button class="btn btn-secondary btn-sm" style="margin-top:8px;white-space:nowrap" onclick="editOrder('${o.id}')">
+          <button class="btn btn-secondary btn-sm" style="margin-top:8px;white-space:nowrap"
+            onclick="this.closest('.card').querySelector('.order-items-detail').classList.toggle('hidden');
+                     this.textContent=this.textContent.includes('▼')?'▲ Скрыть/收起':'▼ Состав/明细'">
+            ▼ Состав/明细
+          </button>
+          ${canEdit ? `<button class="btn btn-secondary btn-sm" style="margin-top:6px;white-space:nowrap" onclick="editOrder('${o.id}')">
             ✏️ Исправить / 修改
           </button>` : ''}
         </div>
+      </div>
+      <div class="order-items-detail hidden" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">
+        ${itemsDetail || '<div style="color:var(--light);font-size:12px;padding:8px 0">Нет позиций / 暂无商品</div>'}
       </div>
     </div>`;
   }).join('');
