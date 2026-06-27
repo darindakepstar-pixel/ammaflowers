@@ -818,12 +818,18 @@ async function initApp() {
     loadMyInvoices();
   }
 
-  // Activate price page first so DOM is ready
-  document.getElementById('page-price').classList.add('active');
+  // Activate first page based on role
+  if (isWh) {
+    document.getElementById('page-warehouse').classList.add('active');
+  } else {
+    document.getElementById('page-price').classList.add('active');
+  }
 
-  // Load flowers then render
-  await loadFlowers();
-  renderPrice();
+  // Load flowers then render (not needed for warehouse)
+  if (!isWh) {
+    await loadFlowers();
+    renderPrice();
+  }
 
   // Subscribe to realtime flower updates
   sb.channel('flowers-changes')
@@ -832,14 +838,19 @@ async function initApp() {
     .subscribe();
 
   // Setup notifications realtime + load initial count
-  requestNotifPermission();
-  setupRealtimeNotifications();
-  const uid = currentUser?.id;
-  if (uid) {
-    const { data: notifData } = await sb.from('notifications')
-      .select('id,is_read').eq('user_id', uid).eq('is_read', false).limit(99);
-    _notifications = notifData || [];
-    updateNotifBadge();
+  // (wrapped in try-catch in case notifications table doesn't exist yet)
+  try {
+    requestNotifPermission();
+    setupRealtimeNotifications();
+    const uid = currentUser?.id;
+    if (uid) {
+      const { data: notifData } = await sb.from('notifications')
+        .select('id,is_read').eq('user_id', uid).eq('is_read', false).limit(99);
+      _notifications = notifData || [];
+      updateNotifBadge();
+    }
+  } catch(e) {
+    console.warn('Notifications table not ready yet:', e);
   }
 
   // Warehouse: load orders and setup realtime
@@ -2216,16 +2227,20 @@ async function updateOrderStatus(id, status) {
 
     const triggers = notifMap[status];
     if (triggers) {
-      // Notify client
-      if (triggers.client && order.client_id) {
-        await sendNotification(order.client_id, triggers.client.title, triggers.client.body, triggers.client.icon);
-      }
-      // Notify warehouse users
-      if (triggers.warehouse) {
-        const { data: whUsers } = await sb.from('users').select('id').eq('role', 'warehouse');
-        for (const wu of (whUsers || [])) {
-          await sendNotification(wu.id, triggers.warehouse.title, triggers.warehouse.body, triggers.warehouse.icon);
+      try {
+        // Notify client
+        if (triggers.client && order.client_id) {
+          await sendNotification(order.client_id, triggers.client.title, triggers.client.body, triggers.client.icon);
         }
+        // Notify warehouse users
+        if (triggers.warehouse) {
+          const { data: whUsers } = await sb.from('users').select('id').eq('role', 'warehouse');
+          for (const wu of (whUsers || [])) {
+            await sendNotification(wu.id, triggers.warehouse.title, triggers.warehouse.body, triggers.warehouse.icon);
+          }
+        }
+      } catch(e) {
+        console.warn('Notification send failed (table may not exist yet):', e);
       }
     }
   }
@@ -4455,12 +4470,30 @@ async function loadChatMessages() {
   const wrap = document.getElementById('chat-messages');
   wrap.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
 
-  const { data, error } = await sb.from('messages')
-    .select('*').eq('room', _chatRoom)
-    .order('created_at', { ascending: true }).limit(100);
+  try {
+    const { data, error } = await sb.from('messages')
+      .select('*').eq('room', _chatRoom)
+      .order('created_at', { ascending: true }).limit(100);
 
-  _chatMessages = data || [];
+    if (error) throw error;
+    _chatMessages = data || [];
+  } catch(e) {
+    wrap.innerHTML = `<div style="text-align:center;color:var(--red);font-size:12px;padding:40px 16px">
+      ⚠️ Чат недоступен. Выполните SQL create_chat.sql в Supabase.<br>
+      <span style="color:var(--light)">Chat unavailable. Run create_chat.sql in Supabase first.</span>
+    </div>`;
+    return;
+  }
+
   wrap.innerHTML = '';
+
+  if (!_chatMessages.length) {
+    wrap.innerHTML = `<div style="text-align:center;color:var(--light);font-size:13px;padding:40px 0">
+      Нет сообщений / 暂无消息<br>
+      <span style="font-size:11px">Начните диалог / 开始对话</span>
+    </div>`;
+    return;
+  }
 
   if (!_chatMessages.length) {
     wrap.innerHTML = `<div style="text-align:center;color:var(--light);font-size:13px;padding:40px 0">
