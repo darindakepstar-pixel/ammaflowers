@@ -2921,9 +2921,6 @@ async function addWarehouseUser() {
   await loadClients(); renderClients();
   toast('✅ Сотрудник склада создан: ' + (name||login));
 }
-  closeModal();
-  toast('✅ Менеджер создан: ' + (company||login));
-}
 
 // ══════════════════════════════════════════════════════════
 //  CLIENT: MY INVOICES
@@ -4391,6 +4388,15 @@ function exportLabelsExcel() {
 // ══════════════════════════════════════════════════════════
 //  CHAT — ЧАТ / 聊天
 // ══════════════════════════════════════════════════════════
+
+// Utility: escape HTML special chars
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+    .replace(/\n/g,'<br>');
+}
 let _chatRoom     = 'office-warehouse';
 let _chatChannel  = null;
 let _chatMessages = [];
