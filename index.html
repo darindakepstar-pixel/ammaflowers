@@ -114,6 +114,10 @@ btn,button{font-family:var(--font-b);cursor:pointer}
 .recv-ok{background:var(--sage-l)}
 .recv-short{background:#fff8e1}
 .recv-miss{background:#fff0f0}
+.ltype-btn{background:var(--bg);border:none;border-right:1px solid var(--border);padding:6px 12px;font-size:12px;cursor:pointer;color:var(--mid);font-weight:600;transition:all .15s}
+.ltype-btn:last-child{border-right:none}
+.ltype-btn:hover{background:var(--sage-l);color:var(--sage-d)}
+.ltype-btn.active{background:var(--sage-d);color:#fff}
 .lbl-tbl th{background:var(--sage-d);color:#fff;padding:9px 10px;font-size:11px;font-weight:600;border:1px solid rgba(255,255,255,.12);white-space:normal;vertical-align:bottom;text-align:left}
 .lbl-tbl td{padding:8px 10px;border:1px solid var(--border);vertical-align:middle;font-size:13px}
 .lbl-tbl tbody tr:nth-child(even) td{background:var(--bg)}
@@ -668,13 +672,40 @@ td.L{text-align:left}
 
       <!-- ── LABELS / ЭТИКЕТКИ ── -->
       <div id="whpanel-labels" class="hidden">
-        <div class="page-sub" style="margin-bottom:12px">Выберите заказ для печати этикеток / 选择订单打印标签</div>
         <div class="ctrl-bar" style="flex-wrap:wrap;gap:10px;margin-bottom:12px">
           <select class="inp" id="wh-label-order" onchange="loadWhLabelOrder()" style="min-width:220px">
-            <option value="">— Выберите заказ / 请选择订单 —</option>
+            <option value="">— Заказ / 订单 —</option>
           </select>
+          <!-- Label type selector -->
+          <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden">
+            <button class="ltype-btn active" id="ltype-ru"  onclick="setLabelType('ru',this)"  title="Транспортная RU/EN">🇷🇺 RU/EN</button>
+            <button class="ltype-btn"        id="ltype-cn"  onclick="setLabelType('cn',this)"  title="Транспортная CN">🇨🇳 CN</button>
+            <button class="ltype-btn"        id="ltype-box" onclick="setLabelType('box',this)" title="Стикер коробки по клиентам">📦 Коробки</button>
+          </div>
         </div>
-        <div id="wh-labels-preview" style="margin-bottom:16px"></div>
+
+        <!-- Seller/Buyer settings (collapsible) -->
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;cursor:pointer"
+               onclick="this.nextElementSibling.classList.toggle('hidden')">
+            <span style="font-size:12px;font-weight:700;color:var(--sage-d)">⚙️ Продавец / Импортёр / 卖方·进口商</span>
+            <span style="font-size:11px;color:var(--mid)">▼ изменить</span>
+          </div>
+          <div class="hidden" style="padding:0 14px 12px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:10px;color:var(--mid);font-weight:700;letter-spacing:.05em">ПРОДАВЕЦ / SELLER / 卖方</label>
+              <textarea class="inp" id="lbl-seller" rows="3" style="width:100%;margin-top:4px;font-size:12px;resize:vertical">AMMA FLOWERS
+Кунмин, Китай / Kunming, China</textarea>
+            </div>
+            <div>
+              <label style="font-size:10px;color:var(--mid);font-weight:700;letter-spacing:.05em">ИМПОРТЁР / IMPORTER / 进口商</label>
+              <textarea class="inp" id="lbl-buyer" rows="3" style="width:100%;margin-top:4px;font-size:12px;resize:vertical"></textarea>
+              <div style="font-size:10px;color:var(--mid);margin-top:2px">Авто из заказа / 自动从订单获取 (оставьте пустым)</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="wh-labels-preview" style="margin-bottom:12px"></div>
         <div id="wh-labels-print-area"></div>
       </div>
     </div>
@@ -4849,6 +4880,25 @@ async function toggleAssembled(orderId, isAssembled) {
 }
 
 // ── LABELS from warehouse ──
+let _currentLabelType = 'ru';
+let _currentLabelOrder = null;
+
+function setLabelType(type, btn) {
+  _currentLabelType = type;
+  document.querySelectorAll('.ltype-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (_currentLabelOrder) renderLabels(_currentLabelOrder);
+}
+
+function getLabelSeller() {
+  return document.getElementById('lbl-seller')?.value?.trim() ||
+    'AMMA FLOWERS\nКунмин, Китай / Kunming, China';
+}
+function getLabelBuyer(defaultBuyer) {
+  const v = document.getElementById('lbl-buyer')?.value?.trim();
+  return v || defaultBuyer || '';
+}
+
 async function loadWhLabelOrders() {
   const sel = document.getElementById('wh-label-order');
   if (!sel) return;
@@ -4863,156 +4913,264 @@ async function loadWhLabelOrders() {
     }).join('');
   document.getElementById('wh-labels-preview').innerHTML = '';
   document.getElementById('wh-labels-print-area').innerHTML = '';
+  _currentLabelOrder = null;
 }
 
 async function loadWhLabelOrder() {
   const orderId = document.getElementById('wh-label-order')?.value;
-  const preview = document.getElementById('wh-labels-preview');
+  const preview  = document.getElementById('wh-labels-preview');
   const printArea = document.getElementById('wh-labels-print-area');
-  if (!orderId) { preview.innerHTML=''; printArea.innerHTML=''; return; }
-
+  if (!orderId) { preview.innerHTML=''; printArea.innerHTML=''; _currentLabelOrder=null; return; }
   preview.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
 
   const { data: order } = await sb.from('orders')
-    .select(`*, client:users!orders_client_id_fkey(company_name,login),
-      order_items(*, flower:flowers(ru,cn,en,stems,boxes_per_box,pack))`)
+    .select(`*, client:users!orders_client_id_fkey(company_name,login,contact),
+      order_items(*, flower:flowers(ru,cn,en,stems,boxes_per_box,pack,box_size,flower_weight))`)
     .eq('id', orderId).single();
 
   if (!order) { preview.innerHTML='<p style="color:var(--red)">Ошибка загрузки</p>'; return; }
 
-  const client = order.client?.company_name || order.client?.login || '';
-  const items  = order.order_items || [];
-  const today  = new Date().toLocaleDateString('ru-RU');
+  const buyerEl = document.getElementById('lbl-buyer');
+  if (buyerEl && !buyerEl.value.trim())
+    buyerEl.value = order.client?.company_name || order.client?.login || '';
 
-  // Build labels data
-  const labelsData = [];
-  items.forEach(item => {
-    const f    = item.flower || {};
-    const snap = item.flower_snapshot || {};
-    const ru   = f.ru  || snap.ru  || '';
-    const cn   = f.cn  || snap.cn  || '';
-    const bpb  = parseInt(item.bunches_per_box) || parseInt(f.boxes_per_box || snap.boxes_per_box) || '';
-    const spb  = parseInt(f.stems || snap.stems) || '';
-    const spbox = (bpb && spb) ? bpb * spb : '';
-    const qty  = parseInt(item.qty_boxes) || 1;
-    for (let i = 0; i < qty; i++) {
-      labelsData.push({
-        boxContent: ru,
-        chinName:   cn,
-        color:      '',
-        isCut:      true,
-        stemsPerBunch: spb ? String(spb) : '',
-        bunchesPerBox: bpb ? String(bpb) : '',
-        stemsPerBox:   spbox ? String(spbox) : '',
-        temp:    '+2 / +8 °C',
-        country: 'Китай / China / 中国',
-        sellerText: 'AMMA FLOWERS\nКунмин, Китай / Kunming, China',
-        buyerText:  client,
-        reg:     '',
-        prodDate: today,
-        batch:   `${order.order_number}`,
-        order:   `#${order.order_number} ${client}`,
-        boxNum:  i + 1,
-        totalBoxes: qty,
-      });
-    }
-  });
-
-  // Preview info
-  preview.innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;background:var(--sage-l);border-radius:8px">
-      <span style="font-size:13px"><b>#${order.order_number}</b> · ${client} · 🚚 ${order.date_ship||'—'}</span>
-      <span style="font-size:12px;color:var(--mid)">${labelsData.length} этикеток / 标签</span>
-      <button class="btn btn-primary btn-sm" onclick="whDoPrint()">🖨 Печать / 打印</button>
-      <button class="btn btn-secondary btn-sm" onclick="whDownloadLabelExcel('${orderId}')">📊 Excel</button>
-    </div>`;
-
-  // Build print-ready labels HTML
-  printArea.innerHTML = buildWhLabelsHtml(labelsData);
+  _currentLabelOrder = order;
+  renderLabels(order);
 }
 
-function buildWhLabelsHtml(labelsData) {
-  const labelStyle = `
-    <style>
-      .wh-label-wrapper{display:inline-block;margin:4px;vertical-align:top}
-      .wh-label{
-        width:80mm;min-height:130mm;max-height:130mm;overflow:hidden;
-        padding:4mm 5mm;font-family:Arial,sans-serif;font-size:7.5pt;
-        line-height:1.4;color:#000;border:1.5px solid #000;border-radius:2px;
-        background:#fff;box-sizing:border-box;
-        transform:scale(1.4);transform-origin:top left;
-        margin-bottom:calc(130mm * 0.4);
-      }
-      .wh-label-header{background:#fff;color:#000;padding:3mm 4mm;margin:-4mm -5mm 3mm;
-        font-weight:bold;font-size:9.5pt;line-height:1.35;border-bottom:0.5mm solid #000}
-      .wh-label-cn{font-size:7pt;color:#000;margin-top:0.5mm}
-      .wh-label-stem{margin-top:1.5mm;font-size:7.5pt;color:#000}
-      .wh-label-row{margin:1mm 0}
-      .wh-label-key{font-weight:700;font-size:6.5pt;color:#000}
-      .wh-label-val{font-size:7pt;color:#000}
-      .wh-label-section{margin-top:2.5mm;padding-top:2.5mm;border-top:0.3mm solid #ccc}
-      .wh-label-boxnum{text-align:right;font-size:7pt;color:#555;margin-bottom:1mm}
-      @media print{
-        @page{size:80mm 130mm;margin:0}
-        body{margin:0;padding:0;background:#fff}
-        .wh-label{transform:none!important;margin:0!important;border:none!important;
-          width:80mm!important;min-height:130mm!important;page-break-after:always;break-after:page}
-        .wh-label-wrapper{display:block!important;margin:0!important}
-        .no-print{display:none!important}
-      }
-    </style>`;
+function renderLabels(order) {
+  const preview   = document.getElementById('wh-labels-preview');
+  const printArea = document.getElementById('wh-labels-print-area');
+  const client    = order.client?.company_name || order.client?.login || '';
+  const items     = order.order_items || [];
+  const today     = new Date().toLocaleDateString('ru-RU');
+  const seller    = getLabelSeller();
+  const buyer     = getLabelBuyer(client);
 
-  const labelsHtml = labelsData.map(ld => {
-    const stemParts = [];
-    if (ld.stemsPerBunch) stemParts.push(`Стеблей в связке: ${escHtml(ld.stemsPerBunch)}`);
-    if (ld.bunchesPerBox) stemParts.push(`Связок в коробе: ${escHtml(ld.bunchesPerBox)}`);
-    if (ld.stemsPerBox)   stemParts.push(`Стеблей в коробе: ${escHtml(ld.stemsPerBox)}`);
-    return `<div class="wh-label-wrapper">
-      <div class="wh-label">
-        <div class="wh-label-boxnum">Кор. ${ld.boxNum}/${ld.totalBoxes}</div>
-        <div class="wh-label-header">
-          ${escHtml(ld.boxContent)}
-          ${ld.chinName ? `<div class="wh-label-cn">${escHtml(ld.chinName)}</div>` : ''}
-          ${stemParts.length ? `<div class="wh-label-stem">${stemParts.join(' · ')}</div>` : ''}
-        </div>
-        <div class="wh-label-row"><span class="wh-label-key">Температурный режим:</span><span class="wh-label-val"> ${escHtml(ld.temp)}</span></div>
-        <div class="wh-label-row"><span class="wh-label-key">Влажность / Humidity:</span><span class="wh-label-val"> 85–95%</span></div>
-        <div class="wh-label-row"><span class="wh-label-key">Страна происхождения:</span><span class="wh-label-val"> ${escHtml(ld.country)}</span></div>
-        <div class="wh-label-section">
-          <div class="wh-label-key">Продавец / Seller / 卖方:</div>
-          <div class="wh-label-val">${escHtml(ld.sellerText).replace(/\n/g,'<br>')}</div>
-        </div>
-        <div class="wh-label-section">
-          <div class="wh-label-key">Импортёр / Importer / 进口商:</div>
-          <div class="wh-label-val">${escHtml(ld.buyerText)}</div>
-        </div>
-        <div class="wh-label-section">
-          <div class="wh-label-row"><span class="wh-label-key">Дата производства:</span><span class="wh-label-val"> ${escHtml(ld.prodDate)}</span></div>
-          <div class="wh-label-row"><span class="wh-label-key">Производственная партия:</span><span class="wh-label-val"> ${escHtml(ld.batch)}</span></div>
-          <div class="wh-label-row"><span class="wh-label-key">Заказ / Order:</span><span class="wh-label-val"> ${escHtml(ld.order)}</span></div>
-        </div>
-      </div>
+  let labelsData = [];
+
+  if (_currentLabelType === 'ru' || _currentLabelType === 'cn') {
+    items.forEach(item => {
+      const f    = item.flower || {};
+      const snap = item.flower_snapshot || {};
+      const ru   = f.ru  || snap.ru  || '';
+      const cn   = f.cn  || snap.cn  || '';
+      const bpb  = parseInt(item.bunches_per_box) || parseInt(f.boxes_per_box || snap.boxes_per_box) || '';
+      const spb  = parseInt(f.stems || snap.stems) || '';
+      const spbox = (bpb && spb) ? bpb * spb : '';
+      const qty  = parseInt(item.qty_boxes) || 1;
+      for (let i = 0; i < qty; i++) {
+        labelsData.push({ ru, cn, bpb, spb, spbox,
+          boxSize: f.box_size||snap.box_size||'', fw: f.flower_weight||snap.flower_weight||'',
+          temp: '+2 / +8 °C', country: 'Китай / China / 中国',
+          seller, buyer, prodDate: today,
+          batch: String(order.order_number), orderNum: `#${order.order_number}`,
+          client, clientName: item.client_name||'', comment: item.comment||'',
+          boxNum: i+1, totalBoxes: qty });
+      }
+    });
+    printArea.innerHTML = _currentLabelType === 'ru' ? buildLabelsRU(labelsData) : buildLabelsCN(labelsData);
+  } else {
+    let seq = 1;
+    items.forEach(item => {
+      const f    = item.flower || {};
+      const snap = item.flower_snapshot || {};
+      const ru   = f.ru  || snap.ru  || '';
+      const cn   = f.cn  || snap.cn  || '';
+      const bpb  = parseInt(item.bunches_per_box) || parseInt(f.boxes_per_box || snap.boxes_per_box) || '';
+      const spb  = parseInt(f.stems || snap.stems) || '';
+      const qty  = parseInt(item.qty_boxes) || 1;
+      for (let i = 0; i < qty; i++) {
+        labelsData.push({ ru, cn, bpb, spb,
+          boxSize: f.box_size||snap.box_size||'', pack: f.pack||snap.pack||'',
+          orderNum: String(order.order_number), client,
+          clientName: item.client_name||client, comment: item.comment||'',
+          boxNum: i+1, totalBoxes: qty, seq: seq++ });
+      }
+    });
+    printArea.innerHTML = buildLabelsBox(labelsData);
+  }
+
+  const typeLabel = _currentLabelType==='ru' ? '🇷🇺 RU/EN транспортные' :
+                    _currentLabelType==='cn' ? '🇨🇳 CN транспортные' : '📦 Стикеры коробок';
+  preview.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--sage-l);border-radius:8px">
+      <span style="font-size:13px"><b>#${order.order_number}</b> · ${client} · 🚚 ${order.date_ship||'—'}</span>
+      <span style="font-size:12px;color:var(--sage-d);font-weight:700">${typeLabel}</span>
+      <span style="font-size:12px;color:var(--mid)">${labelsData.length} шт.</span>
+      <button class="btn btn-primary btn-sm" onclick="whDoPrint()">🖨 Печать / 打印</button>
     </div>`;
-  }).join('');
+}
 
-  return labelStyle + `<div style="padding:8px">${labelsHtml}</div>`;
+function buildLabelsRU(data) {
+  const css = `<style>
+    .rwrap{display:inline-block;margin:6px;vertical-align:top}
+    .rlabel{width:80mm;min-height:130mm;max-height:130mm;overflow:hidden;padding:4mm 5mm;
+      font-family:Arial,sans-serif;font-size:7.5pt;line-height:1.4;color:#000;
+      border:1.5px solid #000;border-radius:2px;background:#fff;box-sizing:border-box;
+      transform:scale(1.4);transform-origin:top left;margin-bottom:calc(130mm * 0.4)}
+    .rlabel-hd{background:#fff;color:#000;padding:3mm 4mm;margin:-4mm -5mm 3mm;
+      font-weight:bold;font-size:9.5pt;line-height:1.35;border-bottom:0.5mm solid #000}
+    .rlabel-cn{font-size:7pt;color:#444;margin-top:0.5mm}
+    .rlabel-stem{margin-top:1.5mm;font-size:7pt;color:#000}
+    .rlabel-row{margin:1mm 0} .rlabel-k{font-weight:700;font-size:6.5pt;color:#000}
+    .rlabel-v{font-size:7pt;color:#000}
+    .rlabel-sec{margin-top:2mm;padding-top:2mm;border-top:0.3mm solid #ccc}
+    .rlabel-boxn{text-align:right;font-size:6.5pt;color:#555;margin-bottom:0.5mm}
+    @media print{@page{size:80mm 130mm;margin:0}body{margin:0;padding:0}
+      .rwrap{display:block!important;margin:0!important}
+      .rlabel{transform:none!important;margin:0!important;width:80mm!important;
+        min-height:130mm!important;page-break-after:always;break-after:page}}
+  </style>`;
+  return css + '<div style="padding:8px">' + data.map(d => {
+    const parts=[];
+    if(d.spb)   parts.push(`Стеблей в связке: ${d.spb}`);
+    if(d.bpb)   parts.push(`Связок в коробе: ${d.bpb}`);
+    if(d.spbox) parts.push(`Стеблей в коробе: ${d.spbox}`);
+    return `<div class="rwrap"><div class="rlabel">
+      <div class="rlabel-boxn">Box ${d.boxNum}/${d.totalBoxes}</div>
+      <div class="rlabel-hd">${escHtml(d.ru)}
+        ${d.cn?`<div class="rlabel-cn">${escHtml(d.cn)}</div>`:''}
+        ${parts.length?`<div class="rlabel-stem">${parts.join(' · ')}</div>`:''}
+      </div>
+      <div class="rlabel-row"><span class="rlabel-k">Температурный режим / Temperature:</span><span class="rlabel-v"> ${d.temp}</span></div>
+      <div class="rlabel-row"><span class="rlabel-k">Влажность / Humidity:</span><span class="rlabel-v"> 85–95%</span></div>
+      <div class="rlabel-row"><span class="rlabel-k">Страна происхождения / Country:</span><span class="rlabel-v"> ${d.country}</span></div>
+      ${d.boxSize?`<div class="rlabel-row"><span class="rlabel-k">Размер коробки / Box size:</span><span class="rlabel-v"> ${d.boxSize}</span></div>`:''}
+      <div class="rlabel-sec"><div class="rlabel-k">Продавец / Seller / 卖方:</div>
+        <div class="rlabel-v">${escHtml(d.seller).replace(/\n/g,'<br>')}</div></div>
+      <div class="rlabel-sec"><div class="rlabel-k">Импортёр / Importer / 进口商:</div>
+        <div class="rlabel-v">${escHtml(d.buyer)}</div></div>
+      <div class="rlabel-sec">
+        <div class="rlabel-row"><span class="rlabel-k">Дата производства / Production date:</span><span class="rlabel-v"> ${d.prodDate}</span></div>
+        <div class="rlabel-row"><span class="rlabel-k">Партия / Batch:</span><span class="rlabel-v"> ${d.batch}</span></div>
+        <div class="rlabel-row"><span class="rlabel-k">Заказ / Order:</span><span class="rlabel-v"> ${d.orderNum}</span></div>
+        ${d.clientName?`<div class="rlabel-row"><span class="rlabel-k">Получатель:</span><span class="rlabel-v"> ${escHtml(d.clientName)}</span></div>`:''}
+      </div>
+    </div></div>`;
+  }).join('') + '</div>';
+}
+
+function buildLabelsCN(data) {
+  const css = `<style>
+    .cwrap{display:inline-block;margin:6px;vertical-align:top}
+    .clabel{width:80mm;min-height:130mm;max-height:130mm;overflow:hidden;padding:4mm 5mm;
+      font-family:Arial,sans-serif;font-size:8pt;line-height:1.5;color:#000;
+      border:1.5px solid #000;border-radius:2px;background:#fff;box-sizing:border-box;
+      transform:scale(1.4);transform-origin:top left;margin-bottom:calc(130mm * 0.4)}
+    .clabel-hd{background:#1b4332;color:#fff;padding:3mm 4mm;margin:-4mm -5mm 3mm;
+      font-weight:bold;font-size:11pt;line-height:1.4}
+    .clabel-hd-sub{font-size:7.5pt;color:#d8f3dc;margin-top:0.5mm;font-weight:400}
+    .clabel-row{margin:1.5mm 0;display:flex;gap:2mm}
+    .clabel-k{font-weight:700;font-size:7.5pt;color:#000;min-width:18mm;flex-shrink:0}
+    .clabel-v{font-size:8pt;color:#000}
+    .clabel-sec{margin-top:2.5mm;padding-top:2.5mm;border-top:0.3mm solid #aaa}
+    .clabel-boxn{text-align:right;font-size:7pt;color:#555;margin-bottom:1mm;font-weight:700}
+    @media print{@page{size:80mm 130mm;margin:0}body{margin:0;padding:0}
+      .cwrap{display:block!important;margin:0!important}
+      .clabel{transform:none!important;margin:0!important;width:80mm!important;
+        min-height:130mm!important;page-break-after:always;break-after:page}}
+  </style>`;
+  return css + '<div style="padding:8px">' + data.map(d => {
+    return `<div class="cwrap"><div class="clabel">
+      <div class="clabel-boxn">第 ${d.boxNum} 箱 / 共 ${d.totalBoxes} 箱</div>
+      <div class="clabel-hd">${escHtml(d.cn||d.ru)}
+        ${d.cn&&d.ru?`<div class="clabel-hd-sub">${escHtml(d.ru)}</div>`:''}
+      </div>
+      ${d.spb?`<div class="clabel-row"><span class="clabel-k">数量/扎:</span><span class="clabel-v">${d.spb} 枝</span></div>`:''}
+      ${d.bpb?`<div class="clabel-row"><span class="clabel-k">扎数/箱:</span><span class="clabel-v">${d.bpb} 扎</span></div>`:''}
+      ${d.spbox?`<div class="clabel-row"><span class="clabel-k">枝数/箱:</span><span class="clabel-v">${d.spbox} 枝</span></div>`:''}
+      ${d.fw?`<div class="clabel-row"><span class="clabel-k">净重:</span><span class="clabel-v">${d.fw}</span></div>`:''}
+      ${d.boxSize?`<div class="clabel-row"><span class="clabel-k">箱型:</span><span class="clabel-v">${d.boxSize}</span></div>`:''}
+      <div class="clabel-row"><span class="clabel-k">储藏温度:</span><span class="clabel-v">+2°C ~ +8°C</span></div>
+      <div class="clabel-row"><span class="clabel-k">湿度:</span><span class="clabel-v">85–95%</span></div>
+      <div class="clabel-row"><span class="clabel-k">原产地:</span><span class="clabel-v">中国</span></div>
+      <div class="clabel-sec">
+        <div class="clabel-row"><span class="clabel-k">卖方:</span><span class="clabel-v">${escHtml(d.seller).replace(/\n/g,'<br>')}</span></div>
+        <div class="clabel-row"><span class="clabel-k">进口商:</span><span class="clabel-v">${escHtml(d.buyer)}</span></div>
+      </div>
+      <div class="clabel-sec">
+        <div class="clabel-row"><span class="clabel-k">生产日期:</span><span class="clabel-v">${d.prodDate}</span></div>
+        <div class="clabel-row"><span class="clabel-k">批次:</span><span class="clabel-v">${d.batch}</span></div>
+        <div class="clabel-row"><span class="clabel-k">订单:</span><span class="clabel-v">${d.orderNum}</span></div>
+        ${d.clientName?`<div class="clabel-row"><span class="clabel-k">客户:</span><span class="clabel-v">${escHtml(d.clientName)}</span></div>`:''}
+      </div>
+    </div></div>`;
+  }).join('') + '</div>';
+}
+
+function buildLabelsBox(data) {
+  const css = `<style>
+    .bwrap{display:inline-block;margin:4px;vertical-align:top}
+    .blabel{width:90mm;min-height:70mm;padding:3mm 4mm;
+      font-family:Arial,sans-serif;font-size:9pt;line-height:1.6;color:#000;
+      border:1.5px solid #000;border-radius:2px;background:#fff;box-sizing:border-box;
+      transform:scale(1.5);transform-origin:top left;margin-bottom:calc(70mm * 0.5)}
+    .blabel-hd{background:#1b4332;color:#fff;padding:2mm 3mm;margin:-3mm -4mm 3mm;
+      font-weight:bold;font-size:10pt;display:flex;justify-content:space-between;align-items:center}
+    .blabel-seq{font-size:8pt;opacity:.8}
+    .blabel-row{display:flex;gap:2mm;margin:0.5mm 0}
+    .blabel-k{font-weight:700;font-size:8pt;min-width:14mm;flex-shrink:0;color:#222}
+    .blabel-v{font-size:9pt;color:#000}
+    .blabel-ru{font-size:7.5pt;color:#555;margin-top:0.5mm;padding-left:16mm}
+    .bsum{border-collapse:collapse;width:100%;font-size:11px;margin-bottom:20px;font-family:Arial}
+    .bsum th{background:#1b4332;color:#fff;padding:5px 8px;border:1px solid #ccc;text-align:center}
+    .bsum td{padding:5px 8px;border:1px solid #ddd;vertical-align:middle}
+    .bsum tr:nth-child(even) td{background:#f9f9f9}
+    @media print{
+      @page{size:90mm 70mm;margin:0}body{margin:0;padding:0}
+      .bwrap{display:block!important;margin:0!important}
+      .blabel{transform:none!important;margin:0!important;width:90mm!important;
+        min-height:70mm!important;page-break-after:always;break-after:page}
+      .bsum{page-break-after:always;width:100%;font-size:10pt}
+      @page:first{size:A4 landscape}}
+  </style>`;
+
+  let sumRows = data.map(d => `<tr>
+    <td style="text-align:center;font-weight:700">${d.seq}</td>
+    <td><b>${escHtml(d.clientName)}</b></td>
+    <td>${escHtml(d.cn||d.ru)}<br><span style="font-size:9px;color:#666">${escHtml(d.ru)}</span></td>
+    <td style="text-align:center">${escHtml(d.pack||(d.spb?d.spb+'枝/扎':''))}</td>
+    <td style="text-align:center">${d.bpb||'—'} 扎</td>
+    <td style="text-align:center">${d.boxSize||'—'}</td>
+  </tr>`).join('');
+
+  const summary = `<table class="bsum"><thead><tr>
+    <th style="width:36px">序号</th><th style="width:90px">客户</th>
+    <th>商品 / Товар</th><th style="width:72px">规格</th>
+    <th style="width:64px">装箱数</th><th style="width:84px">箱型</th>
+  </tr></thead><tbody>${sumRows}</tbody></table>`;
+
+  const labels = data.map(d => `<div class="bwrap"><div class="blabel">
+    <div class="blabel-hd">
+      <span>${escHtml(d.clientName)}</span>
+      <span class="blabel-seq">序号: ${d.seq}</span>
+    </div>
+    <div class="blabel-row"><span class="blabel-k">商品:</span><span class="blabel-v">${escHtml(d.cn||d.ru)}</span></div>
+    ${d.cn&&d.ru?`<div class="blabel-ru">${escHtml(d.ru)}</div>`:''}
+    ${d.pack||d.spb?`<div class="blabel-row"><span class="blabel-k">规格:</span><span class="blabel-v">${escHtml(d.pack||(d.spb+'枝/扎'))}</span></div>`:''}
+    ${d.bpb?`<div class="blabel-row"><span class="blabel-k">装箱数:</span><span class="blabel-v">${d.bpb} 扎</span></div>`:''}
+    ${d.boxSize?`<div class="blabel-row"><span class="blabel-k">箱型:</span><span class="blabel-v">${d.boxSize}</span></div>`:''}
+    <div class="blabel-row"><span class="blabel-k">订单:</span><span class="blabel-v">#${d.orderNum}</span></div>
+    ${d.comment?`<div class="blabel-row"><span class="blabel-k">备注:</span><span class="blabel-v">${escHtml(d.comment)}</span></div>`:''}
+  </div></div>`).join('');
+
+  return css + summary + `<div style="padding:8px">${labels}</div>`;
 }
 
 function whDoPrint() {
   const printArea = document.getElementById('wh-labels-print-area');
   if (!printArea?.innerHTML) { toast('Сначала выберите заказ / 请先选择订单'); return; }
-  const win = window.open('', '_blank', 'width=900,height=700');
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Этикетки</title></head><body>`);
+  const win = window.open('', '_blank', 'width=1000,height=750');
+  win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Этикетки AMMA</title></head><body>');
   win.document.write(printArea.innerHTML);
-  win.document.write(`</body></html>`);
+  win.document.write('</body></html>');
   win.document.close();
   win.focus();
-  setTimeout(() => { win.print(); }, 400);
+  setTimeout(() => { win.print(); }, 600);
 }
 
-// Quick label print from assembly card
 async function whPrintLabels(orderId) {
-  // Switch to labels tab and select this order
   const btn = document.getElementById('whtab-labels');
   switchWhTab('labels', btn);
   await loadWhLabelOrders();
