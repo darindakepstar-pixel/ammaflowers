@@ -5974,6 +5974,7 @@ function getClaimFormData() {
   const client     = currentUser?.company_name || currentUser?.login || '';
   const today      = new Date().toLocaleDateString('ru-RU');
 
+  const typeLabel = { quality:'Некачественный', quantity:'Нехватка', wrong:'Не тот товар', damaged:'Повреждён' };
   const items = [];
   let total = 0;
   document.querySelectorAll('.claim-item-cb:checked').forEach(cb => {
@@ -5981,14 +5982,13 @@ function getClaimFormData() {
     const typeEl = document.querySelector(`.claim-item-type[data-idx="${idx}"]`);
     const qtyEl  = document.querySelector(`.claim-item-qty[data-idx="${idx}"]`);
     const cmtEl  = document.querySelector(`.claim-item-comment[data-idx="${idx}"]`);
-    const typeMap = { quality:'Некачественный', quantity:'Нехватка', wrong:'Не тот товар', damaged:'Повреждён' };
     const price  = parseFloat(cb.dataset.price) || 0;
     const qty    = parseInt(qtyEl?.value) || 1;
     const sub    = price * qty;
     total += sub;
     items.push({
-      name:    cb.dataset.name,
-      type:    typeMap[typeEl?.value] || typeEl?.value || '',
+      name:    cb.dataset.name || '—',
+      type:    typeLabel[typeEl?.value] || typeEl?.value || '',
       qty,
       price,
       subtotal: sub,
@@ -6335,54 +6335,144 @@ async function loadClaims() {
   }
   if (!claims?.length) {
     wrap.innerHTML = `<div class="empty-state"><div class="icon">✅</div><p>Претензий нет / 暂无投诉</p></div>`;
-    // Reset badge
     const cnt = document.getElementById('cnt-claims');
     if (cnt) { cnt.textContent='0'; cnt.style.display='none'; }
     return;
   }
 
-  // Badge count for new
   const newCount = claims.filter(c=>c.status==='new').length;
   const cnt = document.getElementById('cnt-claims');
   if (cnt) { cnt.textContent=newCount; cnt.style.display=newCount?'':'none'; }
 
   const statusMap = { new:'🆕 Новая / 新', review:'🔍 Рассматривается / 审核中', resolved:'✅ Решена / 已处理', rejected:'❌ Отклонена / 已拒绝' };
   const statusC   = { new:'var(--blue)', review:'#d97706', resolved:'var(--sage-d)', rejected:'var(--red)' };
+  const typeLabel = { quality:'🥀 Некачественный', quantity:'📦 Нехватка', wrong:'❌ Не тот товар', damaged:'💥 Повреждён' };
 
   wrap.innerHTML = claims.map(c => {
-    const client = c.client?.company_name || c.client?.login || '—';
-    const photos = (() => { try { return JSON.parse(c.photos_json||'[]'); } catch{ return []; } })();
-    const items  = (() => { try { return JSON.parse(c.items_json||'[]'); } catch{ return []; } })();
-    const sc = statusC[c.status]||'var(--mid)';
-    return `<div class="card" style="border-left:4px solid ${sc};margin-bottom:12px">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+    const client  = c.client?.company_name || c.client?.login || '—';
+    const photos  = (() => { try { return JSON.parse(c.photos_json||'[]'); } catch{ return []; } })();
+    const items   = (() => { try { return JSON.parse(c.items_json||'[]');  } catch{ return []; } })();
+    const sc      = statusC[c.status] || 'var(--mid)';
+    const total   = c.total_amount ? '¥' + parseFloat(c.total_amount).toFixed(2) : items.reduce((s,i)=>s+(i.subtotal||0),0) ? '¥'+items.reduce((s,i)=>s+(i.subtotal||0),0).toFixed(2) : null;
+    const dt      = new Date(c.created_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+
+    // Items detail table
+    const itemsTable = items.length ? `
+      <div style="margin:10px 0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead><tr style="background:var(--sage-d);color:#fff">
+            <th style="padding:6px 10px;text-align:left">Позиция / 品种</th>
+            <th style="padding:6px 10px">Тип / 类型</th>
+            <th style="padding:6px 10px">Кор. / 箱</th>
+            <th style="padding:6px 10px">¥/кор.</th>
+            <th style="padding:6px 10px">Сумма / 金额</th>
+            <th style="padding:6px 10px;text-align:left">Комментарий</th>
+          </tr></thead>
+          <tbody>${items.map((item,idx)=>`
+            <tr style="background:${idx%2?'var(--bg)':'#fff'}">
+              <td style="padding:6px 10px;font-weight:600">${item.name||'—'}</td>
+              <td style="padding:6px 10px;text-align:center">${typeLabel[item.type]||item.type||'—'}</td>
+              <td style="padding:6px 10px;text-align:center;font-weight:700">${item.qty_boxes||item.qty||'—'}</td>
+              <td style="padding:6px 10px;text-align:center">${item.price_per_box?'¥'+parseFloat(item.price_per_box).toFixed(2):'—'}</td>
+              <td style="padding:6px 10px;text-align:center;font-weight:700;color:var(--sage-d)">${item.subtotal?'¥'+parseFloat(item.subtotal).toFixed(2):'—'}</td>
+              <td style="padding:6px 10px;color:var(--mid);font-size:10px">${item.comment||''}</td>
+            </tr>`).join('')}
+          </tbody>
+          ${total ? `<tfoot><tr style="background:#1b4332;color:#fff">
+            <td colspan="4" style="padding:7px 10px;text-align:right;font-weight:700">ИТОГО / TOTAL:</td>
+            <td style="padding:7px 10px;text-align:center;font-weight:700;font-size:13px">${total}</td>
+            <td></td>
+          </tr></tfoot>` : ''}
+        </table>
+      </div>` : '';
+
+    // Photos grid
+    const photosHtml = photos.length ? `
+      <div style="margin:8px 0">
+        <div style="font-size:10px;font-weight:700;color:var(--mid);margin-bottom:6px">ФОТО / 照片 (${photos.length}):</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${photos.map((p,i)=>`<div style="position:relative;cursor:pointer" onclick="openClaimPhoto('${p}',${photos.map(x=>`'${x}'`).join(',')})">
+            <img src="${p}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:2px solid var(--border)">
+            <div style="position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,.5);color:#fff;font-size:9px;padding:1px 5px;border-radius:3px">${i+1}</div>
+          </div>`).join('')}
+        </div>
+      </div>` : '';
+
+    return `<div class="card" style="border-left:4px solid ${sc};margin-bottom:14px" id="claim-card-${c.id}">
+      <!-- Header -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
         <div>
-          <span style="font-weight:700;color:var(--sage-d);font-size:15px">${client}</span>
-          <span style="font-size:12px;color:var(--mid);margin-left:8px">Заказ #${c.order_number||'—'}</span>
-          <span class="badge" style="background:${sc}20;color:${sc};margin-left:8px">${statusMap[c.status]||c.status}</span>
-          <div style="font-size:10px;color:var(--light);margin-top:3px">${new Date(c.created_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:700;color:var(--sage-d);font-size:15px">${client}</span>
+            <span class="badge" style="background:${sc}20;color:${sc}">${statusMap[c.status]||c.status}</span>
+            ${total ? `<span style="font-size:14px;font-weight:700;color:var(--red)">⚠ ${total}</span>` : ''}
+          </div>
+          <div style="font-size:11px;color:var(--mid);margin-top:3px">
+            Заказ #${c.order_number||'—'}
+            ${c.waybill_number ? ` · Накладная ${c.waybill_number}` : ''}
+            · ${dt}
+          </div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <!-- Status buttons -->
+        <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
           ${['new','review','resolved','rejected'].map(s => `
-            <button class="btn btn-sm btn-secondary" style="font-size:10px;${c.status===s?'background:var(--sage-d);color:#fff':''}"
-              onclick="updateClaimStatus('${c.id}','${s}',this)">${statusMap[s].split('/')[0].trim()}</button>`).join('')}
+            <button class="btn btn-sm btn-secondary"
+              style="font-size:10px;${c.status===s?'background:var(--sage-d);color:#fff;border-color:var(--sage-d)':''}"
+              onclick="updateClaimStatus('${c.id}','${s}',this,'${client}')">
+              ${statusMap[s].split('/')[0].trim()}
+            </button>`).join('')}
+          <button class="btn btn-sm btn-secondary" style="font-size:10px" onclick="exportMgrClaimPDF('${c.id}')">📄 PDF</button>
+          <button class="btn btn-sm btn-secondary" style="font-size:10px" onclick="exportMgrClaimExcel('${c.id}')">📊 Excel</button>
         </div>
       </div>
-      <div style="font-size:12px;margin-bottom:8px">${c.description||''}</div>
-      ${items.length ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">${items.map(i=>`<span style="font-size:10px;background:#fff3e0;color:#e65100;padding:2px 8px;border-radius:10px">⚠ ${i.name} (${i.type})</span>`).join('')}</div>` : ''}
-      ${photos.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${photos.map(p=>`<img src="${p}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${p}','_blank')">`).join('')}</div>` : ''}
-      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
-        <input class="inp" id="reply-${c.id}" value="${c.manager_reply||''}" placeholder="Ответ клиенту / 回复客户..." style="flex:1;min-width:200px;font-size:12px">
-        <button class="btn btn-primary btn-sm" onclick="saveClaimReply('${c.id}','${c.client_id}')">💾 Сохранить ответ / 保存回复</button>
+
+      <!-- General comment -->
+      ${c.description ? `<div style="font-size:12px;padding:8px 12px;background:#fffbeb;border-radius:6px;border-left:3px solid #f59e0b;margin-bottom:10px">
+        <b style="font-size:10px;color:#92400e">ОБЩИЙ КОММЕНТАРИЙ / 总体意见:</b>
+        <div style="margin-top:3px">${c.description}</div>
+      </div>` : ''}
+
+      <!-- Items table -->
+      ${itemsTable}
+
+      <!-- Photos -->
+      ${photosHtml}
+
+      <!-- Manager reply -->
+      <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border)">
+        <input class="inp" id="reply-${c.id}" value="${(c.manager_reply||'').replace(/"/g,'&quot;')}"
+          placeholder="Ответ клиенту / 回复客户..." style="flex:1;min-width:200px;font-size:12px">
+        <button class="btn btn-primary btn-sm" onclick="saveClaimReply('${c.id}','${c.client_id}')">
+          💾 Сохранить ответ / 保存回复
+        </button>
       </div>
+      ${c.manager_reply ? `<div style="margin-top:6px;font-size:11px;color:var(--sage-d)">✓ Ответ сохранён: ${c.manager_reply.slice(0,60)}${c.manager_reply.length>60?'…':''}</div>` : ''}
     </div>`;
   }).join('');
 }
 
-async function updateClaimStatus(claimId, status, btn) {
+// Photo lightbox
+function openClaimPhoto(url, ...allUrls) {
+  window.open(url, '_blank');
+}
+
+async function updateClaimStatus(claimId, status, btn, clientName) {
   await sb.from('claims').update({ status, updated_at: new Date().toISOString() }).eq('id', claimId);
-  btn.closest('.card').querySelector('.badge').textContent =
-    { new:'🆕 Новая', review:'🔍 Рассматривается', resolved:'✅ Решена', rejected:'❌ Отклонена' }[status]||status;
+  // Update all status buttons in this card
+  const card = btn.closest('.card');
+  card.style.borderLeftColor = {new:'var(--blue)',review:'#d97706',resolved:'var(--sage-d)',rejected:'var(--red)'}[status]||'var(--mid)';
+  card.querySelectorAll('.btn-sm.btn-secondary[onclick*="updateClaimStatus"]').forEach(b => {
+    b.style.background=''; b.style.color=''; b.style.borderColor='';
+  });
+  btn.style.background='var(--sage-d)'; btn.style.color='#fff'; btn.style.borderColor='var(--sage-d)';
+  const badge = card.querySelector('.badge');
+  if (badge) {
+    const statusMap = { new:'🆕 Новая / 新', review:'🔍 Рассматривается / 审核中', resolved:'✅ Решена / 已处理', rejected:'❌ Отклонена / 已拒绝' };
+    const statusC   = { new:'var(--blue)', review:'#d97706', resolved:'var(--sage-d)', rejected:'var(--red)' };
+    badge.textContent = statusMap[status]||status;
+    badge.style.background = (statusC[status]||'#888')+'20';
+    badge.style.color = statusC[status]||'#888';
+  }
   toast('Статус обновлён / 状态已更新');
 }
 
@@ -6390,10 +6480,173 @@ async function saveClaimReply(claimId, clientId) {
   const reply = document.getElementById('reply-'+claimId)?.value?.trim();
   if (!reply) return;
   await sb.from('claims').update({ manager_reply: reply, status: 'review', updated_at: new Date().toISOString() }).eq('id', claimId);
-  try {
-    await sendNotification(clientId, '💬 Ответ на вашу претензию / 您的投诉有回复', reply.slice(0,100), '💬');
-  } catch(e) {}
+  try { await sendNotification(clientId, '💬 Ответ на вашу претензию / 您的投诉有回复', reply.slice(0,100), '💬'); } catch(e) {}
   toast('✅ Ответ сохранён, клиент уведомлён / 回复已保存');
+}
+
+// ── Manager claim exports ──
+function getMgrClaimData(claimId) {
+  const card    = document.getElementById('claim-card-'+claimId);
+  if (!card) return null;
+  // Re-fetch from DOM is unreliable; store data on card
+  return null; // will use _claimsCache
+}
+
+let _claimsCache = [];
+// Patch loadClaims to cache data
+const _origLoadClaims = loadClaims;
+
+async function exportMgrClaimPDF(claimId) {
+  // Find claim in last loaded data — re-fetch
+  const { data: c } = await sb.from('claims')
+    .select('*, client:users!claims_client_id_fkey(company_name,login)')
+    .eq('id', claimId).single();
+  if (!c) { toast('Ошибка загрузки / 加载失败'); return; }
+  renderClaimDocument(c, 'pdf');
+}
+
+async function exportMgrClaimExcel(claimId) {
+  const { data: c } = await sb.from('claims')
+    .select('*, client:users!claims_client_id_fkey(company_name,login)')
+    .eq('id', claimId).single();
+  if (!c) { toast('Ошибка загрузки / 加载失败'); return; }
+  renderClaimDocument(c, 'excel');
+}
+
+function renderClaimDocument(c, format) {
+  const client  = c.client?.company_name || c.client?.login || '—';
+  const items   = (() => { try { return JSON.parse(c.items_json||'[]');  } catch{ return []; } })();
+  const photos  = (() => { try { return JSON.parse(c.photos_json||'[]'); } catch{ return []; } })();
+  const total   = c.total_amount || items.reduce((s,i)=>s+(parseFloat(i.subtotal)||0),0);
+  const today   = new Date(c.created_at).toLocaleDateString('ru-RU');
+  const typeLabel = { quality:'Некачественный / 质量差', quantity:'Нехватка / 数量不足', wrong:'Не тот товар / 发货错误', damaged:'Повреждён / 运输损坏' };
+
+  if (format === 'excel') {
+    const wb  = XLSX.utils.book_new();
+    const aoa = [
+      ['ПРЕТЕНЗИЯ / CLAIM / 投诉书'],
+      [],
+      ['Клиент / 客户:', client, '', 'Накладная / 出货单:', c.waybill_number||'—'],
+      ['Дата / 日期:', today, '', 'Заказ / 订单:', '#'+(c.order_number||'—')],
+      [],
+      ['Общий комментарий / 总体意见:', c.description||''],
+      [],
+      ['№', 'Наименование / 花卉名称', 'Тип / 问题类型', 'Кор. / 箱数', '¥/кор.', 'Сумма ¥ / 金额', 'Комментарий / 备注'],
+      ...items.map((item,i) => [
+        i+1, item.name||'', typeLabel[item.type]||item.type||'',
+        item.qty_boxes||item.qty||'',
+        item.price_per_box ? parseFloat(item.price_per_box).toFixed(2) : '',
+        item.subtotal ? parseFloat(item.subtotal).toFixed(2) : '',
+        item.comment||''
+      ]),
+      [],
+      ['','','','','ИТОГО / TOTAL / 合计:', total ? parseFloat(total).toFixed(2) : '', ''],
+    ];
+    if (c.manager_reply) { aoa.push([]); aoa.push(['Ответ менеджера / 经理回复:', c.manager_reply]); }
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wch:4},{wch:34},{wch:24},{wch:10},{wch:12},{wch:14},{wch:36}];
+    ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:6}},{s:{r:5,c:1},e:{r:5,c:6}}];
+    if (ws['A1']) ws['A1'].s = {font:{bold:true,sz:15},alignment:{horizontal:'center'}};
+    const hr = 8;
+    ['A','B','C','D','E','F','G'].forEach(col => {
+      const a = col+hr;
+      if (ws[a]) ws[a].s = {font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'1B4332'}},alignment:{horizontal:'center'}};
+    });
+    XLSX.utils.book_append_sheet(wb, ws, 'Претензия');
+    XLSX.writeFile(wb, `Претензия_${client}_${today.replace(/\./g,'-')}.xlsx`);
+    toast('📊 Excel скачан / 已下载');
+    return;
+  }
+
+  // PDF
+  const itemRows = items.map((item,i)=>`
+    <tr style="background:${i%2?'#f0fdf4':'#fff'}">
+      <td style="text-align:center;padding:7px 8px;border:1px solid #e5e7eb">${i+1}</td>
+      <td style="padding:7px 8px;border:1px solid #e5e7eb;font-weight:600">${item.name||''}</td>
+      <td style="padding:7px 8px;border:1px solid #e5e7eb;color:#dc2626;font-size:11px">${typeLabel[item.type]||item.type||''}</td>
+      <td style="text-align:center;padding:7px 8px;border:1px solid #e5e7eb;font-weight:700">${item.qty_boxes||item.qty||'—'}</td>
+      <td style="text-align:center;padding:7px 8px;border:1px solid #e5e7eb">${item.price_per_box?'¥'+parseFloat(item.price_per_box).toFixed(2):'—'}</td>
+      <td style="text-align:center;padding:7px 8px;border:1px solid #e5e7eb;font-weight:700;color:#1b4332">${item.subtotal?'¥'+parseFloat(item.subtotal).toFixed(2):'—'}</td>
+      <td style="padding:7px 8px;border:1px solid #e5e7eb;font-size:10px;color:#6b7280">${item.comment||''}</td>
+    </tr>`).join('');
+
+  const photosHtml = photos.length ? `
+    <div style="margin-top:20px">
+      <div style="font-size:11px;font-weight:700;color:#6b7280;letter-spacing:.06em;margin-bottom:10px">ФОТОМАТЕРИАЛЫ / PHOTOS / 照片</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        ${photos.map(p=>`<img src="${p}" style="width:120px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb">`).join('')}
+      </div>
+    </div>` : '';
+
+  const replyHtml = c.manager_reply ? `
+    <div style="margin-top:20px;padding:12px 16px;background:#f0fdf4;border-radius:8px;border-left:4px solid #1b4332">
+      <div style="font-size:10px;font-weight:700;color:#1b4332;letter-spacing:.06em;margin-bottom:6px">ОТВЕТ МЕНЕДЖЕРА / MANAGER REPLY / 经理回复</div>
+      <div style="font-size:12px">${c.manager_reply}</div>
+    </div>` : '';
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>Претензия — ${client}</title>
+  <style>
+    @page{size:A4;margin:18mm 16mm}
+    body{font-family:Arial,sans-serif;color:#111;font-size:12px;line-height:1.5}
+    .logo{font-size:22px;font-weight:700;color:#1b4332;letter-spacing:.02em}
+    .logo-sub{font-size:10px;color:#6b7280;margin-top:2px}
+    .hdr{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:3px solid #1b4332;margin-bottom:20px}
+    .title{font-size:18px;font-weight:700;color:#1b4332}
+    .title-cn{font-size:11px;color:#6b7280}
+    .meta{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;background:#f9fafb;padding:14px 16px;border-radius:8px;border:1px solid #e5e7eb;margin-bottom:18px}
+    .mk{font-size:10px;font-weight:700;color:#9ca3af;letter-spacing:.05em}
+    .mv{font-size:12px;font-weight:600}
+    .sec{font-size:10px;font-weight:700;color:#6b7280;letter-spacing:.06em;text-transform:uppercase;margin:16px 0 8px}
+    .desc{background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:10px 14px;font-size:12px}
+    table{border-collapse:collapse;width:100%;font-size:11px}
+    thead tr{background:#1b4332;color:#fff}
+    thead th{padding:8px 10px;text-align:left;font-size:10px;letter-spacing:.04em}
+    .tot td{background:#1b4332;color:#fff;font-weight:700;font-size:13px;padding:9px 10px;border:none}
+    .signs{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:36px}
+    .sign-line{border-bottom:1px solid #111;margin-bottom:4px;height:26px}
+    .sign-lbl{font-size:10px;color:#6b7280}
+    .footer{margin-top:30px;padding-top:12px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;font-size:10px;color:#9ca3af}
+    @media print{@page{size:A4;margin:18mm 16mm}}
+  </style></head><body>
+  <div class="hdr">
+    <div><div class="logo">AMMA FLOWERS</div><div class="logo-sub">Wholesale Flower Import / 鲜花批发进口 · Kunming, China</div></div>
+    <div style="text-align:right"><div class="title">ПРЕТЕНЗИЯ</div><div class="title-cn">CLAIM / 投诉书</div><div style="font-size:10px;color:#6b7280;margin-top:4px">${today}</div></div>
+  </div>
+  <div class="meta">
+    <div><div class="mk">КЛИЕНТ / CLIENT / 客户</div><div class="mv">${client}</div></div>
+    <div><div class="mk">ДАТА / DATE / 日期</div><div class="mv">${today}</div></div>
+    <div><div class="mk">ЗАКАЗ / ORDER / 订单</div><div class="mv">#${c.order_number||'—'}</div></div>
+    <div><div class="mk">НАКЛАДНАЯ / WAYBILL / 出货单</div><div class="mv">${c.waybill_number||'—'}</div></div>
+  </div>
+  ${c.description ? `<div class="sec">Общие замечания / General remarks / 总体意见</div><div class="desc">${c.description}</div>` : ''}
+  <div class="sec">Проблемные позиции / Defective items / 问题品种 (${items.length})</div>
+  <table>
+    <thead><tr>
+      <th style="width:28px">№</th><th>Наименование / 花卉名称</th>
+      <th style="width:120px">Тип / Type / 类型</th>
+      <th style="width:55px;text-align:center">Кор./箱</th>
+      <th style="width:72px;text-align:center">¥/кор.</th>
+      <th style="width:80px;text-align:center">Сумма/金额</th>
+      <th>Комментарий / 备注</th>
+    </tr></thead>
+    <tbody>${itemRows}</tbody>
+    ${total ? `<tr class="tot"><td colspan="5" style="text-align:right">ИТОГО / TOTAL / 合计:</td><td style="text-align:center">¥${parseFloat(total).toFixed(2)}</td><td></td></tr>` : ''}
+  </table>
+  ${photosHtml}
+  ${replyHtml}
+  <div class="signs">
+    <div><div class="sign-line"></div><div class="sign-lbl">Подпись клиента / Client / 客户签名 ________________ Дата</div></div>
+    <div><div class="sign-line"></div><div class="sign-lbl">Подпись менеджера / Manager / 经理签名 _____________ Дата</div></div>
+  </div>
+  <div class="footer"><span>AMMA FLOWERS · Kunming, China / 昆明, 中国</span><span>Претензия / Claim · #${c.order_number||''} · ${today}</span></div>
+  <${'script'}>setTimeout(()=>window.print(),500)</${'script'}>
+  </body></html>`;
+
+  const win = window.open('','_blank','width=960,height=800');
+  win.document.write(html); win.document.close();
+  toast('📄 PDF открыт / PDF已打开');
 }
 
 // ══════════════════════════════════════════════════════════
