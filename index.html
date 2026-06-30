@@ -1728,7 +1728,7 @@ function renderMyOrder() {
 
   const ordersHTML = myOrders.map(o => {
     const total = (o.order_items||[]).reduce((s,i)=>s+(i.subtotal||0),0);
-    const canEdit = ['needs_revision','draft'].includes(o.status);
+    const canEdit = ['needs_revision','draft'].includes(o.status) || !!o.client_edit_allowed;
     const col = statusColors[o.status] || 'var(--mid)';
     const itemsPreview = (o.order_items||[]).slice(0,3).map(i=>
       `<span style="font-size:10px;background:var(--sage-l);padding:2px 7px;border-radius:10px;color:var(--sage-d)">${i.flower_snapshot?.ru||'?'}</span>`
@@ -1768,6 +1768,7 @@ function renderMyOrder() {
           </div>
           <div style="font-size:11px;color:var(--mid);margin-bottom:6px">
             📅 ${o.date_order}${o.date_ship?' → 🚚 '+o.date_ship:''}
+            ${o.client_edit_allowed && !['needs_revision','draft'].includes(o.status) ? '&nbsp;·&nbsp;<span style="color:var(--sage-d);font-weight:700">🔓 Менеджер разрешил изменения</span>' : ''}
           </div>
           <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">${itemsPreview}</div>
           ${buildStatusBar(o.status)}
@@ -1808,14 +1809,30 @@ async function submitOrder(existingOrderId = null) {
   const comment   = document.getElementById('order-comment')?.value    || null;
 
   if (existingOrderId) {
-    // RE-SUBMIT existing order (client made revisions)
-    await sb.from('orders').update({
-      status: 'pending_review',
+    // Check current order status — was this a manager-granted edit on an already-confirmed order,
+    // or a revision after needs_revision/draft?
+    const existingOrder = myOrders.find(o => o.id === existingOrderId);
+    const wasAlreadyConfirmed = existingOrder &&
+      !['needs_revision', 'draft'].includes(existingOrder.status) &&
+      !!existingOrder.client_edit_allowed;
+
+    const updatePayload = {
       date_ship: shipDate,
       client_comment: comment,
       updated_at: new Date().toISOString(),
-      revision_comment: null,
-    }).eq('id', existingOrderId);
+    };
+
+    if (wasAlreadyConfirmed) {
+      // Keep current status — client edited a confirmed order with manager's permission.
+      // Don't silently reset to pending_review; just flag it as client-modified.
+      updatePayload.client_edited_at = new Date().toISOString();
+    } else {
+      // Standard revision flow: needs_revision/draft → back to pending_review
+      updatePayload.status = 'pending_review';
+      updatePayload.revision_comment = null;
+    }
+
+    await sb.from('orders').update(updatePayload).eq('id', existingOrderId);
 
     // Replace items
     await sb.from('order_items').delete().eq('order_id', existingOrderId);
@@ -1829,7 +1846,22 @@ async function submitOrder(existingOrderId = null) {
     }));
     await sb.from('order_items').insert(itemRows);
     cart = {}; currentEditOrderId = null;
-    toast('✅ Заказ обновлён и отправлен на проверку / 订单已更新并提交审核');
+
+    // Notify managers
+    try {
+      const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+      const clientName = currentUser?.company_name || currentUser?.login || '';
+      const orderNum = existingOrder?.order_number || '';
+      for (const m of (mgrs||[])) {
+        await sendNotification(m.id,
+          `✏️ Клиент изменил заказ ${orderNum} / 客户已修改订单`,
+          `${clientName} внёс изменения в позиции заказа / ${clientName}修改了订单内容`, '✏️');
+      }
+    } catch(e) {}
+
+    toast(wasAlreadyConfirmed
+      ? '✅ Изменения сохранены, менеджер уведомлён / 修改已保存，经理已收到通知'
+      : '✅ Заказ обновлён и отправлен на проверку / 订单已更新并提交审核');
   } else {
     // NEW ORDER
     const count = (await sb.from('orders').select('id',{count:'exact'})).count || 0;
@@ -1851,6 +1883,17 @@ async function submitOrder(existingOrderId = null) {
     }));
     await sb.from('order_items').insert(itemRows);
     cart = {};
+
+    // Notify managers about new order
+    try {
+      const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+      const clientName = currentUser?.company_name || currentUser?.login || '';
+      for (const m of (mgrs||[])) {
+        await sendNotification(m.id, `📦 Новый заказ ${num} от ${clientName}`,
+          `Поступил новый заказ на проверку / 收到新订单待审核`, '📦');
+      }
+    } catch(e) {}
+
     toast(`✅ Заказ ${num} отправлен менеджеру / 已提交给经理`);
   }
   updateCartUI();
@@ -2061,6 +2104,12 @@ function renderOrderDetail(order) {
   const id = order.id;
   const items = _mgrOrderItems;
 
+  const clientEditedBanner = order.client_edited_at
+    ? `<div style="margin-bottom:14px;padding:10px 14px;background:#fffbeb;border-radius:8px;border-left:4px solid #f59e0b;font-size:12px">
+        ✏️ <b>Клиент изменил этот заказ</b> ${new Date(order.client_edited_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} / 客户已修改此订单
+       </div>`
+    : '';
+
   const rows = items.map((item, i) => {
     const sub = (parseFloat(item.price_per_box)||0) * (parseInt(item.qty_boxes)||0);
     return `
@@ -2124,6 +2173,7 @@ function renderOrderDetail(order) {
   const totalBoxes= items.reduce((s,it)=>s+(parseInt(it.qty_boxes)||0),0);
 
   document.getElementById('order-detail-content').innerHTML = `
+    ${clientEditedBanner}
     <div class="card" style="margin-bottom:14px">
       <div class="field-row">
         <div class="field"><label>Статус / 状态</label>
@@ -2152,6 +2202,20 @@ function renderOrderDetail(order) {
             style="border-color:var(--gold)"
             onblur="updateRevisionComment('${id}',this.value)">
         </div>
+      </div>
+      <div style="margin-top:10px;padding:10px 14px;background:${order.client_edit_allowed?'var(--sage-l)':'var(--bg)'};border-radius:8px;
+        border:1px solid ${order.client_edit_allowed?'var(--sage)':'var(--border)'};display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:600">
+          <input type="checkbox" ${order.client_edit_allowed?'checked':''}
+            style="width:16px;height:16px;accent-color:var(--sage-d)"
+            onchange="toggleClientEditPermission('${id}', this.checked)">
+          🔓 Разрешить клиенту редактировать заказ / 允许客户编辑订单
+        </label>
+        <span style="font-size:11px;color:var(--mid)">
+          ${order.client_edit_allowed
+            ? 'Клиент может менять количество и позиции / 客户可修改数量和品种'
+            : 'Клиент видит заказ только для чтения / 客户仅可查看订单'}
+        </span>
       </div>
       <div style="font-size:12px;color:var(--mid)">
         💬 Комментарий клиента: ${order.client_comment||'—'}
@@ -2325,11 +2389,23 @@ async function mgrSaveOrderItems(orderId) {
   const { error: insErr } = await sb.from('order_items').insert(newItems);
   if (insErr) { toast('Ошибка сохранения: ' + insErr.message); return; }
 
-  // Update order updated_at and status to reflect manager edit
+  // Update timestamp only — do NOT force status change.
+  // The manager is editing directly (not requesting client revision),
+  // so the order keeps whatever status it already had (confirmed/invoiced/etc).
+  // Status changes go through the explicit status selector instead.
   await sb.from('orders').update({
     updated_at: new Date().toISOString(),
-    status: 'needs_revision',  // notify client something changed
   }).eq('id', orderId);
+
+  // Let the client know their order was updated by the manager
+  try {
+    const { data: orderInfo } = await sb.from('orders').select('client_id, order_number').eq('id', orderId).single();
+    if (orderInfo?.client_id) {
+      await sendNotification(orderInfo.client_id,
+        `✏️ Менеджер обновил заказ ${orderInfo.order_number} / 经理已更新订单`,
+        'Проверьте изменённые позиции в своём заказе / 请查看订单中已修改的内容', '✏️');
+    }
+  } catch(e) {}
 
   toast('✅ Заказ обновлён / 订单已更新 — клиент увидит изменения');
   // Reload to reflect saved state
@@ -2399,6 +2475,30 @@ async function updateOrderComment(id, comment) {
 async function updateRevisionComment(id, comment) {
   await sb.from('orders').update({revision_comment: comment}).eq('id', id);
   if (comment) toast('💬 Комментарий сохранён / 备注已保存');
+}
+
+async function toggleClientEditPermission(id, allowed) {
+  const { error } = await sb.from('orders')
+    .update({ client_edit_allowed: allowed, updated_at: new Date().toISOString() })
+    .eq('id', id);
+
+  if (error) {
+    toast('⚠️ Выполните SQL: ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_edit_allowed boolean DEFAULT false;');
+    return;
+  }
+
+  // Notify client
+  try {
+    const { data: order } = await sb.from('orders').select('client_id, order_number').eq('id', id).single();
+    if (order?.client_id) {
+      await sendNotification(order.client_id,
+        allowed ? `✏️ Можно редактировать заказ ${order.order_number} / 可编辑订单` : `🔒 Редактирование заказа ${order.order_number} закрыто / 已关闭编辑`,
+        allowed ? 'Менеджер разрешил вам внести изменения / 经理已允许您修改订单' : 'Изменения больше недоступны / 不再允许修改', allowed ? '✏️' : '🔒');
+    }
+  } catch(e) {}
+
+  toast(allowed ? '🔓 Клиент может редактировать заказ / 已允许客户编辑' : '🔒 Редактирование закрыто / 已关闭编辑');
+  openOrder(id);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -2746,57 +2846,113 @@ async function sendInvoice() {
 function exportInvExcel() {
   const el = document.getElementById('inv-print-area');
   if (!el) return;
-  // Build rows from the invoice preview
-  const order = window._invOrder;
+  const order  = window._invOrder;
   const flowersTotal = window._invFlowersTotal;
-  const markup = parseFloat(document.getElementById('inv-markup')?.value) || 15;
+  const markup  = parseFloat(document.getElementById('inv-markup')?.value) || 15;
   const packing = parseFloat(document.getElementById('inv-packing')?.value) || 0;
-  const certs = parseFloat(document.getElementById('inv-certs')?.value) || 0;
-  const ship = parseFloat(document.getElementById('inv-ship')?.value) || 0;
-  const other = parseFloat(document.getElementById('inv-other')?.value) || 0;
+  const certs   = parseFloat(document.getElementById('inv-certs')?.value) || 0;
+  const ship    = parseFloat(document.getElementById('inv-ship')?.value) || 0;
+  const other   = parseFloat(document.getElementById('inv-other')?.value) || 0;
   const otherLabel = document.getElementById('inv-other-label')?.value || 'Прочее';
   const flowersWithMarkup = flowersTotal * (1 + markup/100);
   const grand = flowersWithMarkup + packing + certs + ship + other;
+  const client = order.client?.company_name || order.client?.login || '—';
+  const today  = new Date().toLocaleDateString('ru-RU');
+  const items  = order.order_items || [];
 
-  const wb = XLSX.utils.book_new();
-  const rows = [
-    ['AMMA FLOWERS — ИНВОЙС / INVOICE'],
-    ['ammaflowers.cn', '', '', 'Дата:', new Date().toLocaleDateString('ru-RU')],
-    ['Заказ:', order.order_number],
-    [],
-    ['Клиент:', order.client?.company_name || order.client?.login],
-    [],
-    ['№/序号','Позиция/品名/Item','Кол.кор./箱数/Boxes','¥/банч(с наценкой)/扎价(含加价)/Bunch price','¥/КОРОБ/件价/Box price','Кол.кор./箱/Qty','Сумма/金额/Amount ¥'],
-    ...(order.order_items||[]).map((item,i) => {
-      const mk = parseFloat(document.getElementById('inv-markup')?.value) || 0;
-      const bunchWithMk = item.price_per_bunch * (1 + mk/100);
-      const boxWithMk   = bunchWithMk * item.bunches_per_box;
-      const subWithMk   = boxWithMk * item.qty_boxes;
-      return [i+1, (item.flower_snapshot?.ru||'—') + ' / ' + (item.flower_snapshot?.cn||''),
-        item.qty_boxes, bunchWithMk.toFixed(2), boxWithMk.toFixed(2), item.qty_boxes, subWithMk.toFixed(2)];
-    }),
-    [],
-    ['','Цветы (закупка):','','',flowersTotal],
-    ['',`Наценка ${markup}%:`,'','',flowersTotal*markup/100],
-    ['','Цветы итого:','','',flowersWithMarkup],
-    ['',`Упаковка:`,'','',packing],
-    ...(certs>0?[['','Сертификаты:','','',certs]]:[]),
-    ...(ship>0?[['','Перевозка:','','',ship]]:[]),
-    ...(other>0?[['',otherLabel+':','','',other]]:[]),
-    [],
-    ['','','','','','',''],
-    ['','Цветы с наценкой / 花卉含加价:','','','','',flowersWithMarkup.toFixed(2)],
-    ['','Упаковка / 包装费:','','','','',packing.toFixed(2)],
-    ...(certs>0?[['','Сертификаты / 证书:','','','','',certs.toFixed(2)]]: []),
-    ...(ship>0?[['','Перевозка / 运费:','','','','',ship.toFixed(2)]]:  []),
-    ...(other>0?[['','Прочее / 其他:','','','','',other.toFixed(2)]]:   []),
-    ['','ИТОГО / 合计 / TOTAL:','','','','',grand.toFixed(2)],
+  // 6-column layout throughout: №, Позиция, Кол.кор., ¥/короб(с накр.), Кол., Сумма
+  const aoa = [];
+  aoa.push(['AMMA FLOWERS — ИНВОЙС / 发票 / INVOICE']);
+  aoa.push([`Заказ / 订单: №${order.order_number}   |   Клиент / 客户: ${client}   |   Дата / 日期: ${today}`]);
+  aoa.push([]);
+  aoa.push(['№','Позиция / 品名 / Item','¥/связка с накруткой\n含加价¥/扎','¥/короб с накруткой\n含加价¥/箱','Кол. коробок\n箱数','Сумма ¥\n金额']);
+
+  const HEADER_ROW = 4;
+  const dataStart = HEADER_ROW + 1;
+
+  items.forEach((item, i) => {
+    const bunchWithMk = (parseFloat(item.price_per_bunch)||0) * (1 + markup/100);
+    const boxWithMk   = bunchWithMk * (parseInt(item.bunches_per_box)||0);
+    const qty         = parseInt(item.qty_boxes) || 0;
+    const subWithMk   = boxWithMk * qty;
+    aoa.push([
+      i+1,
+      (item.flower_snapshot?.ru||'—') + (item.flower_snapshot?.cn ? ' / ' + item.flower_snapshot.cn : ''),
+      Number(bunchWithMk.toFixed(2)),
+      Number(boxWithMk.toFixed(2)),
+      qty,
+      Number(subWithMk.toFixed(2))
+    ]);
+  });
+
+  const sumStart = dataStart + items.length + 1; // blank row before summary
+  aoa.push([]);
+  aoa.push(['','Цветы (закупочная) / 花卉采购价','','','', Number(flowersTotal.toFixed(2))]);
+  aoa.push(['',`Наценка ${markup}% / 加价${markup}%`,'','','', Number((flowersTotal*markup/100).toFixed(2))]);
+  aoa.push(['','Цветы итого / 花卉小计','','','', Number(flowersWithMarkup.toFixed(2))]);
+  if (packing>0) aoa.push(['','Упаковка / 包装费','','','', Number(packing.toFixed(2))]);
+  if (certs>0)   aoa.push(['','Сертификаты / 证书费','','','', Number(certs.toFixed(2))]);
+  if (ship>0)    aoa.push(['','Перевозка / 运费','','','', Number(ship.toFixed(2))]);
+  if (other>0)   aoa.push(['',otherLabel+' / 其他','','','', Number(other.toFixed(2))]);
+  const totalRow = aoa.length + 1; // 1-based row number of the TOTAL line (added next)
+  aoa.push(['','ИТОГО / 合计 / TOTAL','','','', Number(grand.toFixed(2))]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:4},{wch:40},{wch:18},{wch:18},{wch:12},{wch:14}];
+  ws['!merges'] = [
+    {s:{r:0,c:0},e:{r:0,c:5}},
+    {s:{r:1,c:0},e:{r:1,c:5}},
   ];
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:4},{wch:35},{wch:10},{wch:12},{wch:14}];
+  if (ws['A1']) ws['A1'].s = { font:{bold:true,sz:15,color:{rgb:'1B4332'}}, alignment:{horizontal:'center'} };
+  if (ws['A2']) ws['A2'].s = { font:{sz:10,color:{rgb:'555555'}}, alignment:{horizontal:'center'} };
+
+  const cols = ['A','B','C','D','E','F'];
+  cols.forEach(c => {
+    const addr = c + HEADER_ROW;
+    if (ws[addr]) ws[addr].s = {
+      font:{bold:true,color:{rgb:'FFFFFF'},sz:10},
+      fill:{fgColor:{rgb:'1B4332'}},
+      alignment:{horizontal:'center',vertical:'center',wrapText:true},
+    };
+  });
+
+  for (let r = dataStart; r < dataStart + items.length; r++) {
+    const isEven = (r - dataStart) % 2 === 1;
+    cols.forEach((c, ci) => {
+      const addr = c + r;
+      if (!ws[addr]) ws[addr] = { v:'', t:'s' };
+      ws[addr].s = {
+        alignment: { horizontal: ci===1?'left':'center', vertical:'center' },
+        fill: isEven ? { fgColor:{rgb:'F0FDF4'} } : undefined,
+        font: { sz:10 },
+        border: { bottom:{style:'thin',color:{rgb:'E0E0E0'}} }
+      };
+    });
+  }
+
+  // Summary rows (between data and total) — right-aligned label, bold sum column
+  for (let r = sumStart + 1; r < totalRow; r++) {
+    cols.forEach(c => {
+      const addr = c+r;
+      if (!ws[addr]) ws[addr] = {v:'',t:'s'};
+      ws[addr].s = { font:{sz:10}, alignment:{horizontal: c==='B'?'right':'center'} };
+    });
+  }
+
+  // Total row — highlighted
+  cols.forEach(c => {
+    const addr = c + totalRow;
+    if (!ws[addr]) ws[addr] = { v:'', t:'s' };
+    ws[addr].s = { font:{bold:true,sz:12,color:{rgb:'1B4332'}}, fill:{fgColor:{rgb:'D8F3DC'}},
+      alignment:{horizontal: c==='B'?'right':'center', vertical:'center'} };
+  });
+
+  ws['!rows'] = [{hpt:22},{hpt:18},{hpt:6},{hpt:32}];
+
+  const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Инвойс');
-  XLSX.writeFile(wb, `Инвойс_${order.order_number}.xlsx`);
+  XLSX.writeFile(wb, `Инвойс_${order.order_number}_${today.replace(/\./g,'-')}.xlsx`);
   toast('📊 Excel сохранён / 已导出');
 }
 
@@ -3239,30 +3395,98 @@ async function viewClientInvoice(invId) {
 // ══════════════════════════════════════════════════════════
 async function exportOrderExcel(orderId) {
   const { data: order } = await sb.from('orders').select(`
-    *, client:users!orders_client_id_fkey(company_name),
+    *, client:users!orders_client_id_fkey(company_name,login),
     order_items(*)
   `).eq('id', orderId).single();
 
-  const wb = XLSX.utils.book_new();
-  const rows = [
-    ['AMMA FLOWERS — ЗАКАЗ / ORDER'],
-    ['Номер:', order.order_number, '', 'Клиент:', order.client?.company_name||'—'],
-    ['Дата заказа:', order.date_order, '', 'Дата отгрузки:', order.date_ship||'—'],
-    [],
-    ['№/序号/No','Цветок/花卉/Flower','名称CN/Name EN','Грейд/级别/Grade','¥/банч/扎/bunch','Бан./кор./扎数/件','¥/КОРОБ/件/box','Кол.кор./箱数/Boxes','Итого/小计/Subtotal ¥','Клиент/客户/Client','Комментарий/备注/Notes'],
-    ...(order.order_items||[]).map((item,i) => [
-      i+1, item.flower_snapshot?.ru||'—', item.flower_snapshot?.cn||'—',
-      item.price_type==='a'?'A':'A+', item.price_per_bunch, item.bunches_per_box,
-      item.price_per_box, item.qty_boxes, item.subtotal,
-      item.client_name||'', item.item_comment||''
-    ]),
-    [],
-    ['','','','','','','','ИТОГО:',(order.order_items||[]).reduce((s,i)=>s+i.subtotal,0)],
+  if (!order) { toast('Ошибка загрузки / 加载错误'); return; }
+
+  const client = order.client?.company_name || order.client?.login || '—';
+  const items  = order.order_items || [];
+  const total  = items.reduce((s,i)=>s+(parseFloat(i.subtotal)||0),0);
+  const totalBoxes = items.reduce((s,i)=>s+(parseInt(i.qty_boxes)||0),0);
+  const today  = new Date().toLocaleDateString('ru-RU');
+
+  const aoa = [];
+  aoa.push(['AMMA FLOWERS — ЗАКАЗ / 订单 / ORDER']);
+  aoa.push([`№ ${order.order_number}   |   Клиент / 客户: ${client}   |   Дата заказа / 订单日期: ${order.date_order||'—'}   |   Дата отгрузки / 出货日期: ${order.date_ship||'—'}`]);
+  aoa.push([]);
+  aoa.push(['№','Наименование RU','名称 CN','Грейд\n级别','¥/связка\n¥/扎','Связок/кор.\n扎/箱','¥/короб\n¥/箱','Коробок\n箱数','Сумма ¥\n金额','Субклиент\n子客户','Комментарий\n备注']);
+
+  const HEADER_ROW = 4; // 1-based
+  const dataStart = HEADER_ROW + 1;
+
+  items.forEach((item, i) => {
+    aoa.push([
+      i+1,
+      item.flower_snapshot?.ru || '—',
+      item.flower_snapshot?.cn || '',
+      item.price_type === 'a' ? 'A' : 'A+',
+      parseFloat(item.price_per_bunch) || 0,
+      parseInt(item.bunches_per_box) || '',
+      parseFloat(item.price_per_box) || 0,
+      parseInt(item.qty_boxes) || 0,
+      parseFloat(item.subtotal) || 0,
+      item.client_name || '',
+      item.item_comment || ''
+    ]);
+  });
+
+  const totalRow = dataStart + items.length + 1; // 1-based, with blank row before
+  aoa.push([]);
+  aoa.push(['','','','','','','Коробок:', totalBoxes, total, '', '']);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:4},{wch:26},{wch:18},{wch:7},{wch:10},{wch:11},{wch:10},{wch:9},{wch:11},{wch:16},{wch:26}];
+  ws['!merges'] = [
+    {s:{r:0,c:0},e:{r:0,c:10}},
+    {s:{r:1,c:0},e:{r:1,c:10}},
   ];
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [4,28,18,7,9,9,10,8,10,18,25].map(w=>({wch:w}));
+
+  // Title styles
+  if (ws['A1']) ws['A1'].s = { font:{bold:true,sz:15,color:{rgb:'1B4332'}}, alignment:{horizontal:'center'} };
+  if (ws['A2']) ws['A2'].s = { font:{sz:10,color:{rgb:'555555'}}, alignment:{horizontal:'center'} };
+
+  // Header row style
+  const cols = ['A','B','C','D','E','F','G','H','I','J','K'];
+  cols.forEach(c => {
+    const addr = c + HEADER_ROW;
+    if (ws[addr]) ws[addr].s = {
+      font:{bold:true,color:{rgb:'FFFFFF'},sz:10},
+      fill:{fgColor:{rgb:'1B4332'}},
+      alignment:{horizontal:'center',vertical:'center',wrapText:true},
+      border:{bottom:{style:'thin',color:{rgb:'AAAAAA'}}}
+    };
+  });
+
+  // Data rows
+  for (let r = dataStart; r < dataStart + items.length; r++) {
+    const isEven = (r - dataStart) % 2 === 1;
+    cols.forEach((c, ci) => {
+      const addr = c + r;
+      if (!ws[addr]) ws[addr] = { v:'', t:'s' };
+      const isNum = ci >= 3 && ci <= 8;
+      ws[addr].s = {
+        alignment: { horizontal: isNum && ci !== 3 ? 'center' : 'left', vertical:'center', wrapText: ci===1||ci===10 },
+        fill: isEven ? { fgColor:{rgb:'F0FDF4'}, type:'pattern' } : undefined,
+        font: { sz:10, bold: ci===8 },
+        border: { bottom:{style:'thin',color:{rgb:'E0E0E0'}} }
+      };
+    });
+  }
+
+  // Total row style
+  cols.forEach(c => {
+    const addr = c + totalRow;
+    if (!ws[addr]) ws[addr] = { v:'', t:'s' };
+    ws[addr].s = { font:{bold:true,sz:11,color:{rgb:'1B4332'}}, fill:{fgColor:{rgb:'D8F3DC'}}, alignment:{horizontal:'center',vertical:'center'} };
+  });
+
+  ws['!rows'] = [{hpt:22},{hpt:18},{hpt:6},{hpt:32}];
+
+  const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Заказ');
-  XLSX.writeFile(wb, `Заказ_${order.order_number}.xlsx`);
+  XLSX.writeFile(wb, `Заказ_${order.order_number}_${today.replace(/\./g,'-')}.xlsx`);
   toast('📊 Excel сохранён / 已导出');
 }
 
@@ -3765,44 +3989,97 @@ function exportWaybillExcel() {
   const order = window._wbOrder;
   const wbNum = document.getElementById('wb-number')?.value || 'WB';
   const notes = document.getElementById('wb-notes')?.value || '';
+  const client = order?.client?.company_name || order?.client?.login || '—';
+  const today  = new Date().toLocaleDateString('ru-RU');
+  const shipDate = document.getElementById('wb-ship-date')?.value || '—';
+
+  const aoa = [];
+  aoa.push(['AMMA FLOWERS — НАКЛАДНАЯ / 出货单 / WAYBILL']);
+  aoa.push([`№ ${wbNum}   |   Заказ / 订单: ${order?.order_number||'—'}   |   Клиент / 客户: ${client}   |   Дата отгрузки / 出货日期: ${shipDate}   |   Сформировано / 生成日期: ${today}`]);
+  if (notes) aoa.push([`Примечания / 备注: ${notes}`]);
+  aoa.push([]);
+  aoa.push(['№','Название RU','名称 CN','Субклиент\n子客户','¥/короб\n¥/箱','Кор.\n箱','Бан./кор.\n扎/箱','Стеб./бан.\n枝/扎','Итого банч.\n总扎数','Итого стеб.\n总枝数','Размер кор.\n箱型 ДхШхВ','Сумма ¥\n金额']);
+
+  const HEADER_ROW = aoa.length; // 1-based, current row count = header row number
+  const dataStart  = HEADER_ROW + 1;
+
+  rows.forEach((row, i) => {
+    const f = row.flower_snapshot || {};
+    const totB = (parseInt(row.qty_boxes)||0) * (parseInt(row.bunches_per_box)||0);
+    const totS = totB * (parseInt(row.stems_per_bunch)||0);
+    const sub  = (parseFloat(row.price_per_box)||0) * (parseInt(row.qty_boxes)||0);
+    const boxSize = [row.box_length, row.box_width, row.box_height].filter(Boolean).join('×') || '—';
+    aoa.push([
+      i+1, f.ru||'—', f.cn||'', row.sub_client||'',
+      Number(row.price_per_box)||0, parseInt(row.qty_boxes)||0,
+      parseInt(row.bunches_per_box)||'', parseInt(row.stems_per_bunch)||'',
+      totB||'', totS||'', boxSize, Number(sub.toFixed(2))
+    ]);
+  });
+
+  const totalRow = dataStart + rows.length + 1; // blank row before total
+  const totBoxesSum = rows.reduce((s,r)=>s+(parseInt(r.qty_boxes)||0),0);
+  const totBunchSum  = rows.reduce((s,r)=>s+((parseInt(r.qty_boxes)||0)*(parseInt(r.bunches_per_box)||0)),0);
+  const totStemSum   = rows.reduce((s,r)=>s+((parseInt(r.qty_boxes)||0)*(parseInt(r.bunches_per_box)||0)*(parseInt(r.stems_per_bunch)||0)),0);
+  const totSumAmount = rows.reduce((s,r)=>s+((parseFloat(r.price_per_box)||0)*(parseInt(r.qty_boxes)||0)),0);
+
+  aoa.push([]);
+  aoa.push(['','','','ИТОГО / 合计','', totBoxesSum, '', '', totBunchSum, totStemSum, '', Number(totSumAmount.toFixed(2))]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:4},{wch:24},{wch:16},{wch:14},{wch:10},{wch:7},{wch:9},{wch:9},{wch:10},{wch:10},{wch:13},{wch:12}];
+
+  const lastCol = 11; // 0-indexed (column L)
+  const merges = [
+    {s:{r:0,c:0},e:{r:0,c:lastCol}},
+    {s:{r:1,c:0},e:{r:1,c:lastCol}},
+  ];
+  if (notes) merges.push({s:{r:2,c:0},e:{r:2,c:lastCol}});
+  ws['!merges'] = merges;
+
+  if (ws['A1']) ws['A1'].s = { font:{bold:true,sz:15,color:{rgb:'1B4332'}}, alignment:{horizontal:'center'} };
+  if (ws['A2']) ws['A2'].s = { font:{sz:10,color:{rgb:'555555'}}, alignment:{horizontal:'center'} };
+  if (notes && ws['A3']) ws['A3'].s = { font:{sz:10,italic:true,color:{rgb:'92400E'}}, alignment:{horizontal:'center'} };
+
+  const cols = ['A','B','C','D','E','F','G','H','I','J','K','L'];
+  cols.forEach(c => {
+    const addr = c + HEADER_ROW;
+    if (ws[addr]) ws[addr].s = {
+      font:{bold:true,color:{rgb:'FFFFFF'},sz:9},
+      fill:{fgColor:{rgb:'1B4332'}},
+      alignment:{horizontal:'center',vertical:'center',wrapText:true},
+    };
+  });
+
+  for (let r = dataStart; r < dataStart + rows.length; r++) {
+    const isEven = (r - dataStart) % 2 === 1;
+    cols.forEach((c, ci) => {
+      const addr = c + r;
+      if (!ws[addr]) ws[addr] = { v:'', t:'s' };
+      const isNum = ci >= 4 && ci <= 9 || ci === 11;
+      ws[addr].s = {
+        alignment: { horizontal: (ci===1||ci===2) ? 'left' : 'center', vertical:'center' },
+        fill: isEven ? { fgColor:{rgb:'F0FDF4'} } : undefined,
+        font: { sz:9, bold: ci===11 },
+        border: { bottom:{style:'thin',color:{rgb:'E0E0E0'}} }
+      };
+    });
+  }
+
+  cols.forEach(c => {
+    const addr = c + totalRow;
+    if (!ws[addr]) ws[addr] = { v:'', t:'s' };
+    ws[addr].s = { font:{bold:true,sz:11,color:{rgb:'1B4332'}}, fill:{fgColor:{rgb:'D8F3DC'}}, alignment:{horizontal:'center',vertical:'center'} };
+  });
+
+  const rowHeights = [{hpt:22},{hpt:18}];
+  if (notes) rowHeights.push({hpt:16});
+  rowHeights.push({hpt:6},{hpt:30});
+  ws['!rows'] = rowHeights;
 
   const wb_xl = XLSX.utils.book_new();
-  const data = [
-    ['AMMA FLOWERS — НАКЛАДНАЯ / 出货单 / WAYBILL'],
-    ['Номер/单号:', wbNum, '', 'Заказ/订单:', order?.order_number||'—'],
-    ['Клиент/客户:', order?.client?.company_name||order?.client?.login||'—', '', 'Дата/日期:', new Date().toLocaleDateString('ru-RU')],
-    ['Дата отгрузки/出货日期:', document.getElementById('wb-ship-date')?.value||'—'],
-    notes ? ['Примечания/备注:', notes] : [],
-    [],
-    ['№','Название / 花名','名称CN','Клиент клиента / 子客户',
-     '¥/короб/件价','Кор./箱','Бан./кор./扎/件','Стеб./бан./枝/扎',
-     'Итого бан./总扎数','Итого стеб./总枝数',
-     'Д×Ш×В (см)','Сумма/金额¥'],
-    ...rows.map((row, i) => {
-      const f = row.flower_snapshot || {};
-      const totB = (parseInt(row.qty_boxes)||0) * (parseInt(row.bunches_per_box)||0);
-      const totS = totB * (parseInt(row.stems_per_bunch)||0);
-      const sub  = (parseFloat(row.price_per_box)||0) * (parseInt(row.qty_boxes)||0);
-      const boxSize = [row.box_length, row.box_width, row.box_height].filter(Boolean).join('×') || '—';
-      return [i+1, f.ru||'—', f.cn||'', row.sub_client||'',
-              row.price_per_box||0, row.qty_boxes||0,
-              row.bunches_per_box||'', row.stems_per_bunch||'',
-              totB||'', totS||'', boxSize, sub];
-    }),
-    [],
-    ['', '', '', 'ИТОГО / 合计:',
-     '', rows.reduce((s,r)=>s+(parseInt(r.qty_boxes)||0),0), '', '',
-     rows.reduce((s,r)=>s+((parseInt(r.qty_boxes)||0)*(parseInt(r.bunches_per_box)||0)),0),
-     rows.reduce((s,r)=>s+((parseInt(r.qty_boxes)||0)*(parseInt(r.bunches_per_box)||0)*(parseInt(r.stems_per_bunch)||0)),0),
-     '',
-     rows.reduce((s,r)=>s+((parseFloat(r.price_per_box)||0)*(parseInt(r.qty_boxes)||0)),0).toFixed(2)
-    ],
-  ].filter(r => r.length > 0);
-
-  const ws = XLSX.utils.aoa_to_sheet(data);
-  ws['!cols'] = [4,28,16,18,10,7,10,10,10,10,14,12].map(w=>({wch:w}));
   XLSX.utils.book_append_sheet(wb_xl, ws, 'Накладная');
-  XLSX.writeFile(wb_xl, `Накладная_${wbNum}.xlsx`);
+  XLSX.writeFile(wb_xl, `Накладная_${wbNum}_${today.replace(/\./g,'-')}.xlsx`);
   toast('📊 Excel сохранён / 已导出');
 }
 
@@ -4704,6 +4981,7 @@ function appendChatMessage(msg, scroll = true) {
   });
   const roleIcon = msg.sender_role === 'manager' ? '🔑' :
                    msg.sender_role === 'warehouse' ? '🏭' : '👤';
+  const msgId = msg.id || ('tmp-' + Date.now());
 
   const el = document.createElement('div');
   el.style.cssText = `display:flex;flex-direction:column;align-items:${isMine?'flex-end':'flex-start'};margin-bottom:10px`;
@@ -4716,9 +4994,12 @@ function appendChatMessage(msg, scroll = true) {
       padding:8px 12px;font-size:13px;line-height:1.5;word-break:break-word;
       border:1px solid ${isMine?'transparent':'var(--border)'}">
       ${escHtml(msg.body)}
-      ${msg.body_translated ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid ${isMine?'rgba(255,255,255,.3)':'var(--border)'};
-        font-size:11px;opacity:0.85;font-style:italic">🌐 ${escHtml(msg.body_translated)}</div>` : ''}
-    </div>`;
+      <div id="msg-translation-${msgId}" class="hidden" style="margin-top:6px;padding-top:6px;border-top:1px solid ${isMine?'rgba(255,255,255,.3)':'var(--border)'};
+        font-size:11px;opacity:0.9;font-style:italic"></div>
+    </div>
+    <button onclick="translateMessage('${msgId}', this)"
+      style="margin-top:3px;background:none;border:none;cursor:pointer;font-size:10px;color:var(--light);padding:1px 4px"
+      title="Перевести / 翻译">🌐</button>`;
 
   // Remove empty state if exists
   const empty = wrap.querySelector('div[style*="暂无消息"]');
@@ -4798,7 +5079,38 @@ function detectLang(text) {
   return cnChars > text.length * 0.2 ? 'cn' : 'ru';
 }
 
-// Translate text via Claude API (embedded)
+// Core translate function — Google Translate (free public endpoint) primary,
+// MyMemory as fallback. Returns translated text or null on failure.
+async function doTranslate(text, fromL, toL) {
+  // Primary: Google Translate public endpoint (no key, CORS-friendly, good RU<->ZH quality)
+  try {
+    const gUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${fromL}&tl=${toL}&dt=t&q=${encodeURIComponent(text)}`;
+    const gRes = await fetch(gUrl);
+    if (gRes.ok) {
+      const gData = await gRes.json();
+      // Response shape: [[[translated, original, ...], ...], ...]
+      const translated = gData?.[0]?.map(chunk => chunk[0]).join('') || '';
+      if (translated && translated.trim() && translated.trim() !== text.trim()) {
+        return translated.trim();
+      }
+    }
+  } catch(e) { /* fall through to backup */ }
+
+  // Fallback: MyMemory (weaker RU->ZH, but better than nothing)
+  try {
+    const mUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${fromL}|${toL}`;
+    const mRes  = await fetch(mUrl);
+    const mData = await mRes.json();
+    const translated = mData?.responseData?.translatedText?.trim();
+    if (translated && translated !== text && !translated.toLowerCase().includes('mymemory')) {
+      return translated;
+    }
+  } catch(e) { /* both failed */ }
+
+  return null;
+}
+
+// Translate the message currently being typed
 async function translateLastInput() {
   const input = document.getElementById('chat-input');
   const text  = input.value.trim();
@@ -4809,28 +5121,59 @@ async function translateLastInput() {
   btn.textContent = '⏳'; btn.disabled = true;
 
   const lang   = detectLang(text);
-  const fromL  = lang === 'cn' ? 'zh' : 'ru';
-  const toL    = lang === 'cn' ? 'ru' : 'zh';
+  const fromL  = lang === 'cn' ? 'zh-CN' : 'ru';
+  const toL    = lang === 'cn' ? 'ru' : 'zh-CN';
   const toLbl  = lang === 'cn' ? 'RU' : 'CN';
 
-  try {
-    // MyMemory — free, CORS-friendly translation API
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${fromL}|${toL}`;
-    const res  = await fetch(url);
-    const data = await res.json();
-    const translated = data?.responseData?.translatedText?.trim();
-
-    if (translated && translated !== text && !translated.toLowerCase().includes('mymemory')) {
-      input.value = text + '\n\n🌐 [' + toLbl + '] ' + translated;
-      toast('✅ Переведено / 翻译完成');
-    } else {
-      throw new Error('Bad response');
-    }
-  } catch(e) {
-    // Fallback: prompt user to translate manually
+  const translated = await doTranslate(text, fromL, toL);
+  if (translated) {
+    input.value = text + '\n\n🌐 [' + toLbl + '] ' + translated;
+    toast('✅ Переведено / 翻译完成');
+  } else {
     toast('⚠️ Перевод недоступен. Попробуйте позже / 翻译暂时不可用');
   }
   btn.textContent = origText; btn.disabled = false;
+}
+
+// Translate an already-sent message (called from the 🌐 button on each message bubble)
+async function translateMessage(msgId, btnEl) {
+  const msg = _chatMessages.find(m => m.id === msgId);
+  if (!msg) return;
+
+  const targetEl = document.getElementById('msg-translation-' + msgId);
+  if (!targetEl) return;
+
+  // Toggle off if already shown
+  if (!targetEl.classList.contains('hidden')) {
+    targetEl.classList.add('hidden');
+    if (btnEl) btnEl.textContent = '🌐';
+    return;
+  }
+
+  if (targetEl.dataset.loaded === '1') {
+    targetEl.classList.remove('hidden');
+    if (btnEl) btnEl.textContent = '🌐 ✓';
+    return;
+  }
+
+  if (btnEl) { btnEl.textContent = '⏳'; btnEl.disabled = true; }
+
+  const lang  = detectLang(msg.body);
+  const fromL = lang === 'cn' ? 'zh-CN' : 'ru';
+  const toL   = lang === 'cn' ? 'ru' : 'zh-CN';
+  const toLbl = lang === 'cn' ? 'RU' : 'CN';
+
+  const translated = await doTranslate(msg.body, fromL, toL);
+
+  if (translated) {
+    targetEl.textContent = '🌐 [' + toLbl + '] ' + translated;
+    targetEl.classList.remove('hidden');
+    targetEl.dataset.loaded = '1';
+    if (btnEl) { btnEl.textContent = '🌐 ✓'; btnEl.disabled = false; }
+  } else {
+    toast('⚠️ Перевод недоступен / 翻译暂时不可用');
+    if (btnEl) { btnEl.textContent = '🌐'; btnEl.disabled = false; }
+  }
 }
 
 function updateChatBadge(n) {
@@ -6689,6 +7032,7 @@ async function submitClaim() {
   // Upload photos
   const photosUrls = [];
   const files = Array.from(photoInp?.files || []).slice(0, 5);
+  let photoFailCount = 0;
 
   if (files.length) {
     toast('⏳ Загружаем фото / 上传照片中...');
@@ -6700,7 +7044,13 @@ async function submitClaim() {
       if (!upErr) {
         const { data: urlData } = sb.storage.from('claim-photos').getPublicUrl(path);
         if (urlData?.publicUrl) photosUrls.push(urlData.publicUrl);
+      } else {
+        photoFailCount++;
+        console.warn('Claim photo upload failed:', file.name, upErr.message);
       }
+    }
+    if (photoFailCount > 0) {
+      toast(`⚠️ ${photoFailCount} фото не загрузились (проверьте bucket claim-photos) / ${photoFailCount}张照片上传失败`);
     }
   }
 
@@ -7103,38 +7453,93 @@ function exportPriceExcel() {
     'Length 长度', 'Order Qty 订购数量', 'Flower Weight 花重量', 'Box Size 箱型'
   ];
 
-  const rows = [['AMMA FLOWERS — Price List / 价格单', '', '', '', '', '', '', '', '', '', '', '', '', '']];
-  rows.push([`Date / 日期: ${today}`, '', '', '', '', '', '', '', '', '', '', '', '', '']);
-  rows.push([]);
-  rows.push(header);
+  const aoa = [];
+  aoa.push(['AMMA FLOWERS — Price List / 价格单']);
+  aoa.push([`Date / 日期: ${today}`]);
+  aoa.push([]);
+  aoa.push(header);
+
+  const HEADER_ROW = 4; // 1-based
+  const dataStart  = HEADER_ROW + 1;
+  const categoryRows = [];
+  const dataRows = [];
 
   let lastCat = null;
   flowers.forEach(f => {
     if (!f.in_stock && hiddenOut) return;
     if (f.cat_ru !== lastCat) {
-      rows.push([f.cat_ru || '', f.cat_en || '']);
+      aoa.push([f.cat_ru || '', f.cat_en || '']);
+      categoryRows.push(aoa.length); // 1-based row number
       lastCat = f.cat_ru;
     }
     const pa  = (f.price_a  * markup);
     const pap = (f.price_ap * markup);
     const pab  = (pa  * (f.boxes_per_box || 1));
     const papb = (pap * (f.boxes_per_box || 1));
-    rows.push([
+    aoa.push([
       f.ru || '', f.cn || '', f.pack || '',
-      pa.toFixed(1), pap.toFixed(1),
-      pab.toFixed(0), papb.toFixed(0),
+      Number(pa.toFixed(1)), Number(pap.toFixed(1)),
+      Number(pab.toFixed(0)), Number(papb.toFixed(0)),
       f.boxes_per_box || '', f.stems || '',
       (f.stems && f.boxes_per_box) ? (f.stems * f.boxes_per_box) : '',
       f.length || '', f.order_qty || '', f.flower_weight || '', f.box_size || ''
     ]);
+    dataRows.push(aoa.length);
   });
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = [
     {wch:28},{wch:18},{wch:18},{wch:12},{wch:12},
     {wch:12},{wch:12},{wch:12},{wch:12},{wch:12},
     {wch:12},{wch:14},{wch:14},{wch:16}
   ];
+
+  const cols = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N'];
+  ws['!merges'] = [
+    {s:{r:0,c:0},e:{r:0,c:13}},
+    {s:{r:1,c:0},e:{r:1,c:13}},
+  ];
+  if (ws['A1']) ws['A1'].s = { font:{bold:true,sz:15,color:{rgb:'1B4332'}}, alignment:{horizontal:'center'} };
+  if (ws['A2']) ws['A2'].s = { font:{sz:10,color:{rgb:'555555'}}, alignment:{horizontal:'center'} };
+
+  // Header row
+  cols.forEach(c => {
+    const addr = c + HEADER_ROW;
+    if (ws[addr]) ws[addr].s = {
+      font:{bold:true,color:{rgb:'FFFFFF'},sz:9},
+      fill:{fgColor:{rgb:'1B4332'}},
+      alignment:{horizontal:'center',vertical:'center',wrapText:true},
+    };
+  });
+
+  // Category rows — merged, highlighted
+  categoryRows.forEach(r => {
+    cols.forEach(c => {
+      const addr = c + r;
+      if (!ws[addr]) ws[addr] = { v:'', t:'s' };
+      ws[addr].s = { font:{bold:true,sz:10,color:{rgb:'1B4332'}}, fill:{fgColor:{rgb:'D8F3DC'}}, alignment:{vertical:'center'} };
+    });
+    if (!ws['!merges']) ws['!merges'] = [];
+    ws['!merges'].push({s:{r:r-1,c:0},e:{r:r-1,c:13}});
+  });
+
+  // Data rows
+  dataRows.forEach((r, idx) => {
+    cols.forEach((c, ci) => {
+      const addr = c + r;
+      if (!ws[addr]) ws[addr] = { v:'', t:'s' };
+      const isNum = ci >= 3 && ci <= 9;
+      ws[addr].s = {
+        alignment: { horizontal: ci<3 ? 'left' : 'center', vertical:'center' },
+        fill: idx % 2 === 1 ? { fgColor:{rgb:'F9FAFB'} } : undefined,
+        font: { sz:9, bold: ci===5||ci===6 },
+        border: { bottom:{style:'thin',color:{rgb:'EEEEEE'}} }
+      };
+    });
+  });
+
+  ws['!rows'] = [{hpt:22},{hpt:18},{hpt:6},{hpt:30}];
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Price List');
   XLSX.writeFile(wb, `AMMA_PriceList_${today.replace(/\./g,'-')}.xlsx`);
