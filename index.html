@@ -642,15 +642,24 @@ td.L{text-align:left}
       <div class="page-title">Склад / 仓库 / Warehouse</div>
       <!-- Sub-tabs -->
       <div style="display:flex;gap:6px;margin-bottom:16px;border-bottom:2px solid var(--border);padding-bottom:0;flex-wrap:wrap">
-        <button class="wh-tab active" id="whtab-assembly"   onclick="switchWhTab('assembly',this)">🏭 Сборка / 备货</button>
+        <button class="wh-tab active" id="whtab-pending" onclick="switchWhTab('pending',this)">📋 Входящие <span class="cnt" id="cnt-wh-pending" style="display:none">0</span></button>
+        <button class="wh-tab" id="whtab-assembly"   onclick="switchWhTab('assembly',this)">🏭 Сборка / 备货</button>
         <button class="wh-tab"        id="whtab-receiving"  onclick="switchWhTab('receiving',this)">📥 Приёмка / 收货</button>
         <button class="wh-tab"        id="whtab-labels"     onclick="switchWhTab('labels',this)">🏷 Этикетки / 标签</button>
         <button class="wh-tab"        id="whtab-claims"     onclick="switchWhTab('claims',this)">⚠️ Претензии <span class="cnt" id="cnt-wh-claims" style="display:none">0</span></button>
         <button class="wh-tab"        id="whtab-stats"      onclick="switchWhTab('stats',this)">📊 Сводка / 统计</button>
       </div>
 
+      <!-- ── PENDING / ВХОДЯЩИЕ ── -->
+      <div id="whpanel-pending">
+        <div class="page-sub" style="margin-bottom:10px">
+          Заказы на рассмотрении — уточните пакинг до подтверждения / 待审核订单——确认前核对包装规格
+        </div>
+        <div id="wh-pending-list"><div class="loading"><div class="spinner"></div></div></div>
+      </div>
+
       <!-- ── ASSEMBLY ── -->
-      <div id="whpanel-assembly">
+      <div id="whpanel-assembly" class="hidden">
         <div class="ctrl-bar" style="flex-wrap:wrap;gap:10px;margin-bottom:12px">
           <select class="inp" id="wh-date-filter" onchange="loadWarehouseOrders()" style="min-width:150px">
             <option value="">Все даты / 所有日期</option>
@@ -993,11 +1002,11 @@ async function initApp() {
 
   // Warehouse: load orders and setup realtime
   if (isWh) {
-    loadWarehouseOrders();
-    // Load claims badge
-    sb.from('claims').select('id,status').eq('status','new').then(({data}) => {
-      const cnt = document.getElementById('cnt-wh-claims');
-      if (cnt && data?.length) { cnt.textContent=data.length; cnt.style.display=''; }
+    loadWhPending(); // start on pending tab to show new orders first
+    // Load assembly in background
+    sb.from('orders').select('id',{count:'exact'}).in('status',['pending_review','needs_revision']).then(({count}) => {
+      const badge = document.getElementById('cnt-wh-pending');
+      if (badge && count) { badge.textContent=count; badge.style.display=''; }
     }).catch(()=>{});
     sb.channel('wh-orders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' },
@@ -1535,7 +1544,17 @@ function updateCartQty(id, v) {
   const q = parseInt(v) || 1;
   if (q < 1) { removeFromCart(id); return; }
   if (cart[id]) cart[id].qty = q;
-  updateCartUI();
+
+  // Update row subtotal live
+  const subEl = document.getElementById('cart-sub-' + id);
+  if (subEl) subEl.textContent = '¥' + (cart[id].pbox * q).toFixed(2);
+
+  // Update table footer total live
+  const newTotal = Object.values(cart).reduce((s,o) => s + o.pbox * o.qty, 0);
+  const footEl = document.getElementById('cart-table-total');
+  if (footEl) footEl.textContent = '¥' + newTotal.toFixed(2);
+
+  updateCartUI(); // updates the sticky bottom bar total
 }
 
 function updateCartField(id, field, val) {
@@ -1627,7 +1646,7 @@ function renderMyOrder() {
         <td><input class="inp" type="number" min="1" value="${o.qty}"
               style="width:52px;text-align:center;padding:4px"
               oninput="updateCartQty(${o.flower.id},this.value)"></td>
-        <td style="font-weight:700;color:var(--sage-d)">¥${sub.toFixed(2)}</td>
+        <td id="cart-sub-${o.flower.id}" style="font-weight:700;color:var(--sage-d)">¥${sub.toFixed(2)}</td>
         <td><input class="inp" type="text" value="${o.client_name||''}" placeholder="Субклиент / 子客户..."
               style="width:95px;padding:4px" oninput="updateCartField(${o.flower.id},'client_name',this.value)"></td>
         <td><input class="inp" type="text" value="${o.comment||''}" placeholder="Коммент / 备注..."
@@ -1663,7 +1682,7 @@ function renderMyOrder() {
           <tbody>${rows}</tbody>
           <tfoot><tr>
             <td colspan="5" style="text-align:right;padding:8px;font-weight:700">ИТОГО / 合计:</td>
-            <td style="font-weight:700;font-size:14px;color:var(--sage-d)">¥${total.toFixed(2)}</td>
+            <td id="cart-table-total" style="font-weight:700;font-size:14px;color:var(--sage-d)">¥${total.toFixed(2)}</td>
             <td colspan="3"></td>
           </tr></tfoot>
         </table>
@@ -2220,6 +2239,19 @@ function renderOrderDetail(order) {
       <div style="font-size:12px;color:var(--mid)">
         💬 Комментарий клиента: ${order.client_comment||'—'}
       </div>
+      ${order.wh_pack_notes && order.wh_pack_notes !== '{}' ? (() => {
+        let notes = {};
+        try { notes = JSON.parse(order.wh_pack_notes); } catch{}
+        const generalNote = notes['_general'];
+        const itemNotes = Object.entries(notes).filter(([k]) => k !== '_general' && notes[k]);
+        if (!itemNotes.length && !generalNote) return '';
+        return `<div style="margin-top:8px;padding:8px 12px;background:#f0f9ff;border-radius:6px;border-left:3px solid #3b82f6">
+          <b style="font-size:10px;color:#1d4ed8">📋 ЗАМЕТКИ СКЛАДА / 仓库备注</b>
+          ${generalNote ? `<div style="font-size:11px;margin-top:3px;font-weight:600">${escHtml(generalNote)}</div>` : ''}
+          ${itemNotes.map(([,v])=>`<div style="font-size:11px;color:#374151;margin-top:2px">· ${escHtml(v)}</div>`).join('')}
+          ${order.wh_pack_saved_at ? `<div style="font-size:9px;color:#6b7280;margin-top:4px">Сохранено: ${new Date(order.wh_pack_saved_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
+        </div>`;
+      })() : ''}
     </div>
 
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
@@ -5196,15 +5228,166 @@ let _whOrders = [];
 function switchWhTab(name, btn) {
   document.querySelectorAll('.wh-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  ['assembly','receiving','labels','claims','stats'].forEach(p => {
+  ['pending','assembly','receiving','labels','claims','stats'].forEach(p => {
     const el = document.getElementById('whpanel-' + p);
     if (el) el.classList.toggle('hidden', p !== name);
   });
+  if (name === 'pending')   loadWhPending();
   if (name === 'assembly')  loadWarehouseOrders();
   if (name === 'receiving') loadReceivingOrders();
   if (name === 'labels')    loadWhLabelOrders();
   if (name === 'claims')    loadWhClaims();
   if (name === 'stats')     loadWhStats();
+}
+
+// ── PENDING ORDERS — заказы ожидающие подтверждения ──
+async function loadWhPending() {
+  const wrap = document.getElementById('wh-pending-list');
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
+
+  const { data: orders, error } = await sb.from('orders')
+    .select(`*, client:users!orders_client_id_fkey(company_name,login),
+      order_items(*, flower:flowers(ru,cn,photo_url,stems,boxes_per_box,pack))`)
+    .in('status', ['pending_review', 'needs_revision'])
+    .order('created_at', { ascending: false });
+
+  // Update badge
+  const badge = document.getElementById('cnt-wh-pending');
+  const count = (orders||[]).length;
+  if (badge) { badge.textContent = count; badge.style.display = count ? '' : 'none'; }
+
+  if (error || !count) {
+    wrap.innerHTML = `<div class="empty-state"><div class="icon">✅</div>
+      <p>Нет новых заказов на проверку / 暂无待审核订单</p></div>`;
+    return;
+  }
+
+  wrap.innerHTML = orders.map(order => {
+    const client = order.client?.company_name || order.client?.login || '—';
+    const items  = order.order_items || [];
+
+    const rows = items.map((item, idx) => {
+      const f    = item.flower || {};
+      const snap = item.flower_snapshot || {};
+      const ru   = f.ru  || snap.ru  || '—';
+      const cn   = f.cn  || snap.cn  || '';
+      const thumb = f.photo_url || THUMBS[f.en] || '';
+      const imgH = thumb
+        ? `<img src="${thumb}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0">`
+        : `<div style="width:32px;height:32px;background:var(--sage-l);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">🌸</div>`;
+      const bpb  = parseInt(item.bunches_per_box) || parseInt(f.boxes_per_box || snap.boxes_per_box) || '';
+      const spb  = parseInt(f.stems || snap.stems) || '';
+      const pack = f.pack || snap.pack || '';
+
+      // Get saved wh_pack_note for this item
+      let savedNotes = {};
+      try { savedNotes = JSON.parse(order.wh_pack_notes || '{}'); } catch{}
+      const savedNote = savedNotes[item.id] || '';
+
+      return `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
+        ${imgH}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:700">${ru} <span style="font-size:10px;color:var(--mid)">${cn}</span></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:3px">
+            <span style="font-size:10px;background:var(--sage-l);color:var(--sage-d);padding:1px 6px;border-radius:4px">📦 ${item.qty_boxes||1} кор.</span>
+            ${bpb?`<span style="font-size:10px;background:var(--sage-l);color:var(--sage-d);padding:1px 6px;border-radius:4px">${bpb} банч/кор.</span>`:''}
+            ${spb?`<span style="font-size:10px;background:var(--sage-l);color:var(--sage-d);padding:1px 6px;border-radius:4px">${spb} ст/банч</span>`:''}
+            ${pack?`<span style="font-size:10px;background:#f0f9ff;color:#0369a1;padding:1px 6px;border-radius:4px">${pack}</span>`:''}
+          </div>
+        </div>
+        <div style="flex:1;min-width:140px">
+          <div style="font-size:10px;color:var(--mid);margin-bottom:2px">Заметка по пакингу / 包装备注</div>
+          <div style="display:flex;gap:4px">
+            <input type="text" class="inp" id="wh-pack-${order.id}-${item.id}"
+              value="${(savedNote).replace(/"/g,'&quot;')}"
+              placeholder="Пакинг, замена, уточнение... / 包装说明..."
+              style="flex:1;font-size:11px;padding:4px 7px">
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Read general warehouse note
+    let savedNotes = {};
+    try { savedNotes = JSON.parse(order.wh_pack_notes || '{}'); } catch{}
+    const generalNote = savedNotes['_general'] || '';
+
+    return `<div class="card" style="border-left:4px solid #3b82f6;margin-bottom:14px" id="wh-pending-${order.id}">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <div>
+          <span style="font-family:var(--font-h);font-size:16px;font-weight:700;color:var(--sage-d)">${order.order_number}</span>
+          <span class="badge" style="background:#eff6ff;color:#1d4ed8;margin-left:8px">📋 На проверке</span>
+          <div style="font-size:11px;color:var(--mid);margin-top:2px">👤 ${client} · ${order.date_order||''} ${order.date_ship?'→ 🚚 '+order.date_ship:''}</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="saveWhPackingNotes('${order.id}')">
+          💾 Сохранить заметки / 保存备注
+        </button>
+      </div>
+
+      <!-- Items list with packing notes -->
+      <div style="margin-bottom:10px">${rows}</div>
+
+      <!-- General note -->
+      <div style="padding-top:8px;border-top:1px solid var(--border)">
+        <div style="font-size:10px;color:var(--mid);margin-bottom:4px;font-weight:700">
+          Общая заметка склада по заказу / 仓库总体备注
+        </div>
+        <div style="display:flex;gap:8px">
+          <input type="text" class="inp" id="wh-pack-${order.id}-_general"
+            value="${generalNote.replace(/"/g,'&quot;')}"
+            placeholder="Общие вопросы по заказу / 订单总体问题..."
+            style="flex:1;font-size:12px">
+        </div>
+      </div>
+
+      ${order.wh_pack_saved_at ? `<div style="font-size:10px;color:var(--sage-d);margin-top:6px">
+        ✅ Заметки сохранены ${new Date(order.wh_pack_saved_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function saveWhPackingNotes(orderId) {
+  // Collect all packing note inputs for this order
+  const notes = {};
+  document.querySelectorAll(`[id^="wh-pack-${orderId}-"]`).forEach(input => {
+    const key = input.id.replace(`wh-pack-${orderId}-`, '');
+    const val = input.value.trim();
+    if (val) notes[key] = val;
+  });
+
+  const { error } = await sb.from('orders').update({
+    wh_pack_notes:    JSON.stringify(notes),
+    wh_pack_saved_at: new Date().toISOString(),
+    updated_at:       new Date().toISOString()
+  }).eq('id', orderId);
+
+  if (error) {
+    if (error.message?.includes('wh_pack_notes')) {
+      toast('⚠️ Выполните SQL: ALTER TABLE orders ADD COLUMN IF NOT EXISTS wh_pack_notes text; ALTER TABLE orders ADD COLUMN IF NOT EXISTS wh_pack_saved_at timestamptz;');
+    } else {
+      toast('❌ ' + error.message);
+    }
+    return;
+  }
+
+  // Notify managers
+  try {
+    const { data: order } = await sb.from('orders').select('order_number').eq('id', orderId).single();
+    const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+    const hasNotes = Object.keys(notes).length > 0;
+    if (hasNotes) {
+      for (const m of (mgrs||[])) {
+        await sendNotification(m.id,
+          `📋 Склад добавил заметки: заказ ${order?.order_number}`,
+          Object.values(notes).filter(v=>v&&v!=='').slice(0,2).join(' · ') || 'Заметки по пакингу', '📋');
+      }
+    }
+  } catch(e) {}
+
+  toast('✅ Заметки сохранены, менеджер уведомлён / 备注已保存');
+  loadWhPending();
 }
 
 async function loadWarehouseOrders() {
