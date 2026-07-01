@@ -4233,26 +4233,34 @@ async function loadMyWaybills() {
     return;
   }
 
-  list.innerHTML = data.map(wb => `
-    <div class="card" style="border-left:4px solid var(--sage);margin-bottom:10px;cursor:pointer"
-         onclick="openWaybill('${wb.id}')">
+  list.innerHTML = data.map(wb => {
+    // Check if claim already exists for this waybill
+    return `
+    <div class="card" style="border-left:4px solid var(--sage);margin-bottom:10px">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <div style="flex:1">
+        <div style="flex:1;cursor:pointer" onclick="openWaybill('${wb.id}')">
           <div style="font-family:var(--font-h);font-size:17px;font-weight:700;color:var(--sage-d)">${wb.waybill_number}</div>
           <div style="font-size:11px;color:var(--mid)">
             📦 Заказ: ${wb.order?.order_number||'—'} ·
             📅 ${new Date(wb.created_at).toLocaleDateString('ru-RU')}
           </div>
         </div>
-        <span class="badge badge-confirmed">📤 Отправлена / 已发送</span>
-        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();openWaybill('${wb.id}')">
-          👁 Просмотр / 查看
-        </button>
-        ${wb.status !== 'confirmed' ? `<button class="btn btn-gold btn-sm" onclick="event.stopPropagation();confirmWaybill('${wb.id}')">
-          ✅ Подтвердить / 确认
-        </button>` : `<span class="badge" style="background:var(--sage-l);color:var(--sage-d);margin-left:4px">✅ Подтверждена</span>`}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <span class="badge badge-confirmed">📤 Отправлена / 已发送</span>
+          <button class="btn btn-secondary btn-sm" onclick="openWaybill('${wb.id}')">
+            👁 Просмотр / 查看
+          </button>
+          ${wb.status !== 'confirmed' ? `<button class="btn btn-gold btn-sm" onclick="confirmWaybill('${wb.id}')">
+            ✅ Подтвердить получение / 确认收货
+          </button>` : `<span class="badge" style="background:var(--sage-l);color:var(--sage-d)">✅ Получено / 已确认</span>`}
+          <button class="btn btn-sm" style="background:#fef2f2;color:#dc2626;border:1px solid #fca5a5"
+            onclick="goToNewClaim('${wb.id}')">
+            ⚠️ Претензия / 投诉
+          </button>
+        </div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function goBackFromWaybill() {
@@ -6701,17 +6709,28 @@ async function loadDashboard() {
 // ══════════════════════════════════════════════════════════
 
 // ── Client: view & submit claims ──
+// Navigate to claims page and pre-select the waybill
+async function goToNewClaim(waybillId) {
+  // Switch to claims tab
+  const tab = Array.from(document.querySelectorAll('.nav-tab'))
+    .find(t => t.textContent.includes('Претензии') || t.textContent.includes('投诉'));
+  if (tab) showPage('my-claims', tab);
+  // Store the waybill to pre-select after load
+  window._pendingClaimWaybillId = waybillId;
+}
+
 async function loadMyClaims() {
   const wrap = document.getElementById('my-claims-content');
   if (!wrap) return;
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
   // Load waybills sent to this client (these are claimable)
+  // Both 'sent' and 'confirmed' waybills allow claims — client confirmed receipt
   const [waybillsRes, claimsRes] = await Promise.all([
     sb.from('waybills')
       .select('id,waybill_number,created_at,order_id,order:orders(order_number,date_ship,order_items(flower_snapshot,flower:flowers(ru,cn,photo_url)))')
       .eq('client_id', currentUser.id)
-      .eq('status', 'sent')
+      .in('status', ['sent', 'confirmed'])
       .order('created_at', { ascending: false }),
     sb.from('claims')
       .select('*')
@@ -6854,6 +6873,23 @@ async function loadMyClaims() {
   }
 
   wrap.innerHTML = html;
+
+  // Auto-select waybill if navigated from "Претензия" button on waybill page
+  const pending = window._pendingClaimWaybillId;
+  if (pending) {
+    window._pendingClaimWaybillId = null;
+    const sel = document.getElementById('claim-order-select');
+    if (sel) {
+      // Find the option with matching waybill id
+      const opt = Array.from(sel.options).find(o => o.value && o.dataset.waybillId === pending);
+      if (opt) {
+        sel.value = opt.value;
+        buildClaimItems();
+        // Scroll to form
+        setTimeout(() => sel.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+      }
+    }
+  }
 }
 
 function buildClaimItems() {
