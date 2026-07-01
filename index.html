@@ -3639,7 +3639,7 @@ function renderWaybillEditor(wb, order, wbNum, existingItems) {
       <button class="btn btn-secondary btn-sm" onclick="exportWaybillExcel()">📊 Excel</button>
       <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨 Печать</button>
       <button class="btn btn-gold btn-sm" onclick="saveWaybill()">💾 Сохранить / 保存</button>
-      <button class="btn btn-primary btn-sm" onclick="sendWaybill()">📤 Отправить / 发给客户</button>
+      <button class="btn btn-primary btn-sm" onclick="sendWaybill()" title="Сохраняет накладную, отправляет клиенту и меняет статус заказа на Отправлен">📤 Отправить клиенту / 发给客户 →「已发货」</button>
     ` : '';
   }
 
@@ -5303,6 +5303,8 @@ async function loadWhPending() {
               value="${(savedNote).replace(/"/g,'&quot;')}"
               placeholder="Пакинг, замена, уточнение... / 包装说明..."
               style="flex:1;font-size:11px;padding:4px 7px">
+            <button onclick="translatePackNote(this)" title="Перевести / 翻译"
+              style="background:var(--sage-l);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;flex-shrink:0">🌐</button>
           </div>
         </div>
       </div>`;
@@ -5338,6 +5340,8 @@ async function loadWhPending() {
             value="${generalNote.replace(/"/g,'&quot;')}"
             placeholder="Общие вопросы по заказу / 订单总体问题..."
             style="flex:1;font-size:12px">
+          <button onclick="translatePackNote(this)" title="Перевести / 翻译"
+            style="background:var(--sage-l);border:1px solid var(--border);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px;flex-shrink:0">🌐</button>
         </div>
       </div>
 
@@ -5346,6 +5350,25 @@ async function loadWhPending() {
       </div>` : ''}
     </div>`;
   }).join('');
+}
+
+async function translatePackNote(btn) {
+  const input = btn.previousElementSibling;
+  if (!input || !input.value.trim()) { toast('Введите текст / 请输入文字'); return; }
+  const text = input.value.trim();
+  const origBtn = btn.textContent;
+  btn.textContent = '⏳'; btn.disabled = true;
+  const lang  = detectLang(text);
+  const fromL = lang === 'cn' ? 'zh-CN' : 'ru';
+  const toL   = lang === 'cn' ? 'ru'    : 'zh-CN';
+  const translated = await doTranslate(text, fromL, toL);
+  if (translated) {
+    input.value = text + ' / ' + translated;
+    toast('✅ Переведено / 翻译完成');
+  } else {
+    toast('⚠️ Перевод недоступен / 翻译暂时不可用');
+  }
+  btn.textContent = origBtn; btn.disabled = false;
 }
 
 async function saveWhPackingNotes(orderId) {
@@ -5922,21 +5945,19 @@ async function loadWhClaims() {
             ${faultBadge}
           </div>
         </div>
-        ${c.description?`<div style="font-size:12px;color:var(--mid);margin-bottom:8px;font-style:italic">"${c.description}"</div>`:''}
-        <div style="padding:6px 0">${itemsRows}</div>
-        ${whItems.length ? `<div style="margin-top:8px;padding:8px 12px;background:#fef2f2;border-radius:6px;border-left:3px solid #dc2626;font-size:12px">
-          <b style="color:#dc2626">🏭 Ответственность склада / 仓库责任:</b>
-          ${whItems.map(i=>`<span style="margin-left:6px">${i.name} (${i.qty_boxes||i.qty||1} кор.${i.subtotal?', ¥'+parseFloat(i.subtotal).toFixed(2):''})</span>`).join(' ·')}
-          ${whTotal?`<b style="color:#dc2626;margin-left:8px">Итого: ¥${whTotal.toFixed(2)}</b>`:''}
-        </div>` : ''}
-        ${supplyItems.length ? `<div style="margin-top:6px;padding:8px 12px;background:#eff6ff;border-radius:6px;border-left:3px solid #3b82f6;font-size:12px">
-          <b style="color:#1d4ed8">🚚 Ответственность поставщика / 供应商责任:</b>
-          ${supplyItems.map(i=>`<span style="margin-left:6px">${i.name}</span>`).join(' ·')}
-          ${supTotal?`<b style="color:#1d4ed8;margin-left:8px">Итого: ¥${supTotal.toFixed(2)}</b>`:''}
-        </div>` : ''}
-        ${c.manager_reply?`<div style="margin-top:8px;padding:6px 10px;background:var(--sage-l);border-radius:6px;font-size:11px">
-          <b style="color:var(--sage-d)">Ответ менеджера:</b> ${c.manager_reply}
-        </div>`:''}
+        ${c.description?`<div style="font-size:12px;color:var(--mid);margin-bottom:8px;">
+          <i>"${escHtml(c.description)}"</i>
+          <button data-tkey="${c.id}-desc" onclick="translateClaimText(this,this.dataset.tkey)" title="Перевести/翻译"
+            style="background:none;border:1px solid var(--border);border-radius:4px;padding:1px 6px;cursor:pointer;font-size:10px;margin-left:6px">🌐</button>
+          <div id="claim-tr-${c.id}-desc" class="hidden" style="font-size:11px;color:#1d4ed8;margin-top:3px"></div>
+        </div>`:""}
+        ${c.manager_reply?`<div style="margin-top:8px;padding:8px 12px;background:var(--sage-l);border-radius:6px;border-left:3px solid var(--sage-d);font-size:12px">
+          <b style="color:var(--sage-d)">💬 Ответ менеджера / 经理回复:</b>
+          <button data-tkey="${c.id}-reply" onclick="translateClaimText(this,this.dataset.tkey)" title="Перевести/翻译"
+            style="background:none;border:1px solid var(--border);border-radius:4px;padding:1px 6px;cursor:pointer;font-size:10px;margin-left:6px">🌐</button>
+          <div style="margin-top:5px">${escHtml(c.manager_reply)}</div>
+          <div id="claim-tr-${c.id}-reply" class="hidden" style="font-size:11px;color:#1d4ed8;margin-top:4px;padding-top:4px;border-top:1px solid var(--border)"></div>
+        </div>`:""}
       </div>`;
     }).join('');
   } catch(e) {
@@ -6724,17 +6745,40 @@ async function loadMyClaims() {
             <div style="font-size:11px;color:var(--mid);margin-top:3px">${new Date(c.created_at).toLocaleDateString('ru-RU')}</div>
           </div>
         </div>
-        ${items.length ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin:8px 0">
-          ${items.map(i=>`<span style="font-size:10px;background:#fff3e0;color:#e65100;padding:2px 8px;border-radius:10px">⚠ ${i.name}</span>`).join('')}
-        </div>` : ''}
-        <div style="font-size:12px;margin:6px 0">${c.description||''}</div>
+        ${items.length ? `
+          <div style="margin:10px 0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+            <table style="width:100%;border-collapse:collapse;font-size:11px">
+              <thead><tr style="background:var(--sage-d);color:#fff">
+                <th style="padding:5px 8px;text-align:left">Позиция / 品种</th>
+                <th style="padding:5px 8px;text-align:center;width:80px">Тип / 类型</th>
+                <th style="padding:5px 8px;text-align:center;width:60px">Кор. / 箱</th>
+                <th style="padding:5px 8px;text-align:center;width:80px">Сумма ¥</th>
+              </tr></thead>
+              <tbody>${items.map((it,i)=>{
+                const typeL={quality:'Некачест.',quantity:'Нехватка',wrong:'Не тот',damaged:'Поврежд.'};
+                return `<tr style="background:${i%2?'#fff8f8':'#fff'};border-top:1px solid var(--border)">
+                  <td style="padding:5px 8px;font-weight:600">${it.name||'—'}</td>
+                  <td style="padding:5px 8px;text-align:center;color:#e65100">${typeL[it.type]||it.type||'—'}</td>
+                  <td style="padding:5px 8px;text-align:center;font-weight:700">${it.qty_boxes||it.qty||'—'}</td>
+                  <td style="padding:5px 8px;text-align:center;font-weight:700;color:var(--red)">${it.subtotal?'¥'+parseFloat(it.subtotal).toFixed(2):'—'}</td>
+                </tr>`;
+              }).join('')}</tbody>
+              ${c.total_amount?`<tfoot><tr style="background:var(--sage-l)">
+                <td colspan="3" style="padding:6px 8px;text-align:right;font-weight:700;color:var(--sage-d)">Итого по претензии:</td>
+                <td style="padding:6px 8px;text-align:center;font-weight:700;color:var(--red);font-size:14px">¥${parseFloat(c.total_amount).toFixed(2)}</td>
+              </tr></tfoot>`:''}
+            </table>
+          </div>` : ''}
+        <div style="font-size:12px;margin:6px 0;color:var(--mid);font-style:italic">${c.description||''}</div>
         ${photos.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
           ${photos.map(p=>`<img src="${p}" style="width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${p}','_blank')">`).join('')}
         </div>` : ''}
-        ${c.manager_reply ? `<div style="margin-top:10px;padding:8px 12px;background:var(--sage-l);border-radius:6px;border-left:3px solid var(--sage-d)">
-          <b style="font-size:10px;color:var(--sage-d)">💬 Ответ менеджера / 经理回复:</b>
-          <div style="font-size:12px;margin-top:4px">${c.manager_reply}</div>
-        </div>` : ''}
+        ${c.manager_reply ? `<div style="margin-top:10px;padding:10px 14px;background:var(--sage-l);border-radius:8px;border-left:4px solid var(--sage-d)">
+          <b style="font-size:10px;color:var(--sage-d);letter-spacing:.05em">💬 ОТВЕТ МЕНЕДЖЕРА / 经理回复:</b>
+          <div style="font-size:13px;margin-top:6px;line-height:1.5">${escHtml(c.manager_reply)}</div>
+        </div>` : `<div style="margin-top:8px;padding:8px 12px;background:#fffbeb;border-radius:6px;border-left:3px solid #f59e0b;font-size:11px;color:#92400e">
+          ⏳ Ожидаем ответ менеджера / 等待经理回复
+        </div>`}
       </div>`;
     }).join('');
   }
@@ -6821,111 +6865,161 @@ function buildClaimItems() {
   try { items = JSON.parse(opt.dataset.items||'[]'); } catch{}
   if (!items.length) { wrap.innerHTML=''; return; }
 
+  const typeOpts = [
+    {v:'quality', l:'🥀 Некачественный / 质量差'},
+    {v:'quantity', l:'📦 Нехватка / 数量不足'},
+    {v:'wrong',   l:'❌ Не тот товар / 发货错误'},
+    {v:'damaged', l:'💥 Повреждён / 运输损坏'},
+  ];
+
   wrap.innerHTML = `
-    <div style="font-size:11px;font-weight:700;color:var(--mid);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">
-      Отметьте проблемные позиции и укажите количество / 标记有问题的品种并填写数量:
+    <div style="font-size:11px;font-weight:700;color:var(--mid);margin:12px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+      ✅ Отметьте проблемные позиции и заполните поля / 标记有问题的品种并填写相关信息
     </div>
-    ${items.map((item, idx) => `
-      <div class="claim-row" id="crow-${idx}" style="border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden">
-        <!-- Row header — always visible -->
-        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg);cursor:pointer"
-             onclick="toggleClaimRow(${idx})">
-          <input type="checkbox" class="claim-item-cb" data-idx="${idx}"
-            data-name="${item.ru}" data-price="${item.price||0}" data-price-type="${item.priceType||''}"
-            style="width:16px;height:16px;accent-color:var(--red);flex-shrink:0;cursor:pointer"
-            onclick="event.stopPropagation()"
-            onchange="toggleClaimRowExpand(${idx}, this.checked); recalcClaimTotal()">
-          ${item.photo
-            ? `<img src="${item.photo}" style="width:34px;height:34px;object-fit:cover;border-radius:5px;flex-shrink:0">`
-            : `<div style="width:34px;height:34px;background:var(--sage-l);border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px">🌸</div>`}
-          <div style="flex:1;min-width:0">
-            <div style="font-size:12px;font-weight:600">${item.ru}</div>
-            ${item.cn ? `<div style="font-size:10px;color:var(--mid)">${item.cn}</div>` : ''}
-          </div>
-          <div style="text-align:right;flex-shrink:0">
-            ${item.qty ? `<div style="font-size:11px;color:var(--mid)">${item.qty} кор.</div>` : ''}
-            ${item.price ? `<div style="font-size:11px;font-weight:700;color:var(--sage-d)">¥${parseFloat(item.price).toFixed(2)}/кор.</div>` : ''}
-          </div>
-        </div>
-        <!-- Expanded detail — shown when checkbox checked -->
-        <div class="claim-row-detail hidden" id="crow-detail-${idx}"
-             style="padding:10px 12px;background:#fff;border-top:1px solid var(--border)">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
-            <div>
-              <label style="font-size:10px;font-weight:700;color:var(--mid);letter-spacing:.05em;display:block;margin-bottom:3px">
-                ТИП ПРОБЛЕМЫ / 问题类型
-              </label>
-              <select class="inp claim-item-type" data-idx="${idx}" style="font-size:11px;padding:5px 8px;width:100%">
-                <option value="quality">🥀 Некачественный / 质量差</option>
-                <option value="quantity">📦 Нехватка / 数量不足</option>
-                <option value="wrong">❌ Не тот товар / 发货错误</option>
-                <option value="damaged">💥 Повреждён / 运输损坏</option>
-              </select>
-            </div>
-            <div>
-              <label style="font-size:10px;font-weight:700;color:var(--mid);letter-spacing:.05em;display:block;margin-bottom:3px">
-                КОЛ-ВО ПРОБЛЕМНЫХ КОРОБОК / 问题箱数
-              </label>
-              <div style="display:flex;align-items:center;gap:6px">
-                <input type="number" min="1" max="${item.qty||99}" value="1"
-                  class="inp claim-item-qty" data-idx="${idx}"
-                  style="width:70px;text-align:center;padding:5px;font-size:13px;font-weight:700"
-                  oninput="recalcClaimTotal()">
-                <span style="font-size:11px;color:var(--mid)">из ${item.qty||'?'} кор.</span>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;min-width:560px">
+      <thead>
+        <tr style="background:var(--sage-d);color:#fff">
+          <th style="padding:7px 10px;width:32px">✓</th>
+          <th style="padding:7px 10px;text-align:left;font-size:10px">Позиция / 品种</th>
+          <th style="padding:7px 10px;text-align:center;font-size:10px;width:68px">Заказ<br>箱</th>
+          <th style="padding:7px 10px;text-align:left;font-size:10px;width:158px">Тип / 类型</th>
+          <th style="padding:7px 10px;text-align:center;font-size:10px;width:88px">Проблем.<br>кор./箱</th>
+          <th style="padding:7px 10px;text-align:center;font-size:10px;width:88px">Сумма ¥</th>
+          <th style="padding:7px 10px;text-align:left;font-size:10px">Комментарий / 备注</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((item, idx) => `
+          <tr id="claim-row-${idx}" style="background:#fff;border-bottom:1px solid var(--border)">
+            <td style="padding:8px 10px;text-align:center">
+              <input type="checkbox" class="claim-item-cb" data-idx="${idx}"
+                data-name="${escHtml(item.ru)}" data-price="${item.price||0}"
+                style="width:17px;height:17px;accent-color:var(--red);cursor:pointer"
+                onchange="toggleClaimRow(${idx}, this.checked); recalcClaimTotal()">
+            </td>
+            <td style="padding:8px 10px">
+              <div style="display:flex;align-items:center;gap:7px">
+                ${item.photo
+                  ? `<img src="${item.photo}" style="width:30px;height:30px;object-fit:cover;border-radius:4px;flex-shrink:0">`
+                  : `<div style="width:30px;height:30px;background:var(--sage-l);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">🌸</div>`}
+                <div>
+                  <div style="font-size:12px;font-weight:600">${escHtml(item.ru)}</div>
+                  ${item.cn?`<div style="font-size:10px;color:var(--mid)">${escHtml(item.cn)}</div>`:''}
+                  ${item.price?`<div style="font-size:10px;color:var(--sage-d)">¥${parseFloat(item.price).toFixed(2)}/кор.</div>`:''}
+                </div>
               </div>
-            </div>
-          </div>
-          <div>
-            <label style="font-size:10px;font-weight:700;color:var(--mid);letter-spacing:.05em;display:block;margin-bottom:3px">
-              КОММЕНТАРИЙ К ПОЗИЦИИ / 该品种备注
-            </label>
-            <input type="text" class="inp claim-item-comment" data-idx="${idx}"
-              placeholder="Подробнее о проблеме / 详细说明..."
-              style="width:100%;font-size:12px;padding:6px 10px">
-          </div>
-          <div style="margin-top:8px;text-align:right;font-size:12px;color:var(--sage-d)">
-            Сумма по позиции / 该品种金额:
-            <span class="claim-item-subtotal" data-idx="${idx}" style="font-weight:700;margin-left:6px">
-              ${item.price ? '¥' + parseFloat(item.price).toFixed(2) : '—'}
-            </span>
-          </div>
-        </div>
-      </div>`).join('')}
-    <!-- Total -->
-    <div style="display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:4px;padding:10px 12px;background:var(--sage-l);border-radius:8px">
-      <span style="font-size:12px;color:var(--sage-d)">Итого по претензии / 投诉总金额:</span>
-      <span id="claim-total" style="font-size:18px;font-weight:700;color:var(--sage-d)">¥0.00</span>
+            </td>
+            <td style="padding:8px 10px;text-align:center;font-size:13px;font-weight:700;color:var(--mid)">${item.qty||'—'}</td>
+            <td style="padding:8px 10px">
+              <select class="inp claim-item-type" data-idx="${idx}"
+                style="font-size:11px;padding:4px 6px;width:100%;opacity:.35;pointer-events:none" disabled
+                onchange="recalcClaimTotal()">
+                ${typeOpts.map(o=>`<option value="${o.v}">${o.l}</option>`).join('')}
+              </select>
+            </td>
+            <td style="padding:8px 10px;text-align:center">
+              <input type="number" min="1" max="${item.qty||99}" value="1"
+                class="inp claim-item-qty" data-idx="${idx}"
+                style="width:58px;text-align:center;padding:5px;font-size:14px;font-weight:700;opacity:.35;pointer-events:none" disabled
+                oninput="recalcClaimTotal()">
+              <div style="font-size:9px;color:var(--light)">из ${item.qty||'?'}</div>
+            </td>
+            <td style="padding:8px 10px;text-align:center">
+              <span class="claim-item-subtotal" data-idx="${idx}"
+                style="font-size:13px;font-weight:700;color:var(--mid)">—</span>
+            </td>
+            <td style="padding:8px 10px">
+              <input type="text" class="inp claim-item-comment" data-idx="${idx}"
+                placeholder="Подробности / 详情..."
+                style="width:100%;font-size:11px;padding:4px 7px;opacity:.35;pointer-events:none" disabled>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:10px;padding:10px 14px;background:var(--sage-l);border-radius:8px">
+      <span style="font-size:12px;color:var(--sage-d);font-weight:600">Итого по претензии / 投诉总金额:</span>
+      <span id="claim-total" style="font-size:22px;font-weight:700;color:var(--sage-d);font-family:var(--font-h)">¥0.00</span>
     </div>`;
 }
 
-function toggleClaimRow(idx) {
-  const cb = document.querySelector(`.claim-item-cb[data-idx="${idx}"]`);
-  if (!cb) return;
-  cb.checked = !cb.checked;
-  toggleClaimRowExpand(idx, cb.checked);
-  recalcClaimTotal();
+function toggleClaimRow(idx, checked) {
+  const row    = document.getElementById('claim-row-'+idx);
+  const typeEl = document.querySelector('.claim-item-type[data-idx="'+idx+'"]');
+  const qtyEl  = document.querySelector('.claim-item-qty[data-idx="'+idx+'"]');
+  const cmtEl  = document.querySelector('.claim-item-comment[data-idx="'+idx+'"]');
+  const subEl  = document.querySelector('.claim-item-subtotal[data-idx="'+idx+'"]');
+  [typeEl, qtyEl, cmtEl].forEach(el => {
+    if (!el) return;
+    el.disabled = !checked;
+    el.style.opacity = checked ? '1' : '.35';
+    el.style.pointerEvents = checked ? '' : 'none';
+  });
+  if (row) row.style.background = checked ? '#fff8f8' : '#fff';
+  if (!checked && subEl) { subEl.textContent='—'; subEl.style.color='var(--mid)'; }
 }
-
-function toggleClaimRowExpand(idx, show) {
-  const detail = document.getElementById('crow-detail-'+idx);
-  const row    = document.getElementById('crow-'+idx);
-  if (detail) detail.classList.toggle('hidden', !show);
-  if (row)    row.style.borderColor = show ? 'var(--red)' : 'var(--border)';
-}
+function toggleClaimRowExpand(idx, show) { toggleClaimRow(idx, show); }
 
 function recalcClaimTotal() {
   let total = 0;
   document.querySelectorAll('.claim-item-cb:checked').forEach(cb => {
     const idx   = cb.dataset.idx;
-    const price = parseFloat(cb.dataset.price) || 0;
-    const qty   = parseInt(document.querySelector(`.claim-item-qty[data-idx="${idx}"]`)?.value) || 1;
-    const sub   = price * qty;
+    const price = parseFloat(cb.dataset.price)||0;
+    const qty   = parseInt(document.querySelector('.claim-item-qty[data-idx="'+idx+'"]')?.value)||1;
+    const sub   = price*qty;
     total += sub;
-    const subtotalEl = document.querySelector(`.claim-item-subtotal[data-idx="${idx}"]`);
-    if (subtotalEl) subtotalEl.textContent = '¥' + sub.toFixed(2);
+    const subEl = document.querySelector('.claim-item-subtotal[data-idx="'+idx+'"]');
+    if (subEl) { subEl.textContent = price ? '¥'+sub.toFixed(2) : '—'; subEl.style.color = price?'var(--red)':'var(--mid)'; }
   });
   const el = document.getElementById('claim-total');
-  if (el) el.textContent = '¥' + total.toFixed(2);
+  if (el) el.textContent = '¥'+total.toFixed(2);
+}
+
+// Translate a claim text block (description or manager reply) for warehouse view
+async function translateClaimText(btn, key) {
+  // Find the sibling output div
+  const outputId = 'claim-tr-' + key;
+  const output   = document.getElementById(outputId);
+  if (!output) return;
+
+  // Toggle off if already shown
+  if (!output.classList.contains('hidden') && output.textContent) {
+    output.classList.add('hidden');
+    if (btn) btn.textContent = '🌐';
+    return;
+  }
+
+  // Get source text — walk up to find the parent div and extract readable text
+  const parent = btn.closest('div');
+  const textNodes = [];
+  parent.childNodes.forEach(node => {
+    if (node.nodeType === 3 && node.textContent.trim()) {
+      textNodes.push(node.textContent.trim());
+    } else if (node.nodeName === 'I' || node.nodeName === 'DIV') {
+      const t = node.textContent.trim().replace(/^"|"$/g,'');
+      if (t) textNodes.push(t);
+    }
+  });
+  const text = textNodes.join(' ').trim();
+  if (!text) { toast('Нет текста для перевода / 无文字'); return; }
+
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+
+  const lang  = detectLang(text);
+  const fromL = lang === 'cn' ? 'zh-CN' : 'ru';
+  const toL   = lang === 'cn' ? 'ru' : 'zh-CN';
+  const toLbl = lang === 'cn' ? 'RU' : 'CN';
+
+  const translated = await doTranslate(text, fromL, toL);
+  if (translated) {
+    output.textContent = '🌐 [' + toLbl + '] ' + translated;
+    output.classList.remove('hidden');
+    if (btn) { btn.textContent = '🌐 ✓'; btn.disabled = false; }
+  } else {
+    toast('⚠️ Перевод недоступен / 翻译暂时不可用');
+    if (btn) { btn.textContent = '🌐'; btn.disabled = false; }
+  }
 }
 
 function getClaimFormData() {
@@ -7361,7 +7455,7 @@ async function loadClaims() {
       <div style="margin:8px 0">
         <div style="font-size:10px;font-weight:700;color:var(--mid);margin-bottom:6px">ФОТО / 照片 (${photos.length}):</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${photos.map((p,i)=>`<div style="position:relative;cursor:pointer" onclick="openClaimPhoto('${p}',${photos.map(x=>`'${x}'`).join(',')})">
+          ${photos.map((p,i)=>`<div style="position:relative;cursor:pointer" onclick="window.open('${p}','_blank')">
             <img src="${p}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:2px solid var(--border)">
             <div style="position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,.5);color:#fff;font-size:9px;padding:1px 5px;border-radius:3px">${i+1}</div>
           </div>`).join('')}
@@ -7408,15 +7502,33 @@ async function loadClaims() {
       <!-- Photos -->
       ${photosHtml}
 
-      <!-- Manager reply -->
-      <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border)">
-        <input class="inp" id="reply-${c.id}" value="${(c.manager_reply||'').replace(/"/g,'&quot;')}"
-          placeholder="Ответ клиенту / 回复客户..." style="flex:1;min-width:200px;font-size:12px">
-        <button class="btn btn-primary btn-sm" onclick="saveClaimReply('${c.id}','${c.client_id}')">
-          💾 Сохранить ответ / 保存回复
-        </button>
+      <!-- Manager reply form — documented -->
+      <div style="margin-top:12px;padding-top:12px;border-top:2px solid var(--border)">
+        <div style="font-size:11px;font-weight:700;color:var(--mid);letter-spacing:.05em;margin-bottom:8px">
+          📝 ОТВЕТ НА ПРЕТЕНЗИЮ / 投诉回复 (документируется / 将被记录)
+        </div>
+        ${c.manager_reply ? `
+          <div style="padding:10px 14px;background:var(--sage-l);border-radius:8px;border-left:4px solid var(--sage-d);margin-bottom:10px">
+            <div style="font-size:10px;color:var(--sage-d);font-weight:700;margin-bottom:4px">✅ СОХРАНЁННЫЙ ОТВЕТ / 已保存回复:</div>
+            <div style="font-size:13px;line-height:1.5">${escHtml(c.manager_reply)}</div>
+            <div style="font-size:9px;color:var(--light);margin-top:4px">${c.updated_at ? new Date(c.updated_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : ''}</div>
+          </div>` : ''}
+        <textarea class="inp" id="reply-${c.id}" rows="3"
+          placeholder="Опишите решение: компенсация, замена, отказ с обоснованием / 说明处理结果：赔偿、换货或拒绝理由..."
+          style="width:100%;resize:vertical;font-size:12px;margin-bottom:8px">${escHtml(c.manager_reply||'')}</textarea>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select class="inp" id="reply-status-${c.id}" style="font-size:12px;padding:6px 10px">
+            <option value="review" ${c.status==='review'?'selected':''}>🔍 На рассмотрении / 审核中</option>
+            <option value="resolved" ${c.status==='resolved'?'selected':''}>✅ Решена / 已处理</option>
+            <option value="rejected" ${c.status==='rejected'?'selected':''}>❌ Отклонена / 已拒绝</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="saveClaimReply('${c.id}','${c.client_id}')">
+            💾 Сохранить и отправить клиенту / 保存并发送给客户
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="exportMgrClaimPDF('${c.id}')">📄 PDF</button>
+          <button class="btn btn-secondary btn-sm" onclick="exportMgrClaimExcel('${c.id}')">📊 Excel</button>
+        </div>
       </div>
-      ${c.manager_reply ? `<div style="margin-top:6px;font-size:11px;color:var(--sage-d)">✓ Ответ сохранён: ${c.manager_reply.slice(0,60)}${c.manager_reply.length>60?'…':''}</div>` : ''}
     </div>`;
   }).join('');
 }
@@ -7447,11 +7559,28 @@ async function updateClaimStatus(claimId, status, btn, clientName) {
 }
 
 async function saveClaimReply(claimId, clientId) {
-  const reply = document.getElementById('reply-'+claimId)?.value?.trim();
-  if (!reply) return;
-  await sb.from('claims').update({ manager_reply: reply, status: 'review', updated_at: new Date().toISOString() }).eq('id', claimId);
-  try { await sendNotification(clientId, '💬 Ответ на вашу претензию / 您的投诉有回复', reply.slice(0,100), '💬'); } catch(e) {}
-  toast('✅ Ответ сохранён, клиент уведомлён / 回复已保存');
+  const reply  = document.getElementById('reply-'+claimId)?.value?.trim();
+  const status = document.getElementById('reply-status-'+claimId)?.value || 'review';
+  if (!reply) { toast('Напишите ответ / 请填写回复内容'); return; }
+
+  const { error } = await sb.from('claims').update({
+    manager_reply: reply,
+    status,
+    updated_at: new Date().toISOString()
+  }).eq('id', claimId);
+
+  if (error) { toast('❌ ' + error.message); return; }
+
+  // Notify client
+  try {
+    const statusMsg = { review:'рассматривается', resolved:'решена ✅', rejected:'отклонена ❌' }[status] || '';
+    await sendNotification(clientId,
+      `💬 Ответ на претензию / 投诉回复 (${statusMsg})`,
+      reply.slice(0, 120), '💬');
+  } catch(e) {}
+
+  toast('✅ Ответ сохранён, клиент уведомлён / 回复已保存，已通知客户');
+  loadClaims(); // reload to show updated state
 }
 
 // ── Manager claim exports ──
