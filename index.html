@@ -617,6 +617,7 @@ td.L{text-align:left}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
         <div class="page-title" style="margin:0" id="chat-title">Чат / 聊天</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap" id="chat-room-tabs"></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;width:100%" id="chat-order-tabs"></div>
       </div>
       <!-- Messages -->
       <div id="chat-messages" style="flex:1;overflow-y:auto;padding:12px;background:var(--bg);border-radius:10px;border:1px solid var(--border);margin-bottom:10px;min-height:200px">
@@ -1796,6 +1797,8 @@ function renderMyOrder() {
         <div style="text-align:right;min-width:100px">
           <div style="font-size:17px;font-weight:700;color:var(--sage-d);font-family:var(--font-h)">¥${total.toFixed(2)}</div>
           <div style="font-size:10px;color:var(--light)">${(o.order_items||[]).length} поз./件</div>
+          <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px;margin-top:3px"
+            onclick="event.stopPropagation();openOrderChat('${o.id}')">💬 Чат / 聊天</button>
           <button class="btn btn-secondary btn-sm" style="margin-top:8px;white-space:nowrap"
             onclick="this.closest('.card').querySelector('.order-items-detail').classList.toggle('hidden');
                      this.textContent=this.textContent.includes('▼')?'▲ Скрыть/收起':'▼ Состав/明细'">
@@ -1962,6 +1965,7 @@ function confirmDeleteOrder(orderId, orderNumber) {
 }
 
 async function executeDeleteOrder(orderId, orderNumber) {
+  logActivity('order_delete', 'order', orderId, orderNumber || '', 'Заказ удалён со всеми данными');
   const passInput = document.getElementById('delete-confirm-pass');
   const pass = passInput?.value;
   if (!pass) {
@@ -2108,6 +2112,10 @@ async function openOrder(id) {
 
   if (!order) return;
   _mgrOrderItems = (order.order_items || []).map(item => ({...item}));
+  window._mgrOrderMeta = { id: order.id, number: order.order_number, client_id: order.client_id };
+  window._mgrOrigPrices = (order.order_items || []).map(i => ({
+    fid: i.flower_id, ru: i.flower?.ru || i.flower_snapshot?.ru || '—',
+    price: parseFloat(i.price_per_bunch) || 0 }));
 
   const client = order.client?.company_name || order.client?.login;
   document.getElementById('order-detail-title').textContent = order.order_number;
@@ -2290,8 +2298,10 @@ function renderOrderDetail(order) {
         if (!itemNotes.length && !generalNote) return '';
         return `<div style="margin-top:8px;padding:8px 12px;background:#f0f9ff;border-radius:6px;border-left:3px solid #3b82f6">
           <b style="font-size:10px;color:#1d4ed8">📋 ЗАМЕТКИ СКЛАДА / 仓库备注</b>
-          ${generalNote ? `<div style="font-size:11px;margin-top:3px;font-weight:600">${escHtml(generalNote)}</div>` : ''}
-          ${itemNotes.map(([,v])=>`<div style="font-size:11px;color:#374151;margin-top:2px">· ${escHtml(v)}</div>`).join('')}
+          <button onclick="translateWhNotesBlock(this)" title="Перевести все заметки / 翻译"
+            style="background:none;border:1px solid var(--border);border-radius:4px;padding:1px 6px;cursor:pointer;font-size:10px;margin-left:6px">🌐</button>
+          ${generalNote ? `<div class="wh-note-line" style="font-size:11px;margin-top:3px;font-weight:600">${escHtml(generalNote)}</div>` : ''}
+          ${itemNotes.map(([,v])=>`<div class="wh-note-line" style="font-size:11px;color:#374151;margin-top:2px">· ${escHtml(v)}</div>`).join('')}
           ${order.wh_pack_saved_at ? `<div style="font-size:9px;color:#6b7280;margin-top:4px">Сохранено: ${new Date(order.wh_pack_saved_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
         </div>`;
       })() : ''}
@@ -2304,6 +2314,12 @@ function renderOrderDetail(order) {
       </div>
       <button class="btn btn-primary btn-sm" onclick="mgrSaveOrderItems('${id}')">
         💾 Сохранить изменения / 保存修改
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="mgrRefreshPrices()" title="Подтянуть актуальные цены из прайс-листа">
+        🔄 Обновить цены из прайса / 更新价格
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="openOrderChat('${id}', window._mgrOrderMeta?.client_id)">
+        💬 Чат по заказу / 订单聊天
       </button>
       <button class="btn btn-secondary btn-sm" onclick="openOrder('${id}')">
         ↺ Сбросить / 重置
@@ -2352,6 +2368,44 @@ function renderOrderDetail(order) {
 }
 
 // ── Manager: inline item edit helpers ─────────────────────────────
+// Pull current price-list prices into the order (highlights changed rows)
+function mgrRefreshPrices() {
+  if (!_mgrOrderItems.length) { toast('Нет позиций / 没有项目'); return; }
+  const client = allClients.find(c => c.id === window._mgrOrderMeta?.client_id);
+  const mk = client?.show_markup ? 1.15 : 1;
+  let changed = 0;
+  _mgrOrderItems.forEach((item, i) => {
+    const fl = flowers.find(f => f.id === (item.flower_id || item.flower?.id));
+    if (!fl) return;
+    const base = item.price_type === 'ap' ? parseFloat(fl.price_ap) : parseFloat(fl.price_a);
+    if (isNaN(base)) return;
+    const newPrice = +(base * mk).toFixed(2);
+    const oldPrice = parseFloat(item.price_per_bunch) || 0;
+    if (Math.abs(newPrice - oldPrice) < 0.005) return;
+    item.price_per_bunch = newPrice;
+    const row = document.getElementById('mgr-row-' + i);
+    const inp = row?.querySelector('td:nth-child(4) input');
+    if (inp) inp.value = newPrice;
+    mgrRecalcRow(i);
+    if (row) {
+      row.style.background = '#fef3c7';
+      row.title = `Цена обновлена: ¥${oldPrice} → ¥${newPrice}`;
+    }
+    changed++;
+  });
+  toast(changed
+    ? `🔄 Обновлено цен: ${changed}. Не забудьте 💾 Сохранить / 已更新 ${changed} 项价格`
+    : '✅ Все цены соответствуют прайсу / 价格均为最新');
+}
+
+// Open the chat page directly in the given order's room
+function openOrderChat(orderId, clientId) {
+  window._pendingChatRoom = { room: 'order-' + orderId, clientId: clientId || null };
+  const tab = Array.from(document.querySelectorAll('.nav-tab'))
+    .find(t => t.getAttribute('onclick')?.includes("'chat'"));
+  showPage('chat', tab || undefined);
+}
+
 function mgrUpdateItem(i, field, val) {
   if (!_mgrOrderItems[i]) return;
   const numFields = ['price_per_bunch','bunches_per_box','qty_boxes','price_per_box'];
@@ -2559,6 +2613,21 @@ async function mgrSaveOrderItems(orderId) {
     }
   } catch(e) {}
 
+  // Log activity (incl. per-item price changes)
+  try {
+    const priceChanges = [];
+    (_mgrOrderItems || []).forEach(item => {
+      const orig = (window._mgrOrigPrices || []).find(p => p.fid === (item.flower_id || item.flower?.id));
+      const np = parseFloat(item.price_per_bunch) || 0;
+      if (orig && Math.abs(orig.price - np) > 0.005)
+        priceChanges.push(`${orig.ru}: ¥${orig.price} → ¥${np}`);
+    });
+    await logActivity(
+      priceChanges.length ? 'price_change' : 'order_edit', 'order', orderId,
+      window._mgrOrderMeta?.number || '',
+      priceChanges.length ? priceChanges.join('; ') : 'Позиции заказа изменены');
+  } catch(e) {}
+
   toast('✅ Заказ обновлён / 订单已更新 — клиент увидит изменения');
   // Reload to reflect saved state
   openOrder(orderId);
@@ -2574,6 +2643,7 @@ async function updateOrderStatus(id, status) {
   const { data: order } = await sb.from('orders')
     .select('client_id, order_number').eq('id', id).single();
   await sb.from('orders').update({status, updated_at: new Date().toISOString()}).eq('id', id);
+  logActivity('status_change', 'order', id, order?.order_number || '', 'Новый статус: ' + status);
   toast('Статус обновлён: ' + statusLabel(status));
 
   // Send notifications based on status change
@@ -2680,6 +2750,8 @@ async function openInvoice(orderId) {
     shipping_cost: 0,
     other_cost: 0,
     other_label: '',
+    adjustment: 0,
+    adjustment_label: '',
     notes: '',
     show_markup_breakdown: false,
     status: 'draft',
@@ -2699,8 +2771,8 @@ function calcItemsWithMarkup(items, markup) {
   });
 }
 
-function buildTotalsHTML(flowersTotal, flowersWithMarkup, markup, packing, certs, ship, other, otherLabel, totalBoxes, showMkup) {
-  const grand = flowersWithMarkup + packing + certs + ship + other;
+function buildTotalsHTML(flowersTotal, flowersWithMarkup, markup, packing, certs, ship, other, otherLabel, totalBoxes, showMkup, adj = 0, adjLabel = '') {
+  const grand = flowersWithMarkup + packing + certs + ship + other + adj;
   return `
     ${showMkup ? `
     <tr><td>Цветы закупка / 采购价:</td><td>¥${flowersTotal.toFixed(2)}</td></tr>
@@ -2711,6 +2783,7 @@ function buildTotalsHTML(flowersTotal, flowersWithMarkup, markup, packing, certs
     ${certs > 0 ? `<tr><td>Сертификаты / 证书 / Certificates:</td><td>¥${certs.toFixed(2)}</td></tr>` : ''}
     ${ship  > 0 ? `<tr><td>Перевозка / 运费 / Shipping:</td><td>¥${ship.toFixed(2)}</td></tr>` : ''}
     ${other > 0 ? `<tr><td>${otherLabel||'Прочее/其他/Other'}:</td><td>¥${other.toFixed(2)}</td></tr>` : ''}
+    ${adj !== 0 ? `<tr><td>${adjLabel||'Корректировка / 调整'}:</td><td style="color:${adj<0?'var(--red)':'inherit'}">${adj>0?'+':''}¥${adj.toFixed(2)}</td></tr>` : ''}
     <tr class="grand"><td>ИТОГО / 合计 / TOTAL:</td><td>¥${grand.toFixed(2)}</td></tr>`;
 }
 
@@ -2724,11 +2797,13 @@ function recalcInvoice() {
   const ship    = parseFloat(document.getElementById('inv-ship')?.value)    || 0;
   const other   = parseFloat(document.getElementById('inv-other')?.value)   || 0;
   const otherLabel = document.getElementById('inv-other-label')?.value || '';
+  const adj        = parseFloat(document.getElementById('inv-adjust')?.value) || 0;
+  const adjLabel   = document.getElementById('inv-adjust-label')?.value || '';
   const showMkup   = document.getElementById('inv-show-markup')?.checked || false;
 
   const itemsCalc = calcItemsWithMarkup(items, markup);
   const flowersWithMarkup = itemsCalc.reduce((s,i) => s + i.subtotalWithMarkup, 0);
-  const grand = flowersWithMarkup + packing + certs + ship + other;
+  const grand = flowersWithMarkup + packing + certs + ship + other + adj;
 
   const em = document.getElementById('inv-flowers-markup');
   if (em) em.textContent = '¥' + flowersWithMarkup.toFixed(2);
@@ -2753,7 +2828,7 @@ function recalcInvoice() {
   }
 
   const tt = document.getElementById('inv-totals-table');
-  if (tt) tt.innerHTML = buildTotalsHTML(flowersTotal, flowersWithMarkup, markup, packing, certs, ship, other, otherLabel, totalBoxes, showMkup);
+  if (tt) tt.innerHTML = buildTotalsHTML(flowersTotal, flowersWithMarkup, markup, packing, certs, ship, other, otherLabel, totalBoxes, showMkup, adj, adjLabel);
 }
 
 function applyInvNumber() {
@@ -2779,10 +2854,11 @@ function renderInvoiceBuilder(order, inv, flowersTotal, totalBoxes) {
   const certs   = parseFloat(inv.certificates_cost) || 0;
   const ship    = parseFloat(inv.shipping_cost) || 0;
   const other   = parseFloat(inv.other_cost) || 0;
+  const adj     = parseFloat(inv.adjustment) || 0;
 
   const itemsCalc = calcItemsWithMarkup(items, markup);
   const flowersWithMarkup = itemsCalc.reduce((s,i) => s + i.subtotalWithMarkup, 0);
-  const grandTotal = flowersWithMarkup + packing + certs + ship + other;
+  const grandTotal = flowersWithMarkup + packing + certs + ship + other + adj;
   const invNum = inv.invoice_number || ('INV-' + new Date().getFullYear() + '-NEW');
 
   document.getElementById('invoice-content').innerHTML = `
@@ -2833,7 +2909,7 @@ function renderInvoiceBuilder(order, inv, flowersTotal, totalBoxes) {
         </table>
 
         <table class="inv-totals" id="inv-totals-table">
-          ${buildTotalsHTML(flowersTotal, flowersWithMarkup, markup, packing, certs, ship, other, inv.other_label, totalBoxes, inv.show_markup_breakdown)}
+          ${buildTotalsHTML(flowersTotal, flowersWithMarkup, markup, packing, certs, ship, other, inv.other_label, totalBoxes, inv.show_markup_breakdown, adj, inv.adjustment_label)}
         </table>
         ${inv.notes ? `<div class="inv-notes">${inv.notes}</div>` : ''}
       </div>
@@ -2889,6 +2965,12 @@ function renderInvoiceBuilder(order, inv, flowersTotal, totalBoxes) {
                 placeholder="Доп. статья / 其他 / Other" style="width:150px;flex:1" oninput="recalcInvoice()">
               <input class="inv-input" type="number" id="inv-other" value="${other}" min="0" oninput="recalcInvoice()">
             </div>
+            <div class="inv-row" style="flex-wrap:wrap;gap:4px;background:#fff7ed;border-radius:6px;padding:6px">
+              <input class="inv-input" type="text" id="inv-adjust-label" value="${inv.adjustment_label||''}"
+                placeholder="Корректировка / 调整 (скидка = минус)" style="width:150px;flex:1" oninput="recalcInvoice()">
+              <input class="inv-input" type="number" id="inv-adjust" value="${adj}" step="0.01" oninput="recalcInvoice()"
+                title="Можно вводить отрицательное значение — скидка">
+            </div>
             <div class="inv-row total">
               <span>ИТОГО / 合计 / TOTAL</span>
               <span id="inv-grand" style="font-size:18px;font-family:var(--font-h)">¥${grandTotal.toFixed(2)}</span>
@@ -2929,12 +3011,14 @@ async function saveInvoice() {
   const ship    = parseFloat(document.getElementById('inv-ship')?.value)    || 0;
   const other   = parseFloat(document.getElementById('inv-other')?.value)   || 0;
   const otherLabel = document.getElementById('inv-other-label')?.value || '';
+  const adj        = parseFloat(document.getElementById('inv-adjust')?.value) || 0;
+  const adjLabel   = document.getElementById('inv-adjust-label')?.value || '';
   const showMkup   = document.getElementById('inv-show-markup')?.checked || false;
   const notes      = document.getElementById('inv-notes')?.value || '';
   // Per-bunch markup
   const itemsCalc = calcItemsWithMarkup(items, markup);
   const flowersWithMarkup = itemsCalc.reduce((s,i) => s + i.subtotalWithMarkup, 0);
-  const grand = flowersWithMarkup + packing + certs + ship + other;
+  const grand = flowersWithMarkup + packing + certs + ship + other + adj;
   // Invoice number (may have been edited)
   const invNumInput = document.getElementById('inv-number-input')?.value.trim();
 
@@ -2964,6 +3048,8 @@ async function saveInvoice() {
     shipping_cost: ship,
     other_cost: other,
     other_label: otherLabel,
+    adjustment: adj,
+    adjustment_label: adjLabel,
     total: grand,
     show_markup_breakdown: showMkup,
     notes,
@@ -2982,6 +3068,8 @@ async function saveInvoice() {
   }
   // Update order status to invoiced
   await sb.from('orders').update({status:'invoiced', updated_at: new Date().toISOString()}).eq('id', orderId);
+  logActivity('invoice_save', 'invoice', savedInvId, invNum,
+    `Итого ¥${grand.toFixed(2)}${adj ? ` (корректировка ${adj>0?'+':''}¥${adj})` : ''}`);
   toast('✅ Инвойс сохранён: ' + invNum);
 }
 
@@ -3141,6 +3229,14 @@ async function loadClients() {
   const { data } = await sb.from('users').select('*').order('role').order('company_name');
   if (data) {
     allClients = data;
+    // Sync global markup checkbox with DB state (all clients have show_markup => on)
+    try {
+      const cls = data.filter(c => c.role === 'client');
+      const allOn = cls.length > 0 && cls.every(c => !!c.show_markup);
+      globalMarkupActive = allOn;
+      const tgl = document.getElementById('apply-markup-toggle');
+      if (tgl) tgl.checked = allOn;
+    } catch(e) {}
     // Fill order filter
     const wbSel = document.getElementById('wb-client-filter');
     if (wbSel) {
@@ -3531,6 +3627,7 @@ async function viewClientInvoice(invId) {
       ${inv.certificates_cost>0?`<tr><td>Сертификаты / 证书:</td><td>¥${inv.certificates_cost?.toFixed(2)}</td></tr>`:''}
       ${inv.shipping_cost>0?`<tr><td>Перевозка / 运费:</td><td>¥${inv.shipping_cost?.toFixed(2)}</td></tr>`:''}
       ${inv.other_cost>0?`<tr><td>${inv.other_label||'Прочее'}:</td><td>¥${inv.other_cost?.toFixed(2)}</td></tr>`:''}
+      ${(parseFloat(inv.adjustment)||0)!==0?`<tr><td>${inv.adjustment_label||'Корректировка / 调整'}:</td><td>${inv.adjustment>0?'+':''}¥${(+inv.adjustment).toFixed(2)}</td></tr>`:''}
       <tr class="grand"><td>ИТОГО / 合计 / TOTAL:</td><td>¥${inv.total?.toFixed(2)}</td></tr>
     </table>
 
@@ -5050,25 +5147,78 @@ async function initChat() {
   if (tabsEl) {
     tabsEl.innerHTML = rooms.map((r, i) =>
       `<button class="btn btn-sm ${i===0?'btn-primary':'btn-secondary'}" style="font-size:11px"
-        onclick="switchChatRoom('${r.key}', this)">${r.label}</button>`
+        data-room="${r.key}" onclick="switchChatRoom('${r.key}', this)">${r.label}</button>`
     ).join('');
   }
 
+  // Direct jump to a specific order chat (from the order card button)
+  if (window._pendingChatRoom) {
+    const pr = window._pendingChatRoom; window._pendingChatRoom = null;
+    if (pr.clientId) await renderOrderChatTabs(pr.clientId);
+    else if (currentUser.role === 'client') await renderOrderChatTabs(currentUser.id);
+    await switchChatRoom(pr.room);
+    return;
+  }
+
+  // Client: show own order sub-tabs right away
+  if (currentUser.role === 'client') renderOrderChatTabs(currentUser.id);
+  else { const ot = document.getElementById('chat-order-tabs'); if (ot) ot.innerHTML = ''; }
+
   await switchChatRoom(rooms[0].key);
+}
+
+// Sub-tabs: "Общий" + each order of the given client
+let _chatOrdersClientId = null;
+async function renderOrderChatTabs(clientId) {
+  _chatOrdersClientId = clientId;
+  const wrap = document.getElementById('chat-order-tabs');
+  if (!wrap) return;
+  wrap.innerHTML = '<span style="font-size:10px;color:var(--mid)">…</span>';
+  const { data: ords } = await sb.from('orders')
+    .select('id,order_number,status,date_order')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false }).limit(30);
+  const genKey = 'client-' + clientId;
+  wrap.innerHTML =
+    `<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:3px 8px"
+      data-room="${genKey}" onclick="switchChatRoom('${genKey}', this)">💬 Общий / 通用</button>` +
+    (ords||[]).map(o =>
+      `<button class="btn btn-sm btn-secondary" style="font-size:10px;padding:3px 8px"
+        data-room="order-${o.id}" title="${o.date_order||''} · ${o.status||''}"
+        onclick="switchChatRoom('order-${o.id}', this)">📦 ${o.order_number}</button>`
+    ).join('');
 }
 
 async function switchChatRoom(room, btnEl) {
   _chatRoom = room;
 
-  // Update tab styles
-  if (btnEl) {
-    document.querySelectorAll('#chat-room-tabs button').forEach(b => {
-      b.className = 'btn btn-sm btn-secondary';
-      b.style.fontSize = '11px';
-    });
-    btnEl.className = 'btn btn-sm btn-primary';
-    btnEl.style.fontSize = '11px';
+  // Update tab styles (both room tabs and order sub-tabs)
+  document.querySelectorAll('#chat-room-tabs button, #chat-order-tabs button').forEach(b => {
+    const active = b.dataset.room === room;
+    const base = b.parentElement?.id === 'chat-order-tabs' ? 'font-size:10px;padding:3px 8px' : 'font-size:11px';
+    b.className = 'btn btn-sm ' + (active ? 'btn-primary' : 'btn-secondary');
+    b.style.cssText = base;
+  });
+  // Manager clicked a client room -> refresh that client's order sub-tabs
+  if (currentUser.role === 'manager') {
+    if (room.startsWith('client-')) {
+      const cid = room.replace('client-','');
+      if (cid !== _chatOrdersClientId) renderOrderChatTabs(cid);
+    } else if (room === 'office-warehouse') {
+      const ot = document.getElementById('chat-order-tabs');
+      if (ot) { ot.innerHTML = ''; _chatOrdersClientId = null; }
+    }
   }
+  // Title for order rooms
+  try {
+    const tEl = document.getElementById('chat-title');
+    if (tEl) {
+      if (room.startsWith('order-')) {
+        const b = document.querySelector(`button[data-room="${room}"]`);
+        tEl.textContent = 'Чат по заказу ' + (b ? b.textContent.replace('📦','').trim() : '') + ' / 订单聊天';
+      } else tEl.textContent = 'Чат / 聊天';
+    }
+  } catch(e) {}
 
   // Unsubscribe old channel
   if (_chatChannel) { sb.removeChannel(_chatChannel); _chatChannel = null; }
@@ -5223,6 +5373,13 @@ async function notifyChat(msg) {
     const clientId = msg.room.replace('client-', '');
     await sendNotification(clientId, `💬 Сообщение от менеджера`, msg.body.slice(0,80), '💬');
   }
+  // Manager in order room → notify the order's client
+  if (role === 'manager' && msg.room.startsWith('order-')) {
+    const oid = msg.room.replace('order-', '');
+    const { data: o } = await sb.from('orders').select('client_id,order_number').eq('id', oid).single();
+    if (o?.client_id) await sendNotification(o.client_id,
+      `💬 Сообщение по заказу ${o.order_number}`, msg.body.slice(0,80), '💬');
+  }
   // Client → notify all managers
   if (role === 'client') {
     const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
@@ -5268,6 +5425,31 @@ async function doTranslate(text, fromL, toL) {
   } catch(e) { /* both failed */ }
 
   return null;
+}
+
+// Translate all warehouse note lines inside the block (manager order view)
+async function translateWhNotesBlock(btn) {
+  const box = btn.closest('div');
+  if (!box) return;
+  const lines = box.querySelectorAll('.wh-note-line');
+  if (!lines.length) return;
+  btn.disabled = true; btn.textContent = '⏳';
+  for (const el of lines) {
+    if (el.dataset.translated) continue;
+    const src = el.textContent.replace(/^·\s*/, '').trim();
+    if (!src) continue;
+    const from = detectLang(src);
+    const to   = from === 'cn' ? 'ru' : 'zh-CN';
+    const tr = await doTranslate(src, from === 'cn' ? 'zh-CN' : 'ru', to);
+    if (tr) {
+      const span = document.createElement('div');
+      span.style.cssText = 'font-size:10px;color:#1d4ed8;margin-left:10px';
+      span.textContent = '🌐 ' + tr;
+      el.appendChild(span);
+      el.dataset.translated = '1';
+    }
+  }
+  btn.disabled = false; btn.textContent = '🌐 ✓';
 }
 
 // Translate the message currently being typed
@@ -5526,6 +5708,8 @@ async function saveWhPackingNotes(orderId) {
   // Notify managers
   try {
     const { data: order } = await sb.from('orders').select('order_number').eq('id', orderId).single();
+    logActivity('wh_pack_notes', 'order', orderId, order?.order_number || '',
+      `Заметок: ${Object.keys(notes).length}`);
     const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
     const hasNotes = Object.keys(notes).length > 0;
     if (hasNotes) {
@@ -6598,6 +6782,8 @@ async function saveReceiving(orderId) {
   // 3. Notify managers with detailed diff
   try {
     const { data: orderInfo } = await sb.from('orders').select('order_number').eq('id', orderId).single();
+    logActivity('wh_receiving', 'order', orderId, orderInfo?.order_number || '',
+      `Позиций с изменениями: ${packChanges.length}`);
     const { data: mgrs } = await sb.from('users').select('id').eq('role','manager');
     const num = orderInfo?.order_number || '';
 
@@ -6789,6 +6975,21 @@ async function requestNotifPermission() {
 }
 
 // Send notification helper (called from order status changes)
+// ── ACTIVITY LOG (admin monitoring) ─────────────────────
+async function logActivity(action, entityType, entityId, entityLabel, details) {
+  try {
+    await sb.from('activity_log').insert({
+      user_id:    currentUser?.id || null,
+      user_login: currentUser?.company_name || currentUser?.login || '—',
+      user_role:  currentUser?.role || '—',
+      action, entity_type: entityType,
+      entity_id: entityId ? String(entityId) : null,
+      entity_label: entityLabel || null,
+      details: details ? (typeof details === 'string' ? details : JSON.stringify(details)) : null,
+    });
+  } catch(e) { console.warn('activity_log:', e?.message); }
+}
+
 async function sendNotification(userId, title, body, icon) {
   await sb.from('notifications').insert({
     user_id: userId, title, body, icon: icon||'🔔', is_read: false,
@@ -6930,6 +7131,64 @@ async function loadDashboard() {
         </div>`).join('')}
     </div>` : ''}
   `;
+
+  // Admin-only: staff activity feed (managers + warehouse)
+  if (currentUser?.is_admin) loadActivityFeed(wrap, since);
+}
+
+// ── ADMIN: activity feed ──────────────────────────────────
+const ACT_LABELS = {
+  price_change:  '💰 Изменение цен',
+  order_edit:    '✏️ Правка заказа',
+  status_change: '🔁 Смена статуса',
+  order_delete:  '🗑 Удаление заказа',
+  invoice_save:  '🧾 Инвойс',
+  wh_pack_notes: '📦 Заметки склада',
+  wh_receiving:  '🚚 Приёмка склада',
+};
+async function loadActivityFeed(wrap, since) {
+  const box = document.createElement('div');
+  box.id = 'admin-activity';
+  box.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  wrap.appendChild(box);
+  const { data: rows, error } = await sb.from('activity_log')
+    .select('*').gte('created_at', since + 'T00:00:00')
+    .order('created_at', { ascending: false }).limit(300);
+  if (error) {
+    box.innerHTML = `<div class="card" style="border-left:4px solid var(--red)">
+      <b>👁 Активность сотрудников</b><br>
+      <span style="font-size:11px;color:var(--red)">Выполните SQL: create_activity_log.sql (${escHtml(error.message)})</span></div>`;
+    return;
+  }
+  window._actRows = rows || [];
+  renderActivityFeed();
+}
+function renderActivityFeed() {
+  const box = document.getElementById('admin-activity');
+  if (!box) return;
+  const rf = document.getElementById('act-role-filter')?.value || '';
+  const rows = (window._actRows || []).filter(r => !rf || r.user_role === rf);
+  box.innerHTML = `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:16px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <div style="font-size:13px;font-weight:700;color:var(--sage-d)">👁 Активность сотрудников / 员工活动 (${rows.length})</div>
+        <select class="inp" id="act-role-filter" onchange="renderActivityFeed()" style="min-width:140px;padding:4px 8px;font-size:11px">
+          <option value="">Все роли / 所有</option>
+          <option value="manager" ${rf==='manager'?'selected':''}>Менеджеры / 经理</option>
+          <option value="warehouse" ${rf==='warehouse'?'selected':''}>Склад / 仓库</option>
+          <option value="client" ${rf==='client'?'selected':''}>Клиенты / 客户</option>
+        </select>
+      </div>
+      ${rows.length ? rows.slice(0,150).map(r => `
+        <div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px">
+          <span style="white-space:nowrap;color:var(--light)">${new Date(r.created_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+          <span style="font-weight:700;color:${r.user_role==='warehouse'?'#1d4ed8':'var(--sage-d)'};white-space:nowrap">${escHtml(r.user_login||'—')}</span>
+          <span style="white-space:nowrap">${ACT_LABELS[r.action]||r.action}</span>
+          ${r.entity_label ? `<span style="font-weight:600">${escHtml(r.entity_label)}</span>` : ''}
+          ${r.details ? `<span style="color:var(--mid)">${escHtml(String(r.details).slice(0,200))}</span>` : ''}
+        </div>`).join('')
+      : '<div style="font-size:11px;color:var(--mid)">Записей пока нет / 暂无记录</div>'}
+    </div>`;
 }
 
 // ══════════════════════════════════════════════════════════
