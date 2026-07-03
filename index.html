@@ -2129,6 +2129,48 @@ function renderOrderDetail(order) {
        </div>`
     : '';
 
+  // Warehouse packing changes banner — show if any item has wh_fact_boxes set and not yet confirmed
+  const packChangedItems = items.filter(it =>
+    (it.wh_fact_boxes != null || it.wh_fact_bpb != null) && !it.wh_confirmed_at
+  );
+  const packChangeBanner = packChangedItems.length ? `
+    <div style="margin-bottom:14px;padding:12px 16px;background:#fff7ed;border-radius:8px;border-left:4px solid #f59e0b">
+      <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:8px">
+        ⚠️ Склад изменил пакинг — требует вашего подтверждения / 仓库修改了包装，需您确认
+      </div>
+      ${packChangedItems.map(it => {
+        const ru   = it.flower?.ru || it.flower_snapshot?.ru || '—';
+        const ordB = parseInt(it.qty_boxes)||0;
+        const ordBpb = parseInt(it.bunches_per_box)||0;
+        const factB  = parseInt(it.wh_fact_boxes)??ordB;
+        const factBpb= parseInt(it.wh_fact_bpb)??ordBpb;
+        const priceBunch = parseFloat(it.price_per_bunch)||0;
+        const ordPrice   = priceBunch * ordBpb;
+        const factPrice  = priceBunch * factBpb;
+        const ordTotal   = ordPrice * ordB;
+        const factTotal  = factPrice * factB;
+        const isRepl = !!it.wh_replaced_name;
+        return `<div style="font-size:11px;padding:6px 0;border-bottom:1px solid #fde68a">
+          <b>${ru}</b>
+          ${isRepl
+            ? `<span style="color:#dc2626;margin-left:8px">🔄 Замена → ${escHtml(it.wh_replaced_name)}</span>`
+            : `<span style="color:#92400e;margin-left:8px">
+                По договору: ${ordB} кор × ${ordBpb} банч = <b>¥${ordTotal.toFixed(2)}</b>
+                → Факт: ${factB} кор × ${factBpb} банч = <b style="color:${factTotal!==ordTotal?'#dc2626':'inherit'}">¥${factTotal.toFixed(2)}</b>
+                ${it.wh_note ? `<i style="color:#6b7280;margin-left:6px">(${it.wh_note})</i>` : ''}
+              </span>`}
+        </div>`;
+      }).join('')}
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="confirmPackingChanges('${id}')">
+          ✅ Принять изменения и обновить накладную / 接受并更新出货单
+        </button>
+        <button class="btn btn-danger btn-sm" onclick="rejectPackingChanges('${id}')">
+          ❌ Отклонить — оставить по договору / 拒绝，保持原合同数量
+        </button>
+      </div>
+    </div>` : '';
+
   const rows = items.map((item, i) => {
     const sub = (parseFloat(item.price_per_box)||0) * (parseInt(item.qty_boxes)||0);
     return `
@@ -2193,6 +2235,7 @@ function renderOrderDetail(order) {
 
   document.getElementById('order-detail-content').innerHTML = `
     ${clientEditedBanner}
+    ${packChangeBanner}
     <div class="card" style="margin-bottom:14px">
       <div class="field-row">
         <div class="field"><label>Статус / 状态</label>
@@ -2394,6 +2437,83 @@ ${_mgrOrderItems[i]?.flower?.ru || _mgrOrderItems[i]?.flower_snapshot?.ru || ''}
     if (totSumEl) totSumEl.textContent = '¥' + total.toFixed(2);
   }
   toast(`🗑 Позиция удалена / 已删除`);
+}
+
+// ── Confirm warehouse packing changes → update order_items ──
+async function confirmPackingChanges(orderId) {
+  const items = _mgrOrderItems.filter(it =>
+    (it.wh_fact_boxes != null || it.wh_fact_bpb != null) && !it.wh_confirmed_at
+  );
+  if (!items.length) { toast('Нет изменений для подтверждения'); return; }
+
+  const now = new Date().toISOString();
+
+  for (const item of items) {
+    const factBox    = parseInt(item.wh_fact_boxes)  ?? parseInt(item.qty_boxes)        ?? 0;
+    const factBpb    = parseInt(item.wh_fact_bpb)    ?? parseInt(item.bunches_per_box)   ?? 0;
+    const factSpb    = parseInt(item.wh_fact_spb)    ?? 0;
+    const priceBunch = parseFloat(item.price_per_bunch) || 0;
+    const newPriceBox = factBpb ? priceBunch * factBpb : parseFloat(item.price_per_box)||0;
+    const newSubtotal = newPriceBox * factBox;
+
+    await sb.from('order_items').update({
+      // Apply fact values to the "real" columns
+      qty_boxes:       factBox,
+      bunches_per_box: factBpb || item.bunches_per_box,
+      price_per_box:   newPriceBox,
+      subtotal:        newSubtotal,
+      // Mark as confirmed
+      wh_confirmed_at: now,
+      wh_confirmed_by: currentUser.id,
+    }).eq('id', item.id);
+  }
+
+  // Notify client about packing update
+  try {
+    const { data: orderInfo } = await sb.from('orders')
+      .select('client_id, order_number').eq('id', orderId).single();
+    if (orderInfo?.client_id) {
+      await sendNotification(orderInfo.client_id,
+        `📦 Пакинг скорректирован: заказ #${orderInfo.order_number}`,
+        'Склад уточнил количество — ваш заказ обновлён. Проверьте состав / 包装数量已更新，请查看订单明细',
+        '📦');
+    }
+  } catch(e) {}
+
+  toast('✅ Изменения приняты, order_items обновлены, клиент уведомлён');
+  openOrder(orderId);
+}
+
+// ── Reject warehouse changes → keep original order_items ──
+async function rejectPackingChanges(orderId) {
+  const items = _mgrOrderItems.filter(it =>
+    (it.wh_fact_boxes != null || it.wh_fact_bpb != null) && !it.wh_confirmed_at
+  );
+
+  for (const item of items) {
+    // Clear wh_fact columns without touching qty_boxes/price
+    await sb.from('order_items').update({
+      wh_fact_boxes:    null,
+      wh_fact_bpb:      null,
+      wh_fact_spb:      null,
+      wh_confirmed_at:  new Date().toISOString(), // mark as reviewed (rejected)
+      wh_confirmed_by:  currentUser.id,
+    }).eq('id', item.id);
+  }
+
+  // Notify warehouse that manager rejected
+  try {
+    const { data: whs } = await sb.from('users').select('id').eq('role','warehouse');
+    const { data: orderInfo } = await sb.from('orders').select('order_number').eq('id', orderId).single();
+    for (const w of (whs||[])) {
+      await sendNotification(w.id,
+        `❌ Менеджер отклонил изменения пакинга: #${orderInfo?.order_number}`,
+        'Оставлены исходные данные договора. Свяжитесь с менеджером / 经理拒绝了包装变更，请联系经理', '❌');
+    }
+  } catch(e) {}
+
+  toast('❌ Изменения отклонены — данные заказа остались по договору');
+  openOrder(orderId);
 }
 
 async function mgrSaveOrderItems(orderId) {
@@ -6162,141 +6282,182 @@ async function loadReceiving() {
   const items  = order.order_items || [];
   const client = order.client?.company_name || order.client?.login || '';
 
-  // Parse previously saved receiving data
   let savedData = {};
   try { savedData = JSON.parse(order.wh_receiving_json||'{}'); } catch{}
 
-  const rows = items.map((item, idx) => {
-    const f     = item.flower || {};
-    const snap  = item.flower_snapshot || {};
-    const ru    = f.ru  || snap.ru  || '—';
-    const cn    = f.cn  || snap.cn  || '';
+  const rows = items.map((item) => {
+    const f    = item.flower || {};
+    const snap = item.flower_snapshot || {};
+    const ru   = f.ru  || snap.ru  || '—';
+    const cn   = f.cn  || snap.cn  || '';
     const thumb = f.photo_url || THUMBS[f.en] || '';
     const imgH  = thumb
-      ? `<img src="${thumb}" style="width:38px;height:38px;object-fit:cover;border-radius:5px;flex-shrink:0">`
-      : `<div style="width:38px;height:38px;background:var(--sage-l);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">🌸</div>`;
+      ? `<img src="${thumb}" style="width:36px;height:36px;object-fit:cover;border-radius:5px;flex-shrink:0">`
+      : `<div style="width:36px;height:36px;background:var(--sage-l);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">🌸</div>`;
 
-    // Ordered quantities
-    const ordBoxes  = parseInt(item.qty_boxes) || 1;
-    const bpb       = parseInt(item.bunches_per_box) || parseInt(f.boxes_per_box || snap.boxes_per_box) || '';
-    const spb       = parseInt(f.stems || snap.stems) || '';
-    const ordBunches = bpb ? ordBoxes * bpb : '';
-    const ordStems   = (bpb && spb) ? ordBoxes * bpb * spb : '';
+    // ── ORDERED (agreed) values ──
+    const ordBoxes = parseInt(item.qty_boxes) || 1;
+    const ordBpb   = parseInt(item.bunches_per_box) || parseInt(f.boxes_per_box || snap.boxes_per_box) || 0;
+    const ordSpb   = parseInt(f.stems || snap.stems) || 0;
+    const ordBunch = ordBpb ? ordBoxes * ordBpb : null;
+    const ordStem  = (ordBpb && ordSpb) ? ordBoxes * ordBpb * ordSpb : null;
+    const pricePerBox = parseFloat(item.price_per_box) || 0;
+    const ordTotal = pricePerBox * ordBoxes;
 
-    // Saved fact values
-    const saved   = savedData[item.id] || {};
-    const factBox = saved.fact_boxes !== undefined ? saved.fact_boxes : ordBoxes;
-    const note    = saved.note || '';
-    const replaced = saved.replaced_with || '';
-    const isReplaced = saved.is_replaced || false;
+    // ── SAVED FACT values from last receiving ──
+    const saved       = savedData[item.id] || {};
+    const factBox     = saved.fact_boxes  !== undefined ? saved.fact_boxes  : ordBoxes;
+    const factBpb     = saved.fact_bpb    !== undefined ? saved.fact_bpb    : ordBpb;
+    const factSpb     = saved.fact_spb    !== undefined ? saved.fact_spb    : ordSpb;
+    const note        = saved.note        || '';
+    const isReplaced  = saved.is_replaced || false;
+    const replaced    = saved.replaced_with || '';
 
-    return `<div class="recv-row" id="recv-item-${item.id}" style="flex-direction:column;align-items:stretch;padding:10px 12px">
-      <!-- Row top: photo + name + ordered specs -->
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+    // Calc fact totals
+    const factBunch = factBpb ? factBox * factBpb : null;
+    const factStem  = (factBpb && factSpb) ? factBox * factBpb * factSpb : null;
+
+    // Recalc price with fact packing (same price_per_bunch, new bunches_per_box)
+    const priceBunch = parseFloat(item.price_per_bunch) || 0;
+    const factPriceBox = factBpb ? priceBunch * factBpb : pricePerBox;
+    const factTotal    = factPriceBox * factBox;
+    const hasDiff      = factBox !== ordBoxes || factBpb !== ordBpb || factSpb !== ordSpb;
+
+    return `<div class="recv-row" id="recv-item-${item.id}"
+        style="flex-direction:column;align-items:stretch;padding:10px 12px;
+               ${hasDiff ? 'background:#fffbeb;border-left:3px solid #f59e0b' : ''}">
+
+      <!-- Name + photo -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         ${imgH}
-        <div style="flex:1;min-width:0">
+        <div style="flex:1">
           <div style="font-size:13px;font-weight:700">${ru}</div>
           <div style="font-size:10px;color:var(--mid)">${cn}</div>
-          <!-- Ordered specs -->
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-            <span style="font-size:10px;background:var(--sage-l);color:var(--sage-d);padding:1px 7px;border-radius:4px;font-weight:600">
-              📦 ${ordBoxes} кор./箱
-            </span>
-            ${bpb ? `<span style="font-size:10px;background:var(--sage-l);color:var(--sage-d);padding:1px 7px;border-radius:4px">
-              🌿 ${bpb} банч./扎/кор.
-            </span>` : ''}
-            ${spb ? `<span style="font-size:10px;background:var(--sage-l);color:var(--sage-d);padding:1px 7px;border-radius:4px">
-              🌸 ${spb} ст./枝/банч.
-            </span>` : ''}
-            ${ordBunches ? `<span style="font-size:10px;background:#f0fdf4;color:#166534;padding:1px 7px;border-radius:4px;font-weight:600">
-              ≈ ${ordBunches} банч. итого
-            </span>` : ''}
-            ${ordStems ? `<span style="font-size:10px;background:#f0fdf4;color:#166534;padding:1px 7px;border-radius:4px;font-weight:600">
-              ≈ ${ordStems} ст. итого
-            </span>` : ''}
-          </div>
+          ${hasDiff ? `<div style="font-size:10px;color:#d97706;font-weight:600;margin-top:2px">⚠️ Изменён пакинг — требует подтверждения менеджера / 包装已更改，需经理确认</div>` : ''}
         </div>
       </div>
-      <!-- Row controls -->
-      <div style="display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start">
-        <!-- Left: fact qty + diff -->
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <div style="display:flex;align-items:center;gap:8px">
-            <div>
-              <div style="font-size:10px;color:var(--mid);margin-bottom:2px">Факт кор. / 实到箱</div>
-              <input type="number" min="0" value="${factBox}"
-                class="inp recv-fact" data-id="${item.id}" data-ordered="${ordBoxes}"
-                data-bpb="${bpb||0}" data-spb="${spb||0}"
-                style="width:70px;text-align:center;padding:5px;font-size:16px;font-weight:700"
-                oninput="updateRecvRow('${item.id}', this.value, ${ordBoxes})">
-            </div>
-            <div id="recv-diff-${item.id}" style="font-size:13px;font-weight:700;padding-top:18px;min-width:60px"></div>
-          </div>
-          <!-- Fact stems/bunches (auto-calculated) -->
-          <div id="recv-calc-${item.id}" style="font-size:10px;color:var(--mid)"></div>
-        </div>
-        <!-- Right: notes and replacement -->
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <div>
-            <div style="font-size:10px;color:var(--mid);margin-bottom:2px">Заметка / 备注</div>
-            <input type="text" class="inp recv-note" data-id="${item.id}"
-              value="${note.replace(/"/g,'&quot;')}"
-              placeholder="Состояние, особенности при приёмке / 收货备注..."
-              style="width:100%;font-size:12px;padding:5px 8px">
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer">
-              <input type="checkbox" class="recv-replaced-cb" data-id="${item.id}"
-                ${isReplaced?'checked':''}
-                style="width:14px;height:14px;accent-color:#d97706"
-                onchange="toggleRecvReplacement('${item.id}', this.checked)">
-              🔄 Замена товара / 换货
-            </label>
-          </div>
-          <div id="recv-replacement-${item.id}" style="${isReplaced?'':'display:none'}">
-            <input type="text" class="inp recv-replaced" data-id="${item.id}"
-              value="${replaced.replace(/"/g,'&quot;')}"
-              placeholder="Чем заменяем / 替换品种名称..."
-              style="width:100%;font-size:12px;padding:5px 8px;border-color:#d97706">
-            <div style="font-size:10px;color:#d97706;margin-top:2px">⚠️ Замена требует согласования с клиентом / 换货需与客户确认</div>
-          </div>
-        </div>
+
+      <!-- Comparison table: agreed vs fact -->
+      <div style="overflow-x:auto;margin-bottom:10px">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:420px">
+          <thead>
+            <tr style="background:var(--bg)">
+              <th style="padding:5px 8px;text-align:left;color:var(--mid);font-weight:600;width:120px"></th>
+              <th style="padding:5px 8px;text-align:center;color:var(--sage-d);font-weight:700">📋 По договору</th>
+              <th style="padding:5px 8px;text-align:center;color:#d97706;font-weight:700">🏭 Факт приёмки</th>
+              <th style="padding:5px 8px;text-align:center;color:var(--mid);font-weight:600">Δ Разница</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-top:1px solid var(--border)">
+              <td style="padding:6px 8px;color:var(--mid)">📦 Коробок</td>
+              <td style="padding:6px 8px;text-align:center;font-weight:700">${ordBoxes}</td>
+              <td style="padding:6px 8px;text-align:center">
+                <input type="number" min="0" value="${factBox}"
+                  class="inp recv-fact" data-id="${item.id}"
+                  data-ordered="${ordBoxes}" data-ord-bpb="${ordBpb}" data-ord-spb="${ordSpb}"
+                  data-price-bunch="${priceBunch}"
+                  style="width:60px;text-align:center;padding:4px;font-size:13px;font-weight:700"
+                  oninput="updateRecvRow('${item.id}')">
+              </td>
+              <td id="recv-diff-boxes-${item.id}" style="padding:6px 8px;text-align:center;font-weight:700">
+                ${factBox === ordBoxes ? '<span style="color:var(--sage-d)">✓</span>' : `<span style="color:${factBox<ordBoxes?'var(--red)':'#d97706'}">${factBox-ordBoxes>0?'+':''}${factBox-ordBoxes}</span>`}
+              </td>
+            </tr>
+            <tr style="border-top:1px solid var(--border)">
+              <td style="padding:6px 8px;color:var(--mid)">🌿 Банч./кор.</td>
+              <td style="padding:6px 8px;text-align:center;font-weight:700">${ordBpb||'—'}</td>
+              <td style="padding:6px 8px;text-align:center">
+                <input type="number" min="0" value="${factBpb||''}"
+                  class="inp recv-bpb" data-id="${item.id}"
+                  style="width:60px;text-align:center;padding:4px;font-size:13px;font-weight:700"
+                  placeholder="${ordBpb||'—'}"
+                  oninput="updateRecvRow('${item.id}')">
+              </td>
+              <td id="recv-diff-bpb-${item.id}" style="padding:6px 8px;text-align:center;font-weight:700">
+                ${!ordBpb || factBpb===ordBpb ? '<span style="color:var(--sage-d)">✓</span>' : `<span style="color:#d97706">${factBpb-ordBpb>0?'+':''}${factBpb-ordBpb}</span>`}
+              </td>
+            </tr>
+            <tr style="border-top:1px solid var(--border)">
+              <td style="padding:6px 8px;color:var(--mid)">🌸 Ст./банч.</td>
+              <td style="padding:6px 8px;text-align:center;font-weight:700">${ordSpb||'—'}</td>
+              <td style="padding:6px 8px;text-align:center">
+                <input type="number" min="0" value="${factSpb||''}"
+                  class="inp recv-spb" data-id="${item.id}"
+                  style="width:60px;text-align:center;padding:4px;font-size:13px;font-weight:700"
+                  placeholder="${ordSpb||'—'}"
+                  oninput="updateRecvRow('${item.id}')">
+              </td>
+              <td id="recv-diff-spb-${item.id}" style="padding:6px 8px;text-align:center;font-weight:700">
+                ${!ordSpb || factSpb===ordSpb ? '<span style="color:var(--sage-d)">✓</span>' : `<span style="color:#d97706">${factSpb-ordSpb>0?'+':''}${factSpb-ordSpb}</span>`}
+              </td>
+            </tr>
+            <tr style="border-top:1px solid var(--border);background:var(--sage-l)">
+              <td style="padding:6px 8px;color:var(--sage-d);font-weight:700">💰 Итого ¥</td>
+              <td style="padding:6px 8px;text-align:center;font-weight:700;color:var(--sage-d)">¥${ordTotal.toFixed(2)}</td>
+              <td id="recv-total-${item.id}" style="padding:6px 8px;text-align:center;font-weight:700;color:${hasDiff?'#d97706':'var(--sage-d)'}">¥${factTotal.toFixed(2)}</td>
+              <td id="recv-diff-total-${item.id}" style="padding:6px 8px;text-align:center;font-weight:700;color:${factTotal>ordTotal?'#d97706':factTotal<ordTotal?'var(--red)':'var(--sage-d)'}">
+                ${factTotal===ordTotal ? '✓' : (factTotal-ordTotal>0?'+':'')+( factTotal-ordTotal).toFixed(2)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Notes + replacement -->
+      <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start">
+        <input type="text" class="inp recv-note" data-id="${item.id}"
+          value="${note.replace(/"/g,'&quot;')}"
+          placeholder="Заметка по позиции / 品种备注..."
+          style="font-size:11px;padding:5px 8px">
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;white-space:nowrap;padding-top:6px">
+          <input type="checkbox" class="recv-replaced-cb" data-id="${item.id}"
+            ${isReplaced?'checked':''}
+            style="width:14px;height:14px;accent-color:#d97706"
+            onchange="toggleRecvReplacement('${item.id}', this.checked)">
+          🔄 Замена / 换货
+        </label>
+      </div>
+      <div id="recv-replacement-${item.id}" style="${isReplaced?'':'display:none'};margin-top:6px">
+        <input type="text" class="inp recv-replaced" data-id="${item.id}"
+          value="${replaced.replace(/"/g,'&quot;')}"
+          placeholder="Заменено на / 替换为..."
+          style="width:100%;font-size:12px;padding:5px 8px;border-color:#d97706">
+        <div style="font-size:10px;color:#d97706;margin-top:2px">⚠️ Замена фиксируется и видна менеджеру / 换货记录将通知经理</div>
       </div>
     </div>`;
   }).join('');
 
+  // Grand totals
+  const ordGrandTotal  = items.reduce((s,i)=>(s+(parseFloat(i.price_per_box)||0)*(parseInt(i.qty_boxes)||0)),0);
+
   wrap.innerHTML = `
     <div style="padding:10px 14px;background:var(--sage-l);border-radius:8px;margin-bottom:12px;font-size:13px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <div><b>#${order.order_number}</b> · ${client} · 🚚 ${order.date_ship||'—'} · ${items.length} поз.</div>
-      ${order.wh_received ? `<span style="font-size:11px;background:var(--sage-d);color:#fff;padding:3px 10px;border-radius:6px">✅ Приёмка проведена ${order.wh_received_at?new Date(order.wh_received_at).toLocaleDateString('ru-RU'):''}</span>` : ''}
+      ${order.wh_received ? `<span style="font-size:11px;background:var(--sage-d);color:#fff;padding:3px 10px;border-radius:6px">✅ Сохранено ${new Date(order.wh_received_at||Date.now()).toLocaleDateString('ru-RU')}</span>` : ''}
     </div>
-    <div style="font-size:11px;color:var(--mid);margin-bottom:10px;padding:6px 10px;background:#fffbeb;border-radius:6px;border-left:3px solid #f59e0b">
-      💡 Укажите фактически полученное количество коробок, заметки и замены / 请填写实际收到的箱数、备注和换货情况
+    <div style="font-size:11px;margin-bottom:12px;padding:8px 12px;background:#eff6ff;border-radius:6px;border-left:3px solid #3b82f6">
+      ℹ️ Если пакинг отличается от договора — измените значения в колонке «Факт».
+      Менеджер увидит изменения и подтвердит их. После подтверждения накладная и инвойс обновятся автоматически.
     </div>
-    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:14px;overflow:hidden">
-      ${rows}
-    </div>
-    <!-- General note -->
+    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:14px;overflow:hidden">${rows}</div>
     <div style="margin-bottom:14px">
-      <label style="font-size:11px;font-weight:700;color:var(--mid);display:block;margin-bottom:4px">
-        Общая заметка по поставке / 本次供货总体备注
-      </label>
+      <label style="font-size:11px;font-weight:700;color:var(--mid);display:block;margin-bottom:4px">Общая заметка / 总体备注</label>
       <textarea class="inp" id="recv-general-note" rows="2"
         style="width:100%;resize:vertical;font-size:12px"
-        placeholder="Общее состояние груза, условия доставки / 货物总体状况及配送情况...">${savedData._general_note||''}</textarea>
+        placeholder="Общее состояние груза / 货物总体状况...">${savedData._general_note||''}</textarea>
+    </div>
+    <div id="recv-grand-total" style="display:flex;justify-content:flex-end;gap:20px;padding:10px 14px;background:var(--sage-l);border-radius:8px;margin-bottom:12px">
+      <div style="text-align:center"><div style="font-size:10px;color:var(--mid)">По договору</div><div style="font-size:16px;font-weight:700;color:var(--sage-d)">¥${ordGrandTotal.toFixed(2)}</div></div>
+      <div id="recv-grand-fact" style="text-align:center"><div style="font-size:10px;color:var(--mid)">По факту</div><div style="font-size:16px;font-weight:700;color:var(--sage-d)">¥${ordGrandTotal.toFixed(2)}</div></div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap">
-      <button class="btn btn-secondary" onclick="exportReceivingExcel('${orderId}')">📊 Excel / 导出</button>
-      <button class="btn btn-primary" onclick="saveReceiving('${orderId}')">💾 Сохранить приёмку / 保存收货</button>
+      <button class="btn btn-secondary" onclick="exportReceivingExcel('${orderId}')">📊 Excel</button>
+      <button class="btn btn-primary" onclick="saveReceiving('${orderId}')">💾 Сохранить и отправить менеджеру / 保存并通知经理</button>
     </div>`;
 
-  // Init all diff displays
-  items.forEach(item => {
-    const ordBoxes = parseInt(item.qty_boxes) || 1;
-    const saved    = savedData[item.id] || {};
-    const factBox  = saved.fact_boxes !== undefined ? saved.fact_boxes : ordBoxes;
-    updateRecvRow(item.id, factBox, ordBoxes);
-  });
+  // Init displays
+  items.forEach(item => updateRecvRow(item.id));
 }
 
 function toggleRecvReplacement(itemId, show) {
@@ -6304,97 +6465,164 @@ function toggleRecvReplacement(itemId, show) {
   if (el) el.style.display = show ? '' : 'none';
 }
 
-function updateRecvRow(itemId, factVal, ordered) {
-  const fact   = parseInt(factVal) || 0;
-  const diff   = fact - ordered;
-  const diffEl = document.getElementById('recv-diff-'+itemId);
-  const rowEl  = document.getElementById('recv-item-'+itemId);
-  const calcEl = document.getElementById('recv-calc-'+itemId);
-  const input  = document.querySelector(`.recv-fact[data-id="${itemId}"]`);
-  const bpb    = parseInt(input?.dataset.bpb) || 0;
-  const spb    = parseInt(input?.dataset.spb) || 0;
+function updateRecvRow(itemId) {
+  const factInp  = document.querySelector(`.recv-fact[data-id="${itemId}"]`);
+  const bpbInp   = document.querySelector(`.recv-bpb[data-id="${itemId}"]`);
+  const spbInp   = document.querySelector(`.recv-spb[data-id="${itemId}"]`);
+  if (!factInp) return;
 
+  const ordBoxes    = parseInt(factInp.dataset.ordered)   || 0;
+  const ordBpb      = parseInt(factInp.dataset.ordBpb)    || 0;
+  const ordSpb      = parseInt(factInp.dataset.ordSpb)    || 0;
+  const priceBunch  = parseFloat(factInp.dataset.priceBunch) || 0;
+
+  const factBox  = parseInt(factInp.value) || 0;
+  const factBpb  = parseInt(bpbInp?.value) || ordBpb;
+  const factSpb  = parseInt(spbInp?.value) || ordSpb;
+
+  // Diffs
+  const setDiff = (elId, fact, ord) => {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (!ord || fact === ord) { el.innerHTML = '<span style="color:var(--sage-d)">✓</span>'; }
+    else { const d=fact-ord; el.innerHTML = `<span style="color:${d<0?'var(--red)':'#d97706'}">${d>0?'+':''}${d}</span>`; }
+  };
+  setDiff(`recv-diff-boxes-${itemId}`, factBox, ordBoxes);
+  setDiff(`recv-diff-bpb-${itemId}`,   factBpb, ordBpb);
+  setDiff(`recv-diff-spb-${itemId}`,   factSpb, ordSpb);
+
+  // Recalc price: same price_per_bunch, new bunches_per_box
+  const factPriceBox  = factBpb ? priceBunch * factBpb : (priceBunch * ordBpb);
+  const factTotal     = factPriceBox * factBox;
+  const ordPriceBox   = priceBunch * ordBpb;
+  const ordTotal      = ordPriceBox * ordBoxes;
+  const totalDiff     = factTotal - ordTotal;
+
+  const totalEl = document.getElementById(`recv-total-${itemId}`);
+  const diffEl  = document.getElementById(`recv-diff-total-${itemId}`);
+  const rowEl   = document.getElementById(`recv-item-${itemId}`);
+
+  if (totalEl) {
+    totalEl.textContent = '¥' + factTotal.toFixed(2);
+    totalEl.style.color = totalDiff !== 0 ? '#d97706' : 'var(--sage-d)';
+  }
   if (diffEl) {
-    if (diff === 0)      diffEl.innerHTML = '<span style="color:var(--sage-d)">✓ OK</span>';
-    else if (diff < 0)   diffEl.innerHTML = `<span style="color:var(--red)">${diff} кор. ⚠</span>`;
-    else                 diffEl.innerHTML = `<span style="color:#d97706">+${diff} кор.</span>`;
+    if (totalDiff === 0) { diffEl.innerHTML = '<span style="color:var(--sage-d)">✓</span>'; }
+    else { diffEl.innerHTML = `<span style="color:${totalDiff<0?'var(--red)':'#d97706'}">${totalDiff>0?'+':''}${totalDiff.toFixed(2)}</span>`; }
   }
   if (rowEl) {
-    rowEl.style.borderLeft = diff < 0 ? '3px solid var(--red)' :
-                             diff > 0 ? '3px solid #d97706' : '3px solid var(--sage)';
+    const hasDiff = factBox!==ordBoxes || factBpb!==ordBpb || factSpb!==ordSpb;
+    rowEl.style.background = hasDiff ? '#fffbeb' : '';
+    rowEl.style.borderLeft = hasDiff ? '3px solid #f59e0b' : '';
   }
-  // Show calculated fact stems/bunches
-  if (calcEl && (bpb || spb)) {
-    const factBunches = bpb ? fact * bpb : null;
-    const factStems   = (bpb && spb) ? fact * bpb * spb : null;
-    const parts = [];
-    if (factBunches !== null) parts.push(`Факт банч.: <b>${factBunches}</b>`);
-    if (factStems   !== null) parts.push(`Факт стеблей: <b>${factStems}</b>`);
-    calcEl.innerHTML = parts.join(' · ');
+
+  // Update grand total
+  let grandFact = 0;
+  document.querySelectorAll('.recv-fact').forEach(inp => {
+    const id = inp.dataset.id;
+    const fb  = parseInt(inp.value)||0;
+    const fbpb = parseInt(document.querySelector(`.recv-bpb[data-id="${id}"]`)?.value) || parseInt(inp.dataset.ordBpb)||0;
+    const fpb  = parseFloat(inp.dataset.priceBunch)||0;
+    grandFact += (fpb*fbpb) * fb;
+  });
+  const grandEl = document.getElementById('recv-grand-fact');
+  if (grandEl) {
+    grandEl.querySelector('div:last-child').textContent = '¥' + grandFact.toFixed(2);
+    grandEl.querySelector('div:last-child').style.color = 'var(--sage-d)';
   }
 }
 
 async function saveReceiving(orderId) {
-  // Collect all row data
   const recvData = {};
+  const packChanges = []; // items where packing differs from order
+
   document.querySelectorAll('.recv-fact').forEach(input => {
-    const id      = input.dataset.id;
-    const ordered = parseInt(input.dataset.ordered) || 0;
-    const fact    = parseInt(input.value) || 0;
-    const note    = document.querySelector(`.recv-note[data-id="${id}"]`)?.value?.trim() || '';
-    const isRepl  = document.querySelector(`.recv-replaced-cb[data-id="${id}"]`)?.checked || false;
+    const id       = input.dataset.id;
+    const ordBoxes = parseInt(input.dataset.ordered)   || 0;
+    const ordBpb   = parseInt(input.dataset.ordBpb)    || 0;
+    const ordSpb   = parseInt(input.dataset.ordSpb)    || 0;
+    const priceBunch = parseFloat(input.dataset.priceBunch) || 0;
+
+    const factBox  = parseInt(input.value) || 0;
+    const factBpb  = parseInt(document.querySelector(`.recv-bpb[data-id="${id}"]`)?.value) || ordBpb;
+    const factSpb  = parseInt(document.querySelector(`.recv-spb[data-id="${id}"]`)?.value) || ordSpb;
+    const note     = document.querySelector(`.recv-note[data-id="${id}"]`)?.value?.trim() || '';
+    const isRepl   = document.querySelector(`.recv-replaced-cb[data-id="${id}"]`)?.checked || false;
     const replWith = isRepl ? (document.querySelector(`.recv-replaced[data-id="${id}"]`)?.value?.trim()||'') : '';
-    recvData[id] = { fact_boxes: fact, ordered_boxes: ordered, diff: fact-ordered, note, is_replaced: isRepl, replaced_with: replWith };
+
+    const factPriceBox = factBpb ? priceBunch * factBpb : priceBunch * ordBpb;
+    const factSubtotal = factPriceBox * factBox;
+
+    recvData[id] = {
+      fact_boxes: factBox, ordered_boxes: ordBoxes, diff: factBox-ordBoxes,
+      fact_bpb: factBpb,   fact_spb: factSpb,
+      note, is_replaced: isRepl, replaced_with: replWith,
+      fact_price_box: factPriceBox, fact_subtotal: factSubtotal
+    };
+
+    const hasDiff = factBox!==ordBoxes || factBpb!==ordBpb || factSpb!==ordSpb || isRepl;
+    if (hasDiff) {
+      packChanges.push({ id, factBox, factBpb, factSpb, factPriceBox, factSubtotal, isRepl, replWith, note });
+    }
   });
 
   const genNote = document.getElementById('recv-general-note')?.value?.trim() || '';
   recvData._general_note = genNote;
 
-  const shortages   = Object.values(recvData).filter(r => r.diff !== undefined && r.diff < 0);
-  const replacements = Object.values(recvData).filter(r => r.is_replaced && r.replaced_with);
-
-  const { error } = await sb.from('orders').update({
-    wh_received:      true,
-    wh_received_at:   new Date().toISOString(),
-    wh_shortages:     JSON.stringify(shortages),
+  // 1. Save receiving snapshot to orders table
+  const { error: ordErr } = await sb.from('orders').update({
+    wh_received:       true,
+    wh_received_at:    new Date().toISOString(),
+    wh_shortages:      JSON.stringify(Object.values(recvData).filter(r=>r.diff<0)),
     wh_receiving_json: JSON.stringify(recvData),
-    updated_at:       new Date().toISOString()
+    updated_at:        new Date().toISOString()
   }).eq('id', orderId);
 
-  if (error) {
-    if (error.message?.includes('wh_receiving_json')) {
-      toast('⚠️ Выполните: ALTER TABLE orders ADD COLUMN IF NOT EXISTS wh_receiving_json text;');
-    } else {
-      toast('⚠️ Ошибка сохранения: ' + error.message);
-    }
-    return;
+  if (ordErr) {
+    toast('⚠️ Ошибка: ' + ordErr.message); return;
   }
 
-  // Notify managers
-  try {
-    const { data: order } = await sb.from('orders').select('order_number').eq('id', orderId).single();
-    const { data: mgrs }  = await sb.from('users').select('id').eq('role','manager');
-    const msgs = [];
-    if (shortages.length) msgs.push(`⚠️ ${shortages.length} нехватки`);
-    if (replacements.length) msgs.push(`🔄 ${replacements.length} замены: ${replacements.map(r=>r.replaced_with).join(', ')}`);
+  // 2. Save fact packing to order_items (wh_fact_* columns)
+  //    These are the "pending manager review" values — don't overwrite qty_boxes yet
+  for (const ch of packChanges) {
+    await sb.from('order_items').update({
+      wh_fact_boxes: ch.factBox,
+      wh_fact_bpb:   ch.factBpb,
+      wh_fact_spb:   ch.factSpb,
+      wh_note:       ch.note,
+      wh_replaced_name: ch.isRepl ? ch.replWith : null,
+      wh_confirmed_at:  null, // reset confirmation — needs re-approval
+    }).eq('id', ch.id);
+  }
 
-    if (msgs.length) {
+  // 3. Notify managers with detailed diff
+  try {
+    const { data: orderInfo } = await sb.from('orders').select('order_number').eq('id', orderId).single();
+    const { data: mgrs } = await sb.from('users').select('id').eq('role','manager');
+    const num = orderInfo?.order_number || '';
+
+    if (packChanges.length) {
+      const changeDesc = packChanges.map(ch =>
+        ch.isRepl
+          ? `${ch.replWith} (замена)`
+          : `${ch.factBox} кор., ${ch.factBpb} банч./кор.`
+      ).slice(0,3).join(' · ');
+
       for (const m of (mgrs||[])) {
         await sendNotification(m.id,
-          `📥 Приёмка #${order?.order_number}: ${msgs.join(' · ')}`,
-          genNote || `Замены/нехватки зафиксированы складом`, '📥');
+          `⚠️ Склад изменил пакинг: заказ #${num}`,
+          `${packChanges.length} позиций отличаются от договора: ${changeDesc} — требуется подтверждение`,
+          '⚠️');
       }
+      toast(`✅ Сохранено. ${packChanges.length} позиций с изменениями — менеджер уведомлён для подтверждения`);
+    } else {
+      toast('✅ Приёмка сохранена, пакинг соответствует договору / 收货完成，包装与合同一致');
     }
-  } catch(e) {}
-
-  const shortCnt = shortages.length;
-  const replCnt  = replacements.length;
-  if (shortCnt || replCnt) {
-    toast(`✅ Сохранено · ${shortCnt ? shortCnt+' нехватки ⚠️' : ''} ${replCnt ? replCnt+' замены 🔄' : ''}`);
-  } else {
-    toast('✅ Приёмка сохранена, всё в норме / 收货完成，数量无误');
+  } catch(e) {
+    toast('✅ Приёмка сохранена');
   }
 }
+
 
 function exportReceivingExcel(orderId) {
   const rows = document.querySelectorAll('.recv-fact');
