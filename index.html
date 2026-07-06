@@ -4,20 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>AMMA FLOWERS — Система заказов</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
-
-// ══════════════════════════════════════════════════════════════════
-//  WAYBILLS — НАКЛАДНЫЕ / 出货单
-// ══════════════════════════════════════════════════════════════════
-
-let currentWaybillId = null;
-let currentWaybillOrderId = null;
-window._cachedConfirmedOrders = [];
-
-// ── Load waybills list (manager) ──────────────────────────────────
-// Cache confirmed orders to avoid re-fetching
-
-</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
@@ -1057,6 +1044,11 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// ── WAYBILLS state (перенесено из мёртвого script-тега) ──
+let currentWaybillId = null;
+let currentWaybillOrderId = null;
+window._cachedConfirmedOrders = [];
+
 // ══════════════════════════════════════════════════════════
 //  THUMBNAILS (embedded)
 // ══════════════════════════════════════════════════════════
@@ -1097,6 +1089,7 @@ async function doLogin() {
   if (error || !data) { showErr('Неверный логин или пароль / 账号或密码错误'); return; }
   currentUser = data;
   try { sessionStorage.setItem('amma_user', JSON.stringify(data)); } catch(e){}
+  logActivity('login', 'session', null, data.company_name || data.login, 'Вход в систему');
   document.getElementById('login-err').style.display = 'none';
   document.getElementById('inp-pass').value = '';
   showApp();
@@ -1657,11 +1650,20 @@ async function addNewFlower() {
     updated_at: new Date().toISOString(),
   };
 
+  // ── Защита от дублей: ищем позицию с тем же названием (RU или CN) ──
+  const dupe = flowers.find(x =>
+    (payload.ru && x.ru?.trim().toLowerCase() === payload.ru.trim().toLowerCase()) ||
+    (payload.cn && x.cn?.trim() === payload.cn.trim()));
+  if (dupe) {
+    if (!confirm(`⚠️ Позиция "${dupe.ru}" уже есть в прайсе (${dupe.cat_ru||''}).\nДобавить всё равно? / 价格单中已存在该品种，仍要添加吗？`)) return;
+  }
+
   const { data, error } = await sb.from('flowers').insert(payload).select().single();
   if (error) { toast('❌ Ошибка: ' + error.message); return; }
 
   // Add to local array and refresh
   if (data) flowers.push(data);
+  logActivity('flower_add', 'flower', data?.id, payload.ru, 'Добавлена позиция в прайс');
   closeModal();
   renderPrice();
   const updDate = new Date().toLocaleDateString('ru-RU');
@@ -1752,6 +1754,8 @@ async function saveEditFlower(flowerId) {
   const { error } = await sb.from('flowers').update(updates).eq('id', flowerId);
   if (error) { toast('❌ Ошибка: ' + error.message); return; }
   Object.assign(f, updates);
+  logActivity('flower_edit', 'flower', flowerId, updates.ru || f.ru,
+    'Изменена позиция' + (updates.photo_url ? ' (загружено фото)' : ''));
   closeModal();
   renderPrice();
   toast('✅ Обновлено: ' + updates.ru);
@@ -1796,6 +1800,7 @@ async function saveAllPrices() {
     document.getElementById('price-updated').textContent =
       `Актуальные цены AMMA FLOWERS · Обновлено: ${dateStr}`;
   }
+  if (saved > 0) logActivity('price_update', 'flowers', null, `${saved} поз.`, 'Массовое обновление цен в прайсе');
   if (errors > 0) toast(`⚠️ Ошибок: ${errors}, сохранено: ${saved}`);
   else toast(`✅ Сохранено / 已保存: ${saved}`);
 }
@@ -1807,6 +1812,7 @@ async function toggleStock(id) {
   const f = flowers.find(x => x.id === id); if (!f) return;
   f.in_stock = !f.in_stock;
   await sb.from('flowers').update({in_stock: f.in_stock, updated_at: new Date().toISOString()}).eq('id', id);
+  logActivity('stock_toggle', 'flower', id, f.ru, f.in_stock ? 'В наличии' : 'Нет в наличии');
   renderPrice();
   toast(f.in_stock ? '✅ Есть в наличии / 有货' : '❌ Нет в наличии / 无货');
 }
@@ -2066,11 +2072,25 @@ function renderMyOrder() {
       const thumb = item.flower?.photo_url || THUMBS[item.flower?.en] || THUMBS[snap.en] || '';
       const imgH = thumb ? `<img src="${thumb}" style="width:34px;height:34px;object-fit:cover;border-radius:5px;flex-shrink:0">` :
         `<div style="width:34px;height:34px;background:var(--sage-l);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">🌸</div>`;
+      // Подтверждённые менеджером изменения пакинга складом — подсвечиваем клиенту
+      const wo = snap.wh_orig || {};
+      const chBpb = wo.bpb && item.wh_confirmed_at && parseInt(wo.bpb) !== parseInt(item.bunches_per_box);
+      const chSpb = wo.spb && item.wh_confirmed_at && snap.stems && parseInt(wo.spb) !== parseInt(snap.stems);
+      const packLine = item.bunches_per_box || snap.stems
+        ? `<div style="font-size:10px;color:${(chBpb||chSpb)?'#d97706':'var(--mid)'}">${item.bunches_per_box?item.bunches_per_box+' банч/кор':''}${snap.stems?' · '+snap.stems+' ст/банч':''}</div>`
+        : '';
+      const whChangeLine = (chBpb || chSpb)
+        ? `<div style="font-size:10px;font-weight:700;color:#92400e;background:#fff7ed;border-radius:4px;padding:2px 6px;margin-top:2px;display:inline-block">
+             📦 Пакинг скорректирован складом:${chBpb?` банч/кор ${wo.bpb}→${item.bunches_per_box}`:''}${chSpb?` · ст/банч ${wo.spb}→${snap.stems}`:''} / 包装已调整
+           </div>`
+        : '';
       return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;${idx?'border-top:1px solid var(--border)':''}">
         ${imgH}
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;font-weight:700">${snap.ru||item.flower?.ru||'—'}</div>
           <div style="font-size:10px;color:var(--mid)">${snap.cn||item.flower?.cn||''}</div>
+          ${packLine}
+          ${whChangeLine}
         </div>
         <div style="text-align:right;font-size:11px;flex-shrink:0">
           <div style="color:var(--mid)">${item.qty_boxes||1} кор. / 箱</div>
@@ -2086,6 +2106,10 @@ function renderMyOrder() {
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
             <span style="font-family:var(--font-h);font-size:16px;font-weight:700;color:var(--sage-d)">${o.order_number}</span>
             <span class="badge" style="background:${col}20;color:${col}">${statusLabel(o.status)}</span>
+            ${(o.order_items||[]).some(it => {
+              const w = it.flower_snapshot?.wh_orig || {};
+              return it.wh_confirmed_at && ((w.bpb && parseInt(w.bpb)!==parseInt(it.bunches_per_box)) || (w.spb && it.flower_snapshot?.stems && parseInt(w.spb)!==parseInt(it.flower_snapshot.stems)));
+            }) ? `<span class="badge" style="background:#fff7ed;color:#92400e">📦 Пакинг скорректирован</span>` : ''}
           </div>
           <div style="font-size:11px;color:var(--mid);margin-bottom:6px">
             📅 ${o.date_order}${o.date_ship?' → 🚚 '+o.date_ship:''}
@@ -2483,12 +2507,24 @@ function renderOrderDetail(order) {
 
   const rows = items.map((item, i) => {
     const sub = (parseFloat(item.price_per_box)||0) * (parseInt(item.qty_boxes)||0);
+    const snap = item.flower_snapshot || {};
+    // Изменения склада: неподтверждённые (оранжевая строка) и подтверждённые (бейдж «было→стало»)
+    const whPending = (item.wh_fact_boxes != null || item.wh_fact_bpb != null || item.wh_fact_spb != null) && !item.wh_confirmed_at;
+    const wo = snap.wh_orig || {};
+    const whBpbApplied = wo.bpb && item.wh_confirmed_at && parseInt(wo.bpb) !== parseInt(item.bunches_per_box);
+    const whSpbApplied = wo.spb && item.wh_confirmed_at && snap.stems && parseInt(wo.spb) !== parseInt(snap.stems);
+    const whBadge = whPending
+      ? `<div style="font-size:9px;color:#d97706;font-weight:700;margin-top:2px">🏭 Склад изменил пакинг — см. баннер выше</div>`
+      : (whBpbApplied || whSpbApplied)
+        ? `<div style="font-size:9px;color:#d97706;margin-top:2px">✏️ Склад:${whBpbApplied?` банч ${wo.bpb}→${item.bunches_per_box}`:''}${whSpbApplied?` · ст ${wo.spb}→${snap.stems}`:''}</div>`
+        : '';
     return `
-    <tr class="${i%2?'stripe':''}" id="mgr-row-${i}">
+    <tr class="${i%2?'stripe':''}" id="mgr-row-${i}" ${whPending?'style="background:#fff7ed"':''}>
       <td style="color:var(--light);font-size:10px">${i+1}</td>
       <td class="L">
         <b style="font-size:12px">${item.flower?.ru || item.flower_snapshot?.ru || '—'}</b>
         <div style="font-size:10px;color:var(--mid)">${item.flower?.cn || item.flower_snapshot?.cn ||''}</div>
+        ${whBadge}
       </td>
       <td>
         <select class="inp" style="padding:3px 5px;font-size:11px"
@@ -5865,6 +5901,7 @@ async function loadWhPending() {
     return;
   }
 
+  window._whPendItems = {};
   wrap.innerHTML = orders.map(order => {
     const client = order.client?.company_name || order.client?.login || '—';
     const items  = order.order_items || [];
@@ -5889,22 +5926,30 @@ async function loadWhPending() {
 
       const curBpb = (item.wh_fact_bpb != null && !item.wh_confirmed_at) ? item.wh_fact_bpb : bpb;
       const curSpb = (item.wh_fact_spb != null && !item.wh_confirmed_at) ? item.wh_fact_spb : spb;
+      const qty = parseInt(item.qty_boxes) || 1;
+      window._whPendItems = window._whPendItems || {};
+      window._whPendItems[item.id] = item;
       return `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
         ${imgH}
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;font-weight:700">${ru} <span style="font-size:10px;color:var(--mid)">${cn}</span></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:3px;align-items:center">
-            <span style="font-size:10px;background:var(--sage-l);color:var(--sage-d);padding:1px 6px;border-radius:4px">📦 ${item.qty_boxes||1} кор.</span>
+            <span style="font-size:10px;background:var(--sage-l);color:var(--sage-d);padding:1px 6px;border-radius:4px">📦 ${qty} кор.</span>
             <label style="font-size:10px;color:var(--mid);display:flex;align-items:center;gap:3px">банч/кор 扎/箱
-              <input type="number" min="0" class="inp wh-pend-bpb" data-order="${order.id}" data-item="${item.id}" data-orig="${bpb||0}"
+              <input type="number" min="0" class="inp wh-pend-bpb" data-order="${order.id}" data-item="${item.id}" data-orig="${bpb||0}" data-qty="${qty}"
                 value="${curBpb||''}" placeholder="${bpb||'—'}"
+                oninput="whPendRecalc('${order.id}','${item.id}')"
                 style="width:52px;text-align:center;padding:2px 4px;font-size:11px;font-weight:700${curBpb&&bpb&&curBpb!=bpb?';background:#fff7ed;border-color:#f59e0b':''}">
             </label>
             <label style="font-size:10px;color:var(--mid);display:flex;align-items:center;gap:3px">ст/банч 枝/扎
-              <input type="number" min="0" class="inp wh-pend-spb" data-order="${order.id}" data-item="${item.id}" data-orig="${spb||0}"
+              <input type="number" min="0" class="inp wh-pend-spb" data-order="${order.id}" data-item="${item.id}" data-orig="${spb||0}" data-qty="${qty}"
                 value="${curSpb||''}" placeholder="${spb||'—'}"
+                oninput="whPendRecalc('${order.id}','${item.id}')"
                 style="width:52px;text-align:center;padding:2px 4px;font-size:11px;font-weight:700${curSpb&&spb&&curSpb!=spb?';background:#fff7ed;border-color:#f59e0b':''}">
             </label>
+            <span id="wh-pend-tot-${item.id}" style="font-size:10px;font-weight:700;color:${(curBpb&&bpb&&curBpb!=bpb)||(curSpb&&spb&&curSpb!=spb)?'#d97706':'var(--sage-d)'}">
+              = ${curBpb?qty*curBpb:'—'} банч · ${(curBpb&&curSpb)?qty*curBpb*curSpb:'—'} ст
+            </span>
             ${pack?`<span style="font-size:10px;background:#f0f9ff;color:#0369a1;padding:1px 6px;border-radius:4px">${pack}</span>`:''}
           </div>
         </div>
@@ -5941,6 +5986,9 @@ async function loadWhPending() {
 
       <!-- Items list with packing notes -->
       <div style="margin-bottom:10px">${rows}</div>
+      <div id="wh-ordstems-${order.id}" style="font-size:12px;font-weight:700;color:var(--sage-d);padding:6px 10px;background:var(--sage-l);border-radius:6px;margin-bottom:8px">
+        🌸 Всего по заказу: <span class="ws-b">…</span> банчей · <span class="ws-s">…</span> стеблей
+      </div>
 
       <!-- General note -->
       <div style="padding-top:8px;border-top:1px solid var(--border)">
@@ -5962,6 +6010,48 @@ async function loadWhPending() {
       </div>` : ''}
     </div>`;
   }).join('');
+  orders.forEach(o => whPendOrderTotal(o.id));
+}
+
+// ── Живой пересчёт банчей/стеблей во вкладке «Входящие» ──
+function whPendRecalc(orderId, itemId) {
+  // Подсветка изменённых полей + итог по позиции
+  const bpbInp = document.querySelector(`.wh-pend-bpb[data-item="${itemId}"]`);
+  const spbInp = document.querySelector(`.wh-pend-spb[data-item="${itemId}"]`);
+  if (!bpbInp || !spbInp) return;
+  const qty  = parseInt(bpbInp.dataset.qty) || 1;
+  const bpb  = parseInt(bpbInp.value) || 0;
+  const spb  = parseInt(spbInp.value) || 0;
+  const bChanged = bpb && parseInt(bpbInp.dataset.orig) && bpb !== parseInt(bpbInp.dataset.orig);
+  const sChanged = spb && parseInt(spbInp.dataset.orig) && spb !== parseInt(spbInp.dataset.orig);
+  bpbInp.style.background  = bChanged ? '#fff7ed' : '';
+  bpbInp.style.borderColor = bChanged ? '#f59e0b' : '';
+  spbInp.style.background  = sChanged ? '#fff7ed' : '';
+  spbInp.style.borderColor = sChanged ? '#f59e0b' : '';
+  const tot = document.getElementById('wh-pend-tot-' + itemId);
+  if (tot) {
+    tot.innerHTML = `= ${bpb ? qty*bpb : '—'} банч · ${(bpb&&spb) ? qty*bpb*spb : '—'} ст`;
+    tot.style.color = (bChanged || sChanged) ? '#d97706' : 'var(--sage-d)';
+  }
+  whPendOrderTotal(orderId);
+}
+
+// Итог банчей/стеблей по всему заказу
+function whPendOrderTotal(orderId) {
+  let tb = 0, ts = 0;
+  document.querySelectorAll(`.wh-pend-bpb[data-order="${orderId}"]`).forEach(bi => {
+    const si  = document.querySelector(`.wh-pend-spb[data-item="${bi.dataset.item}"]`);
+    const qty = parseInt(bi.dataset.qty) || 1;
+    const b   = parseInt(bi.value) || 0;
+    const sp  = parseInt(si?.value) || 0;
+    tb += qty * b;
+    ts += qty * b * sp;
+  });
+  const box = document.getElementById('wh-ordstems-' + orderId);
+  if (box) {
+    box.querySelector('.ws-b').textContent = tb || '—';
+    box.querySelector('.ws-s').textContent = ts || '—';
+  }
 }
 
 async function translatePackNote(btn) {
@@ -6012,12 +6102,19 @@ async function saveWhPackingNotes(orderId) {
     const bpbChanged = e.bpb && e.bpb !== e.origBpb;
     const spbChanged = e.spb && e.spb !== e.origSpb;
     if (!bpbChanged && !spbChanged) continue;
-    const { error: itErr } = await sb.from('order_items').update({
+    const upd = {
       wh_fact_bpb:     bpbChanged ? e.bpb : null,
       wh_fact_spb:     spbChanged ? e.spb : null,
       wh_note:         notes[itemId] || null,
       wh_confirmed_at: null, // требуется подтверждение менеджера
-    }).eq('id', itemId);
+    };
+    // Сохраняем оригинальный пакинг в snapshot (для подсветки «было → стало»)
+    const srcItem = (window._whPendItems || {})[itemId];
+    const snap = srcItem?.flower_snapshot || {};
+    if (!snap.wh_orig) {
+      upd.flower_snapshot = { ...snap, wh_orig: { bpb: e.origBpb || null, spb: e.origSpb || null } };
+    }
+    const { error: itErr } = await sb.from('order_items').update(upd).eq('id', itemId);
     if (!itErr) changedItems.push(e);
   }
 
