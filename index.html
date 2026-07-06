@@ -651,6 +651,7 @@ document.addEventListener('DOMContentLoaded', function(){
               style="width:16px;height:16px;accent-color:var(--sage-d)">
             <span>Автонаценка / 自动加价</span>
           </label>
+          <button class="btn btn-secondary btn-sm" style="padding:3px 9px;font-size:11px" onclick="showMarkupClientsModal()" title="Выбрать, каким клиентам показывать цены с наценкой">⚙️ Клиенты / 客户</button>
         </span>
         <span class="btn btn-primary mgr-only" onclick="showAddFlowerModal()" id="btn-add-flower" style="display:none">+ Добавить цветок / 添加花材</span>
         <span style="font-size:11px;color:var(--light)" id="price-count"></span>
@@ -1373,6 +1374,65 @@ async function applyMarkupToAll(enabled) {
   renderPrice();
 }
 
+// ── MANAGER: per-client markup selection ──────────────────
+async function showMarkupClientsModal() {
+  if (!allClients.length) await loadClients();
+  const clients = allClients.filter(c => c.role === 'client')
+    .sort((a,b) => (a.company_name||a.login||'').localeCompare(b.company_name||b.login||'', 'ru'));
+  if (!clients.length) { toast('Нет клиентов / 没有客户'); return; }
+
+  openModal();
+  document.getElementById('modal-content').innerHTML = `
+    <h3 style="margin-bottom:4px">💰 Наценка +15% по клиентам / 客户加价设置</h3>
+    <p style="font-size:11px;color:var(--mid);margin-bottom:12px">
+      Галочка = клиент видит цены ×1.15. Без галочки = базовые цены из прайса.
+      Клиент в любом случае <b>не видит</b>, что есть наценка — только итоговую цену.<br>
+      勾选 = 该客户看到加价15%的价格；未勾选 = 原价。客户不会看到加价标记。
+    </p>
+    <div style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+      ${clients.map(c => `
+        <label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer">
+          <input type="checkbox" class="mk-client-cb" data-id="${c.id}" ${c.show_markup?'checked':''}
+            style="width:16px;height:16px;accent-color:var(--sage-d);flex-shrink:0">
+          <span style="flex:1;font-size:13px"><b>${escHtml(c.company_name||c.login)}</b>
+            <span style="font-size:10px;color:var(--light)">${escHtml(c.contact||'')}</span></span>
+          <span style="font-size:10px;color:${c.show_markup?'var(--sage-d)':'var(--light)'}">${c.show_markup?'+15%':'база'}</span>
+        </label>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;font-size:11px">
+      <button class="btn btn-secondary btn-sm" onclick="document.querySelectorAll('.mk-client-cb').forEach(cb=>cb.checked=true)">✓ Все</button>
+      <button class="btn btn-secondary btn-sm" onclick="document.querySelectorAll('.mk-client-cb').forEach(cb=>cb.checked=false)">✗ Никто</button>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+      <button class="btn btn-primary" onclick="saveMarkupClients()">💾 Сохранить / 保存</button>
+    </div>`;
+}
+
+async function saveMarkupClients() {
+  const boxes = document.querySelectorAll('.mk-client-cb');
+  let changed = 0, failed = 0;
+  for (const cb of boxes) {
+    const id = cb.dataset.id;
+    const cur = allClients.find(c => c.id === id);
+    const want = cb.checked;
+    if (cur && !!cur.show_markup === want) continue; // без изменений
+    const { error } = await sb.from('users').update({ show_markup: want }).eq('id', id);
+    if (error) failed++; else changed++;
+  }
+  if (failed) { toast(`⚠️ Ошибок: ${failed}`); return; }
+  await loadClients();
+  // Синхронизация глобального тумблера: включён только если наценка у всех
+  const cls = allClients.filter(c => c.role === 'client');
+  const allOn = cls.length > 0 && cls.every(c => !!c.show_markup);
+  globalMarkupActive = allOn;
+  const tgl = document.getElementById('apply-markup-toggle');
+  if (tgl) tgl.checked = allOn;
+  closeModal();
+  toast(changed ? `✅ Обновлено клиентов: ${changed} / 已更新` : '✅ Без изменений');
+  renderPrice();
+}
+
 function renderPrice() {
   const q = document.getElementById('srch').value.toLowerCase().trim();
   const cf = document.getElementById('cat-filter').value;
@@ -1422,9 +1482,8 @@ function renderPrice() {
           const dpap = (pap * clientMarkup).toFixed(1);
           const dpab = (pa  * f.boxes_per_box * clientMarkup).toFixed(0);
           const dpapb= (pap * f.boxes_per_box * clientMarkup).toFixed(0);
-          const mkLabel = clientMarkup > 1 ? ' <span style="font-size:9px;color:var(--or)">+15%</span>' : '';
           return `<div style="text-align:center">
-           <div><span class="price-static">¥${dpa}</span><span style="font-size:9px;color:var(--light)"> A</span>${mkLabel}
+           <div><span class="price-static">¥${dpa}</span><span style="font-size:9px;color:var(--light)"> A</span>
                 &nbsp;<span class="price-static" style="color:var(--sage-m)">¥${dpap}</span><span style="font-size:9px;color:var(--light)"> A+</span></div>
            <div class="price-box">📦 ¥${dpab} / ¥${dpapb}</div>
          </div>`;
@@ -2381,7 +2440,7 @@ function renderOrderDetail(order) {
 
   // Warehouse packing changes banner — show if any item has wh_fact_boxes set and not yet confirmed
   const packChangedItems = items.filter(it =>
-    (it.wh_fact_boxes != null || it.wh_fact_bpb != null) && !it.wh_confirmed_at
+    (it.wh_fact_boxes != null || it.wh_fact_bpb != null || it.wh_fact_spb != null) && !it.wh_confirmed_at
   );
   const packChangeBanner = packChangedItems.length ? `
     <div style="margin-bottom:14px;padding:12px 16px;background:#fff7ed;border-radius:8px;border-left:4px solid #f59e0b">
@@ -2392,8 +2451,8 @@ function renderOrderDetail(order) {
         const ru   = it.flower?.ru || it.flower_snapshot?.ru || '—';
         const ordB = parseInt(it.qty_boxes)||0;
         const ordBpb = parseInt(it.bunches_per_box)||0;
-        const factB  = parseInt(it.wh_fact_boxes)??ordB;
-        const factBpb= parseInt(it.wh_fact_bpb)??ordBpb;
+        const factB  = parseInt(it.wh_fact_boxes) || ordB;
+        const factBpb= parseInt(it.wh_fact_bpb)   || ordBpb;
         const priceBunch = parseFloat(it.price_per_bunch)||0;
         const ordPrice   = priceBunch * ordBpb;
         const factPrice  = priceBunch * factBpb;
@@ -2407,6 +2466,7 @@ function renderOrderDetail(order) {
             : `<span style="color:#92400e;margin-left:8px">
                 По договору: ${ordB} кор × ${ordBpb} банч = <b>¥${ordTotal.toFixed(2)}</b>
                 → Факт: ${factB} кор × ${factBpb} банч = <b style="color:${factTotal!==ordTotal?'#dc2626':'inherit'}">¥${factTotal.toFixed(2)}</b>
+                ${it.wh_fact_spb != null ? `· стеблей/банч: <b>${it.wh_fact_spb}</b>` : ''}
                 ${it.wh_note ? `<i style="color:#6b7280;margin-left:6px">(${it.wh_note})</i>` : ''}
               </span>`}
         </div>`;
@@ -2738,21 +2798,22 @@ ${_mgrOrderItems[i]?.flower?.ru || _mgrOrderItems[i]?.flower_snapshot?.ru || ''}
 // ── Confirm warehouse packing changes → update order_items ──
 async function confirmPackingChanges(orderId) {
   const items = _mgrOrderItems.filter(it =>
-    (it.wh_fact_boxes != null || it.wh_fact_bpb != null) && !it.wh_confirmed_at
+    (it.wh_fact_boxes != null || it.wh_fact_bpb != null || it.wh_fact_spb != null) && !it.wh_confirmed_at
   );
   if (!items.length) { toast('Нет изменений для подтверждения'); return; }
 
   const now = new Date().toISOString();
 
   for (const item of items) {
-    const factBox    = parseInt(item.wh_fact_boxes)  ?? parseInt(item.qty_boxes)        ?? 0;
-    const factBpb    = parseInt(item.wh_fact_bpb)    ?? parseInt(item.bunches_per_box)   ?? 0;
-    const factSpb    = parseInt(item.wh_fact_spb)    ?? 0;
+    const factBox    = parseInt(item.wh_fact_boxes) || parseInt(item.qty_boxes)      || 0;
+    const factBpb    = parseInt(item.wh_fact_bpb)   || parseInt(item.bunches_per_box) || 0;
+    const factSpb    = parseInt(item.wh_fact_spb)   || 0;
     const priceBunch = parseFloat(item.price_per_bunch) || 0;
     const newPriceBox = factBpb ? priceBunch * factBpb : parseFloat(item.price_per_box)||0;
     const newSubtotal = newPriceBox * factBox;
 
-    await sb.from('order_items').update({
+    // Обновляем стебли в snapshot, если склад их изменил
+    const upd = {
       // Apply fact values to the "real" columns
       qty_boxes:       factBox,
       bunches_per_box: factBpb || item.bunches_per_box,
@@ -2761,7 +2822,11 @@ async function confirmPackingChanges(orderId) {
       // Mark as confirmed
       wh_confirmed_at: now,
       wh_confirmed_by: currentUser.id,
-    }).eq('id', item.id);
+    };
+    if (factSpb) {
+      upd.flower_snapshot = { ...(item.flower_snapshot || {}), stems: factSpb };
+    }
+    await sb.from('order_items').update(upd).eq('id', item.id);
   }
 
   // Notify client about packing update
@@ -2783,7 +2848,7 @@ async function confirmPackingChanges(orderId) {
 // ── Reject warehouse changes → keep original order_items ──
 async function rejectPackingChanges(orderId) {
   const items = _mgrOrderItems.filter(it =>
-    (it.wh_fact_boxes != null || it.wh_fact_bpb != null) && !it.wh_confirmed_at
+    (it.wh_fact_boxes != null || it.wh_fact_bpb != null || it.wh_fact_spb != null) && !it.wh_confirmed_at
   );
 
   for (const item of items) {
@@ -3016,10 +3081,6 @@ function calcItemsWithMarkup(items, markup) {
 function buildTotalsHTML(flowersTotal, flowersWithMarkup, markup, packing, certs, ship, other, otherLabel, totalBoxes, showMkup, adj = 0, adjLabel = '') {
   const grand = flowersWithMarkup + packing + certs + ship + other + adj;
   return `
-    ${showMkup ? `
-    <tr><td>Цветы закупка / 采购价:</td><td>¥${flowersTotal.toFixed(2)}</td></tr>
-    <tr><td>Наценка / 加价 ${markup}% (к цене банча / 每扎):</td><td>+¥${(flowersWithMarkup-flowersTotal).toFixed(2)}</td></tr>
-    ` : ''}
     <tr><td>Цветы итого / 花卉合计:</td><td>¥${flowersWithMarkup.toFixed(2)}</td></tr>
     <tr><td>Упаковка / 包装费 (${totalBoxes} кор. × ¥${PACKING_RATE}):</td><td>¥${packing.toFixed(2)}</td></tr>
     ${certs > 0 ? `<tr><td>Сертификаты / 证书 / Certificates:</td><td>¥${certs.toFixed(2)}</td></tr>` : ''}
@@ -3041,7 +3102,7 @@ function recalcInvoice() {
   const otherLabel = document.getElementById('inv-other-label')?.value || '';
   const adj        = parseFloat(document.getElementById('inv-adjust')?.value) || 0;
   const adjLabel   = document.getElementById('inv-adjust-label')?.value || '';
-  const showMkup   = document.getElementById('inv-show-markup')?.checked || false;
+  const showMkup   = false; // наценка клиенту никогда не показывается
 
   const itemsCalc = calcItemsWithMarkup(items, markup);
   const flowersWithMarkup = itemsCalc.reduce((s,i) => s + i.subtotalWithMarkup, 0);
@@ -3059,7 +3120,7 @@ function recalcInvoice() {
         <td class="L" style="font-size:11px">
           <b>${item.flower_snapshot?.ru||'—'}</b><br>
           <span style="color:var(--mid);font-size:10px">${item.flower_snapshot?.cn||''}</span><br>
-          <span style="color:var(--light);font-size:9px">${item.price_type==='a'?'A级':'A+'} · закупка ¥${item.price_per_bunch}/банч</span>
+          <span style="color:var(--light);font-size:9px">${item.price_type==='a'?'A级':'A+'}</span>
         </td>
         <td style="font-weight:700;color:var(--sage-d)">¥${item.bunchPriceWithMarkup.toFixed(2)}</td>
         <td style="color:var(--mid)">${item.bunches_per_box}</td>
@@ -3128,7 +3189,7 @@ function renderInvoiceBuilder(order, inv, flowersTotal, totalBoxes) {
         <table class="inv-table">
           <thead><tr>
             <th class="L">Позиция / 品名 / Item</th>
-            <th>¥/банч+${markup}%<br>¥/扎含加价</th>
+            <th>¥/банч<br>¥/扎</th>
             <th>Бан/кор<br>扎/件</th>
             <th>¥/КОРОБ<br>¥/件</th>
             <th>Кор.<br>箱</th>
@@ -3139,7 +3200,7 @@ function renderInvoiceBuilder(order, inv, flowersTotal, totalBoxes) {
               <td class="L" style="font-size:11px">
                 <b>${item.flower_snapshot?.ru||'—'}</b><br>
                 <span style="color:var(--mid);font-size:10px">${item.flower_snapshot?.cn||''}</span><br>
-                <span style="color:var(--light);font-size:9px">${item.price_type==='a'?'A级':'A+'} · ¥${item.price_per_bunch}/банч закупка</span>
+                <span style="color:var(--light);font-size:9px">${item.price_type==='a'?'A级':'A+'}</span>
               </td>
               <td style="font-weight:700;color:var(--sage-d)">¥${item.bunchPriceWithMarkup.toFixed(2)}</td>
               <td style="color:var(--mid)">${item.bunches_per_box}</td>
@@ -3219,12 +3280,6 @@ function renderInvoiceBuilder(order, inv, flowersTotal, totalBoxes) {
             </div>
           </div>
 
-          <div style="margin-top:10px;padding:8px;background:var(--bg);border-radius:6px">
-            <label style="font-size:11px;color:var(--mid);display:flex;align-items:center;gap:6px;cursor:pointer">
-              <input type="checkbox" id="inv-show-markup" ${inv.show_markup_breakdown?'checked':''} onchange="recalcInvoice()">
-              Показывать строку наценки клиенту / 向客户显示加价明细
-            </label>
-          </div>
           <div class="field" style="margin-top:12px">
             <label>Примечания / 备注 / Notes</label>
             <textarea id="inv-notes" style="min-height:60px">${inv.notes||''}</textarea>
@@ -3255,7 +3310,7 @@ async function saveInvoice() {
   const otherLabel = document.getElementById('inv-other-label')?.value || '';
   const adj        = parseFloat(document.getElementById('inv-adjust')?.value) || 0;
   const adjLabel   = document.getElementById('inv-adjust-label')?.value || '';
-  const showMkup   = document.getElementById('inv-show-markup')?.checked || false;
+  const showMkup   = false; // наценка клиенту никогда не показывается
   const notes      = document.getElementById('inv-notes')?.value || '';
   // Per-bunch markup
   const itemsCalc = calcItemsWithMarkup(items, markup);
@@ -3293,7 +3348,7 @@ async function saveInvoice() {
     adjustment: adj,
     adjustment_label: adjLabel,
     total: grand,
-    show_markup_breakdown: showMkup,
+    show_markup_breakdown: false,
     notes,
     updated_at: new Date().toISOString(),
   };
@@ -3347,7 +3402,7 @@ function exportInvExcel() {
   aoa.push(['AMMA FLOWERS — ИНВОЙС / 发票 / INVOICE']);
   aoa.push([`Заказ / 订单: №${order.order_number}   |   Клиент / 客户: ${client}   |   Дата / 日期: ${today}`]);
   aoa.push([]);
-  aoa.push(['№','Позиция / 品名 / Item','¥/связка с накруткой\n含加价¥/扎','¥/короб с накруткой\n含加价¥/箱','Кол. коробок\n箱数','Сумма ¥\n金额']);
+  aoa.push(['№','Позиция / 品名 / Item','¥/связка\n¥/扎','¥/короб\n¥/箱','Кол. коробок\n箱数','Сумма ¥\n金额']);
 
   const HEADER_ROW = 4;
   const dataStart = HEADER_ROW + 1;
@@ -3369,9 +3424,7 @@ function exportInvExcel() {
 
   const sumStart = dataStart + items.length + 1; // blank row before summary
   aoa.push([]);
-  aoa.push(['','Цветы (закупочная) / 花卉采购价','','','', Number(flowersTotal.toFixed(2))]);
-  aoa.push(['',`Наценка ${markup}% / 加价${markup}%`,'','','', Number((flowersTotal*markup/100).toFixed(2))]);
-  aoa.push(['','Цветы итого / 花卉小计','','','', Number(flowersWithMarkup.toFixed(2))]);
+  aoa.push(['','Цветы / 花卉','','','', Number(flowersWithMarkup.toFixed(2))]);
   if (packing>0) aoa.push(['','Упаковка / 包装费','','','', Number(packing.toFixed(2))]);
   if (certs>0)   aoa.push(['','Сертификаты / 证书费','','','', Number(certs.toFixed(2))]);
   if (ship>0)    aoa.push(['','Перевозка / 运费','','','', Number(ship.toFixed(2))]);
@@ -3817,7 +3870,7 @@ async function viewClientInvoice(invId) {
     return {...item, bunchWithMk, boxWithMk, subWithMk};
   });
 
-  const showMkup = inv.show_markup_breakdown;
+  const showMkup = false; // клиент никогда не видит разбивку наценки
 
   document.getElementById('modal-content').innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:10px">
@@ -3838,7 +3891,7 @@ async function viewClientInvoice(invId) {
     <table class="inv-table" style="margin-bottom:16px;font-size:12px">
       <thead><tr>
         <th class="L">Позиция / 品名</th>
-        <th>¥/банч<br><small>含${markup}%</small></th>
+        <th>¥/банч<br>¥/扎</th>
         <th>Бан/кор</th>
         <th>¥/кор</th>
         <th>Кор.</th>
@@ -3860,10 +3913,7 @@ async function viewClientInvoice(invId) {
     </table>
 
     <table class="inv-totals" style="width:100%;margin-bottom:16px">
-      ${showMkup ? `
-        <tr><td style="color:var(--mid)">Цветы (закупка / 采购价):</td><td>¥${inv.flowers_subtotal?.toFixed(2)||'—'}</td></tr>
-        <tr><td style="color:var(--mid)">Наценка / 加价 ${markup}%:</td><td>+¥${((inv.flowers_with_markup||0)-(inv.flowers_subtotal||0)).toFixed(2)}</td></tr>
-      ` : ''}
+
       <tr><td>Цветы / 花卉:</td><td>¥${inv.flowers_with_markup?.toFixed(2)||'—'}</td></tr>
       ${inv.packing_cost>0?`<tr><td>Упаковка / 包装费:</td><td>¥${inv.packing_cost?.toFixed(2)}</td></tr>`:''}
       ${inv.certificates_cost>0?`<tr><td>Сертификаты / 证书:</td><td>¥${inv.certificates_cost?.toFixed(2)}</td></tr>`:''}
@@ -5837,14 +5887,24 @@ async function loadWhPending() {
       try { savedNotes = JSON.parse(order.wh_pack_notes || '{}'); } catch{}
       const savedNote = savedNotes[item.id] || '';
 
+      const curBpb = (item.wh_fact_bpb != null && !item.wh_confirmed_at) ? item.wh_fact_bpb : bpb;
+      const curSpb = (item.wh_fact_spb != null && !item.wh_confirmed_at) ? item.wh_fact_spb : spb;
       return `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
         ${imgH}
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;font-weight:700">${ru} <span style="font-size:10px;color:var(--mid)">${cn}</span></div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:3px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:3px;align-items:center">
             <span style="font-size:10px;background:var(--sage-l);color:var(--sage-d);padding:1px 6px;border-radius:4px">📦 ${item.qty_boxes||1} кор.</span>
-            ${bpb?`<span style="font-size:10px;background:var(--sage-l);color:var(--sage-d);padding:1px 6px;border-radius:4px">${bpb} банч/кор.</span>`:''}
-            ${spb?`<span style="font-size:10px;background:var(--sage-l);color:var(--sage-d);padding:1px 6px;border-radius:4px">${spb} ст/банч</span>`:''}
+            <label style="font-size:10px;color:var(--mid);display:flex;align-items:center;gap:3px">банч/кор 扎/箱
+              <input type="number" min="0" class="inp wh-pend-bpb" data-order="${order.id}" data-item="${item.id}" data-orig="${bpb||0}"
+                value="${curBpb||''}" placeholder="${bpb||'—'}"
+                style="width:52px;text-align:center;padding:2px 4px;font-size:11px;font-weight:700${curBpb&&bpb&&curBpb!=bpb?';background:#fff7ed;border-color:#f59e0b':''}">
+            </label>
+            <label style="font-size:10px;color:var(--mid);display:flex;align-items:center;gap:3px">ст/банч 枝/扎
+              <input type="number" min="0" class="inp wh-pend-spb" data-order="${order.id}" data-item="${item.id}" data-orig="${spb||0}"
+                value="${curSpb||''}" placeholder="${spb||'—'}"
+                style="width:52px;text-align:center;padding:2px 4px;font-size:11px;font-weight:700${curSpb&&spb&&curSpb!=spb?';background:#fff7ed;border-color:#f59e0b':''}">
+            </label>
             ${pack?`<span style="font-size:10px;background:#f0f9ff;color:#0369a1;padding:1px 6px;border-radius:4px">${pack}</span>`:''}
           </div>
         </div>
@@ -5932,6 +5992,35 @@ async function saveWhPackingNotes(orderId) {
     if (val) notes[key] = val;
   });
 
+  // ── Collect bunches/stems edits per item (склад корректирует пакинг до подтверждения) ──
+  const packEdits = {}; // itemId -> {bpb, spb, origBpb, origSpb}
+  document.querySelectorAll(`.wh-pend-bpb[data-order="${orderId}"]`).forEach(inp => {
+    const itemId = inp.dataset.item;
+    packEdits[itemId] = packEdits[itemId] || {};
+    packEdits[itemId].bpb = parseInt(inp.value) || 0;
+    packEdits[itemId].origBpb = parseInt(inp.dataset.orig) || 0;
+  });
+  document.querySelectorAll(`.wh-pend-spb[data-order="${orderId}"]`).forEach(inp => {
+    const itemId = inp.dataset.item;
+    packEdits[itemId] = packEdits[itemId] || {};
+    packEdits[itemId].spb = parseInt(inp.value) || 0;
+    packEdits[itemId].origSpb = parseInt(inp.dataset.orig) || 0;
+  });
+
+  const changedItems = [];
+  for (const [itemId, e] of Object.entries(packEdits)) {
+    const bpbChanged = e.bpb && e.bpb !== e.origBpb;
+    const spbChanged = e.spb && e.spb !== e.origSpb;
+    if (!bpbChanged && !spbChanged) continue;
+    const { error: itErr } = await sb.from('order_items').update({
+      wh_fact_bpb:     bpbChanged ? e.bpb : null,
+      wh_fact_spb:     spbChanged ? e.spb : null,
+      wh_note:         notes[itemId] || null,
+      wh_confirmed_at: null, // требуется подтверждение менеджера
+    }).eq('id', itemId);
+    if (!itErr) changedItems.push(e);
+  }
+
   const { error } = await sb.from('orders').update({
     wh_pack_notes:    JSON.stringify(notes),
     wh_pack_saved_at: new Date().toISOString(),
@@ -5954,7 +6043,13 @@ async function saveWhPackingNotes(orderId) {
       `Заметок: ${Object.keys(notes).length}`);
     const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
     const hasNotes = Object.keys(notes).length > 0;
-    if (hasNotes) {
+    if (changedItems.length) {
+      for (const m of (mgrs||[])) {
+        await sendNotification(m.id,
+          `⚠️ Склад изменил пакинг: заказ ${order?.order_number}`,
+          `${changedItems.length} позиций — изменены банчи/стебли, требуется подтверждение / 包装已修改，需确认`, '⚠️');
+      }
+    } else if (hasNotes) {
       for (const m of (mgrs||[])) {
         await sendNotification(m.id,
           `📋 Склад добавил заметки: заказ ${order?.order_number}`,
@@ -5963,7 +6058,9 @@ async function saveWhPackingNotes(orderId) {
     }
   } catch(e) {}
 
-  toast('✅ Заметки сохранены, менеджер уведомлён / 备注已保存');
+  toast(changedItems.length
+    ? `✅ Сохранено. Изменён пакинг: ${changedItems.length} поз. — менеджер уведомлён / 已保存，待经理确认`
+    : '✅ Заметки сохранены, менеджер уведомлён / 备注已保存');
   loadWhPending();
 }
 
@@ -6782,7 +6879,7 @@ async function loadReceiving() {
                 <input type="number" min="0" value="${factBox}"
                   class="inp recv-fact" data-id="${item.id}"
                   data-ordered="${ordBoxes}" data-ord-bpb="${ordBpb}" data-ord-spb="${ordSpb}"
-                  data-price-bunch="${priceBunch}"
+                  data-price-bunch="${priceBunch}" data-name="${(ru+(cn?' / '+cn:'')).replace(/"/g,'&quot;')}"
                   style="width:60px;text-align:center;padding:4px;font-size:13px;font-weight:700"
                   oninput="updateRecvRow('${item.id}')">
               </td>
@@ -7056,28 +7153,39 @@ function exportReceivingExcel(orderId) {
   const rows = document.querySelectorAll('.recv-fact');
   if (!rows.length) { toast('Нет данных / 无数据'); return; }
 
-  const aoa = [['Товар / 商品', 'Заказано кор.', 'Факт кор.', 'Разница', 'Банч/кор.', 'Ст/банч.', 'Факт банч.', 'Факт стеблей', 'Замена / 换货', 'Заметка / 备注', 'Статус']];
+  const aoa = [['Товар / 商品',
+    'Заказано кор.\n订购箱', 'Факт кор.\n实收箱', 'Δ кор.',
+    'Банч/кор. заказ\n订购扎/箱', 'Банч/кор. факт\n实际扎/箱',
+    'Ст/банч заказ\n订购枝/扎', 'Ст/банч факт\n实际枝/扎',
+    'Факт банчей всего\n实收扎数', 'Факт стеблей всего\n实收枝数',
+    'Замена / 换货', 'Заметка / 备注', 'Статус / 状态']];
 
   rows.forEach(input => {
     const id      = input.dataset.id;
     const ordered = parseInt(input.dataset.ordered) || 0;
     const fact    = parseInt(input.value) || 0;
     const diff    = fact - ordered;
-    const bpb     = parseInt(input.dataset.bpb) || 0;
-    const spb     = parseInt(input.dataset.spb) || 0;
+    const ordBpb  = parseInt(input.dataset.ordBpb) || 0;
+    const ordSpb  = parseInt(input.dataset.ordSpb) || 0;
+    const factBpb = parseInt(document.querySelector(`.recv-bpb[data-id="${id}"]`)?.value) || ordBpb;
+    const factSpb = parseInt(document.querySelector(`.recv-spb[data-id="${id}"]`)?.value) || ordSpb;
     const note    = document.querySelector(`.recv-note[data-id="${id}"]`)?.value?.trim() || '';
     const isRepl  = document.querySelector(`.recv-replaced-cb[data-id="${id}"]`)?.checked || false;
     const replWith = isRepl ? (document.querySelector(`.recv-replaced[data-id="${id}"]`)?.value?.trim()||'') : '';
 
-    // Get flower name from row
-    const rowEl   = document.getElementById('recv-item-'+id);
-    const name    = rowEl?.querySelector('div[style*="font-size:13px"]')?.textContent?.trim() || id;
+    const name = input.dataset.name || id;
 
-    const factBunches = bpb ? fact * bpb : '';
-    const factStems   = (bpb && spb) ? fact * bpb * spb : '';
-    const status  = diff === 0 ? '✓ Норма' : diff < 0 ? `Нехватка ${diff}` : `Излишек +${diff}`;
+    const factBunches = factBpb ? fact * factBpb : '';
+    const factStems   = (factBpb && factSpb) ? fact * factBpb * factSpb : '';
+    const packChanged = (ordBpb && factBpb !== ordBpb) || (ordSpb && factSpb !== ordSpb);
+    const status = diff < 0 ? `Нехватка ${diff}`
+                 : diff > 0 ? `Излишек +${diff}`
+                 : packChanged ? 'Изменён пакинг'
+                 : '✓ Норма';
 
-    aoa.push([name, ordered, fact, diff, bpb||'', spb||'', factBunches, factStems,
+    aoa.push([name, ordered, fact, diff,
+      ordBpb||'', factBpb||'', ordSpb||'', factSpb||'',
+      factBunches, factStems,
       isRepl ? `→ ${replWith}` : '', note, status]);
   });
 
@@ -7085,12 +7193,12 @@ function exportReceivingExcel(orderId) {
   if (genNote) { aoa.push([]); aoa.push(['Общая заметка:', genNote]); }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{wch:30},{wch:12},{wch:12},{wch:10},{wch:10},{wch:10},{wch:12},{wch:14},{wch:20},{wch:30},{wch:14}];
+  ws['!cols'] = [{wch:30},{wch:12},{wch:12},{wch:8},{wch:13},{wch:13},{wch:13},{wch:13},{wch:13},{wch:14},{wch:18},{wch:28},{wch:16}];
 
   // Color shortages
   for (let r = 1; r < aoa.length; r++) {
     if (aoa[r][3] < 0) {
-      ['A','B','C','D','K'].forEach(col => {
+      ['A','B','C','D','M'].forEach(col => {
         const addr = col+(r+1);
         if (ws[addr]) ws[addr].s = {fill:{fgColor:{rgb:'FEF2F2'}},font:{color:{rgb:'DC2626'}}};
       });
