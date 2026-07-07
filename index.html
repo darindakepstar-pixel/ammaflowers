@@ -1299,8 +1299,32 @@ function goBack() {
 //  FLOWERS / PRICE LIST
 // ══════════════════════════════════════════════════════════
 async function loadFlowers() {
-  const { data } = await sb.from('flowers').select('*').order('id');
-  if (data) flowers = data;
+  // Порционная загрузка: base64-фото делают таблицу тяжёлой,
+  // один запрос select=* на всю таблицу падает с 500 (timeout/размер ответа)
+  flowers = [];
+  const CHUNK = 25;
+  let from = 0;
+  while (true) {
+    let { data, error } = await sb.from('flowers')
+      .select('*').order('id').range(from, from + CHUNK - 1);
+    if (error) {
+      console.warn(`flowers chunk ${from}: ${error.message} — повтор без фото`);
+      // Запасной вариант: тот же диапазон, но без тяжёлого photo_url
+      const light = await sb.from('flowers')
+        .select('id,ru,cn,en,cat_ru,cat_en,price_a,price_ap,boxes_per_box,stems,pack,length,order_qty,flower_weight,box_size,in_stock,updated_at')
+        .order('id').range(from, from + CHUNK - 1);
+      if (light.error) {
+        toast('❌ Прайс не загрузился: ' + light.error.message);
+        console.error('flowers load failed:', light.error);
+        break;
+      }
+      data = (light.data || []).map(f => ({ ...f, photo_url: null }));
+    }
+    if (!data || !data.length) break;
+    flowers.push(...data);
+    if (data.length < CHUNK) break;
+    from += CHUNK;
+  }
   document.getElementById('price-updated').textContent =
     `Актуальные цены AMMA FLOWERS · Обновлено: ${localStorage.getItem('ammaPriceUpdated') || '—'}`;
 
