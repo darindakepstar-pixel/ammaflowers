@@ -1350,31 +1350,43 @@ async function migratePhotosToStorage() {
   if (!confirm('Перенести все фото из таблицы flowers в Supabase Storage?\n\nЭто разгрузит прайс и уберёт ошибку 500.\nПеред запуском создайте бакет — см. setup_storage.sql.\n\nПродолжить?')) return;
   const btn = document.getElementById('btn-photo-migrate');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Перенос...'; }
-  let moved = 0, failed = 0, lastId = 0;
+  let moved = 0, failed = 0, skipped = 0;
   try {
-    while (true) {
-      // По одной строке — большие base64 иначе не пролезают
-      const { data, error } = await sb.from('flowers')
-        .select('id,photo_url').like('photo_url', 'data:%')
-        .gt('id', lastId).order('id').limit(1);
-      if (error) { toast('❌ ' + error.message); break; }
-      if (!data || !data.length) break;
-      const f = data[0];
-      lastId = f.id;
+    // Шаг 1: лёгкий список всех id (без тяжёлой колонки photo_url —
+    // любой фильтр по ней заставляет БД читать все 200МБ и падать по таймауту)
+    const { data: ids, error: idErr } = await sb.from('flowers')
+      .select('id').order('id');
+    if (idErr) { toast('❌ ' + idErr.message); return; }
+
+    // Шаг 2: по каждому id — точечный запрос фото (быстрый, по первичному ключу)
+    for (let i = 0; i < ids.length; i++) {
+      const fid = ids[i].id;
+      if (btn) btn.textContent = `⏳ ${i + 1}/${ids.length} · перенесено ${moved}`;
+      let row;
       try {
-        const blob = await (await fetch(f.photo_url)).blob();
-        const url = await uploadFlowerPhoto(blob, f.id);
+        const { data, error } = await sb.from('flowers')
+          .select('photo_url').eq('id', fid).single();
+        if (error) throw error;
+        row = data;
+      } catch (e) {
+        console.error('Не прочиталось фото id=' + fid, e?.message);
+        failed++;
+        continue;
+      }
+      if (!row?.photo_url || !row.photo_url.startsWith('data:')) { skipped++; continue; }
+      try {
+        const blob = await (await fetch(row.photo_url)).blob();
+        const url = await uploadFlowerPhoto(blob, fid);
         const { error: upErr } = await sb.from('flowers')
-          .update({ photo_url: url }).eq('id', f.id);
+          .update({ photo_url: url }).eq('id', fid);
         if (upErr) throw upErr;
         moved++;
-        const lf = flowers.find(x => x.id === f.id);
+        const lf = flowers.find(x => x.id === fid);
         if (lf) lf.photo_url = url;
-        if (btn) btn.textContent = `⏳ Перенесено: ${moved}`;
       } catch (e) {
-        console.error('Миграция фото id=' + f.id, e);
+        console.error('Миграция фото id=' + fid, e);
         failed++;
-        if (/bucket|Bucket|not found/i.test(e.message||'')) {
+        if (/bucket|Bucket|not found/i.test(e.message || '')) {
           toast('❌ Бакет flower-photos не найден. Выполните setup_storage.sql в Supabase');
           break;
         }
