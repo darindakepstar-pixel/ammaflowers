@@ -8035,7 +8035,7 @@ async function loadMyClaims() {
   // Both 'sent' and 'confirmed' waybills allow claims — client confirmed receipt
   const [waybillsRes, claimsRes] = await Promise.all([
     sb.from('waybills')
-      .select('id,waybill_number,created_at,order_id,order:orders(order_number,date_ship,order_items(flower_snapshot,flower:flowers(ru,cn,photo_url)))')
+      .select('id,waybill_number,created_at,order_id,order:orders(order_number,date_ship,order_items(qty_boxes,price_per_box,subtotal,price_type,bunches_per_box,flower_snapshot,flower:flowers(ru,cn,photo_url)))')
       .eq('client_id', currentUser.id)
       .in('status', ['sent', 'confirmed'])
       .order('created_at', { ascending: false }),
