@@ -855,7 +855,14 @@ document.addEventListener('DOMContentLoaded', function(){
         <div class="loading"><div class="spinner"></div></div>
       </div>
       <!-- Input -->
+      <div id="chat-attach-preview" class="hidden" style="display:flex;align-items:center;gap:8px;padding:6px 10px;margin-bottom:6px;background:var(--sage-l);border-radius:8px;font-size:12px">
+        <span id="chat-attach-name" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎</span>
+        <button class="btn-icon" onclick="clearChatAttachment()" title="Убрать файл">×</button>
+      </div>
       <div style="display:flex;gap:8px;align-items:flex-end;padding-bottom:12px">
+        <input type="file" id="chat-file" class="hidden" onchange="pickChatAttachment(this)">
+        <button class="btn btn-secondary" onclick="document.getElementById('chat-file').click()"
+          title="Прикрепить файл / 附加文件" style="padding:10px 12px;font-size:15px">📎</button>
         <textarea id="chat-input" class="inp" rows="2"
           placeholder="Сообщение / 消息... (Enter — отправить, Shift+Enter — новая строка)"
           style="flex:1;resize:none;padding:10px 12px;font-size:13px;line-height:1.4"
@@ -2245,6 +2252,12 @@ function renderMyOrder() {
           <div style="font-size:10px;color:var(--light)">${(o.order_items||[]).length} поз./件</div>
           <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px;margin-top:3px"
             onclick="event.stopPropagation();openOrderChat('${o.id}')">💬 Чат / 聊天</button>
+          <div style="display:flex;gap:4px;justify-content:flex-end;margin-top:6px">
+            <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px"
+              onclick="exportMyOrderExcel('${o.id}')" title="Скачать заказ в Excel">📊 Excel</button>
+            <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px"
+              onclick="exportMyOrderPDF('${o.id}')" title="Сохранить заказ в PDF">📄 PDF</button>
+          </div>
           <button class="btn btn-secondary btn-sm" style="margin-top:8px;white-space:nowrap"
             onclick="this.closest('.card').querySelector('.order-items-detail').classList.toggle('hidden');
                      this.textContent=this.textContent.includes('▼')?'▲ Скрыть/收起':'▼ Состав/明细'">
@@ -2267,6 +2280,88 @@ function renderMyOrder() {
         История заказов / 订单历史 (${myOrders.length})
       </div>
       ${ordersHTML}` : '');
+}
+
+// ══ Экспорт заказа клиента: Excel ══
+function _myOrderRows(o) {
+  return (o.order_items || []).map((it, i) => {
+    const snap = it.flower_snapshot || {};
+    return {
+      n: i + 1,
+      ru: snap.ru || it.flower?.ru || '—',
+      cn: snap.cn || it.flower?.cn || '',
+      boxes: parseInt(it.qty_boxes) || 0,
+      bpb: it.bunches_per_box || snap.boxes_per_box || '',
+      spb: snap.stems || '',
+      price: parseFloat(it.price_per_box) || 0,
+      sub: parseFloat(it.subtotal) || 0,
+      client: it.client_name || '',
+      comment: it.comment || '',
+    };
+  });
+}
+
+function exportMyOrderExcel(orderId) {
+  const o = myOrders.find(x => x.id === orderId);
+  if (!o) { toast('Заказ не найден'); return; }
+  const rows = _myOrderRows(o);
+  const total = rows.reduce((s, r) => s + r.sub, 0);
+  const totalBoxes = rows.reduce((s, r) => s + r.boxes, 0);
+  const aoa = [
+    ['AMMA FLOWERS · Заказ / 订单'],
+    ['Номер / 单号:', o.order_number, '', 'Дата / 日期:', o.date_order || ''],
+    ['Статус / 状态:', statusLabel(o.status).replace(/<[^>]*>/g,''), '', 'Отгрузка / 出货:', o.date_ship || '—'],
+    [],
+    ['№', 'Название / Name', '名称', 'Кор. / 箱', 'Банч/кор 扎/箱', 'Ст/банч 枝/扎', '¥/кор 件价', 'Сумма / 金额 ¥', 'Субклиент / 子客户', 'Комментарий / 备注'],
+    ...rows.map(r => [r.n, r.ru, r.cn, r.boxes, r.bpb, r.spb, r.price, r.sub, r.client, r.comment]),
+    [],
+    ['', '', 'ИТОГО / 合计:', totalBoxes, '', '', '', total, '', ''],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:4},{wch:28},{wch:14},{wch:8},{wch:11},{wch:10},{wch:10},{wch:12},{wch:16},{wch:20}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Заказ');
+  XLSX.writeFile(wb, `${o.order_number}.xlsx`);
+  toast('📊 Excel сохранён / 已保存: ' + o.order_number);
+}
+
+// ══ Экспорт заказа клиента: PDF (через диалог печати браузера) ══
+function exportMyOrderPDF(orderId) {
+  const o = myOrders.find(x => x.id === orderId);
+  if (!o) { toast('Заказ не найден'); return; }
+  const rows = _myOrderRows(o);
+  const total = rows.reduce((s, r) => s + r.sub, 0);
+  const totalBoxes = rows.reduce((s, r) => s + r.boxes, 0);
+  const tr = rows.map(r => `<tr>
+    <td>${r.n}</td><td class="L"><b>${escHtml(r.ru)}</b><br><span class="cn">${escHtml(r.cn)}</span></td>
+    <td>${r.boxes}</td><td>${r.bpb||'—'}</td><td>${r.spb||'—'}</td>
+    <td>¥${r.price.toFixed(2)}</td><td><b>¥${r.sub.toFixed(2)}</b></td>
+    <td class="L">${escHtml(r.client)}</td><td class="L">${escHtml(r.comment)}</td>
+  </tr>`).join('');
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${o.order_number}</title>
+  <style>
+    body{font-family:'Segoe UI',Arial,sans-serif;color:#1F2A24;margin:24px;font-size:12px}
+    h1{font-size:20px;color:#2F5D50;margin:0 0 2px}
+    .sub{color:#777;font-size:11px;margin-bottom:14px}
+    table{border-collapse:collapse;width:100%;margin-top:10px}
+    th{background:#2F5D50;color:#fff;padding:6px 8px;font-size:11px;text-align:center}
+    td{border:1px solid #ccc;padding:5px 8px;text-align:center;font-size:11px}
+    td.L{text-align:left}
+    .cn{color:#888;font-size:10px}
+    .tot td{font-weight:700;background:#EDF3F0;font-size:12px}
+    @media print{body{margin:8mm}}
+  </style></head><body>
+    <h1>AMMA FLOWERS · ${o.order_number}</h1>
+    <div class="sub">Дата заказа / 下单日期: ${o.date_order || '—'}${o.date_ship ? ' · Отгрузка / 出货: ' + o.date_ship : ''} · Позиций / 件数: ${rows.length}</div>
+    <table>
+      <tr><th>№</th><th>Название / 名称</th><th>Кор.<br>箱</th><th>Банч/кор<br>扎/箱</th><th>Ст/банч<br>枝/扎</th><th>¥/кор<br>件价</th><th>Сумма ¥<br>金额</th><th>Субклиент<br>子客户</th><th>Комментарий<br>备注</th></tr>
+      ${tr}
+      <tr class="tot"><td colspan="2">ИТОГО / 合计</td><td>${totalBoxes}</td><td></td><td></td><td></td><td>¥${total.toFixed(2)}</td><td></td><td></td></tr>
+    </table>
+    <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
+  </body></html>`);
+  w.document.close();
 }
 
 async function submitOrder(existingOrderId = null) {
@@ -5752,7 +5847,16 @@ function appendChatMessage(msg, scroll = true) {
       color:${isMine?'#fff':'var(--text)'};border-radius:${isMine?'12px 12px 2px 12px':'12px 12px 12px 2px'};
       padding:8px 12px;font-size:13px;line-height:1.5;word-break:break-word;
       border:1px solid ${isMine?'transparent':'var(--border)'}">
-      ${escHtml(msg.body)}
+      ${msg.attachment_url ? (
+        msg.attachment_type === 'image'
+          ? `<a href="${msg.attachment_url}" target="_blank" style="display:block;margin-bottom:${msg.body&&!msg.body.startsWith('📎')?'6px':'0'}">
+               <img src="${msg.attachment_url}" style="max-width:220px;max-height:220px;border-radius:8px;display:block" loading="lazy"></a>`
+          : `<a href="${msg.attachment_url}" target="_blank" download="${escHtml(msg.attachment_name||'file')}"
+               style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;margin-bottom:${msg.body&&!msg.body.startsWith('📎')?'6px':'0'};
+               background:${isMine?'rgba(255,255,255,.15)':'var(--sage-l)'};border-radius:8px;color:inherit;text-decoration:none;font-size:12px">
+               📎 ${escHtml(msg.attachment_name || 'файл')}</a>`
+      ) : ''}
+      ${msg.body && !(msg.attachment_url && msg.body.startsWith('📎')) ? escHtml(msg.body) : ''}
       <div id="msg-translation-${msgId}" class="hidden" style="margin-top:6px;padding-top:6px;border-top:1px solid ${isMine?'rgba(255,255,255,.3)':'var(--border)'};
         font-size:11px;opacity:0.9;font-style:italic"></div>
     </div>
@@ -5773,13 +5877,61 @@ function scrollChatToBottom() {
   if (wrap) wrap.scrollTop = wrap.scrollHeight;
 }
 
+// ── Вложения в чате ──
+const CHAT_BUCKET = 'chat-files';
+const CHAT_FILE_MAX = 15 * 1024 * 1024; // 15 МБ
+let _chatAttachment = null;
+
+function pickChatAttachment(inp) {
+  const f = inp.files?.[0];
+  if (!f) return;
+  if (f.size > CHAT_FILE_MAX) {
+    toast('❌ Файл больше 15 МБ / 文件超过15MB');
+    inp.value = '';
+    return;
+  }
+  _chatAttachment = f;
+  document.getElementById('chat-attach-name').textContent =
+    '📎 ' + f.name + ' (' + (f.size / 1024 / 1024).toFixed(1) + ' МБ)';
+  document.getElementById('chat-attach-preview').classList.remove('hidden');
+}
+
+function clearChatAttachment() {
+  _chatAttachment = null;
+  document.getElementById('chat-file').value = '';
+  document.getElementById('chat-attach-preview').classList.add('hidden');
+}
+
+async function uploadChatAttachment(file) {
+  let blob = file;
+  let name = file.name;
+  // Картинки сжимаем (до 1200px), остальное — как есть
+  if (/^image\//.test(file.type)) {
+    try {
+      blob = await compressImage(file, 1200, 0.85);
+      name = name.replace(/\.[^.]+$/, '') + '.jpg';
+    } catch (e) { blob = file; }
+  }
+  const ext = (name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
+  const path = `${_chatRoom || 'general'}/${Date.now()}-${Math.random().toString(36).slice(2,7)}.${ext}`;
+  const { error } = await sb.storage.from(CHAT_BUCKET)
+    .upload(path, blob, { contentType: blob.type || file.type || 'application/octet-stream' });
+  if (error) throw error;
+  return {
+    url: sb.storage.from(CHAT_BUCKET).getPublicUrl(path).data.publicUrl,
+    name,
+    type: /^image\//.test(file.type) ? 'image' : 'file',
+  };
+}
+
 async function sendChatMessage() {
   const input = document.getElementById('chat-input');
   const body = input.value.trim();
-  if (!body) return;
+  const att = _chatAttachment;
+  if (!body && !att) return;
 
   const role = currentUser?.role;
-  const lang = detectLang(body);
+  const lang = detectLang(body || '');
 
   input.value = '';
   input.style.height = '';
@@ -5789,13 +5941,41 @@ async function sendChatMessage() {
     sender_id: currentUser.id,
     sender_name: currentUser.company_name || currentUser.login,
     sender_role: role,
-    body,
+    body: body || (att ? '📎 ' + att.name : ''),
     lang,
     created_at: new Date().toISOString()
   };
 
+  // Загрузка вложения в Storage
+  if (att) {
+    try {
+      const up = await uploadChatAttachment(att);
+      msg.attachment_url  = up.url;
+      msg.attachment_name = up.name;
+      msg.attachment_type = up.type;
+      clearChatAttachment();
+    } catch (e) {
+      console.error('chat attach:', e);
+      if (/bucket|not found/i.test(e.message || '')) {
+        toast('❌ Бакет chat-files не создан. Выполните update_chat_files.sql в Supabase');
+      } else {
+        toast('❌ Не удалось загрузить файл: ' + e.message);
+      }
+      input.value = body;
+      return;
+    }
+  }
+
   const { data, error } = await sb.from('messages').insert(msg).select().single();
-  if (error) { toast('Ошибка отправки / 发送失败: ' + error.message); input.value = body; return; }
+  if (error) {
+    if (/attachment/.test(error.message || '')) {
+      toast('❌ В таблице messages нет колонок вложений. Выполните update_chat_files.sql');
+    } else {
+      toast('Ошибка отправки / 发送失败: ' + error.message);
+    }
+    input.value = body;
+    return;
+  }
 
   // Notify the other party
   await notifyChat(data);
