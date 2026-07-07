@@ -943,6 +943,12 @@ document.addEventListener('DOMContentLoaded', function(){
           <select class="inp" id="wh-label-order" onchange="loadWhLabelOrder()" style="min-width:220px">
             <option value="">— Заказ / 订单 —</option>
           </select>
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--mid)">
+            № на этикетках / 标签单号
+            <input class="inp" id="wh-label-num" placeholder="№ инвойса / 发票号"
+              style="width:150px;padding:6px 8px;font-size:12px;font-weight:700"
+              onchange="if(_currentLabelOrder)renderLabels(_currentLabelOrder)">
+          </label>
           <!-- Label type selector -->
           <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden">
             <button class="ltype-btn active" id="ltype-ru"  onclick="setLabelType('ru',this)"  title="Транспортная RU/EN">🇷🇺 RU/EN</button>
@@ -5451,6 +5457,14 @@ async function buildLabelsFromSelected() {
   // Sort orders by order_number
   orders.sort((a,b) => (a.order_number||0) - (b.order_number||0));
 
+  // Номера инвойсов (на этикетках пишем их, а не номер заказа)
+  window._labelInvMap = {};
+  try {
+    const { data: invs } = await sb.from('invoices')
+      .select('order_id,invoice_number').in('order_id', orders.map(o => o.id));
+    (invs || []).forEach(v => { window._labelInvMap[v.order_id] = v.invoice_number; });
+  } catch(e) {}
+
   _labelsCurrentOrder = orders; // store array
 
   // Info bar
@@ -5473,7 +5487,7 @@ function renderLabelsTable(orders) {
   orders.forEach(order => {
     const client = order.client?.company_name || order.client?.login || '—';
     // Section header per order
-    allRows.push({ _section: true, label: `Заказ #${order.order_number} · ${client} · ${order.date_order||''}` });
+    allRows.push({ _section: true, label: `Заказ #${order.order_number}${window._labelInvMap?.[order.id] ? ' · Инвойс ' + window._labelInvMap[order.id] : ''} · ${client} · ${order.date_order||''}` });
     (order.order_items || []).forEach(item => {
       const snap = item.flower_snapshot || {};
       const flower = item.flower || {};
@@ -6676,6 +6690,15 @@ async function loadWhLabelOrder() {
   if (buyerEl && !buyerEl.value.trim())
     buyerEl.value = order.client?.company_name || order.client?.login || '';
 
+  // На этикетках пишем номер ИНВОЙСА, а не заказа — подставляем автоматически
+  const numEl = document.getElementById('wh-label-num');
+  if (numEl) {
+    const { data: inv } = await sb.from('invoices')
+      .select('invoice_number').eq('order_id', orderId).maybeSingle();
+    numEl.value = inv?.invoice_number || '';
+    if (!inv?.invoice_number) numEl.placeholder = 'нет инвойса — будет ' + order.order_number;
+  }
+
   _currentLabelOrder = order;
   renderLabels(order);
 }
@@ -6688,6 +6711,8 @@ function renderLabels(order) {
   const today     = new Date().toLocaleDateString('ru-RU');
   const seller    = getLabelSeller();
   const buyer     = getLabelBuyer(client);
+  // Номер на этикетках: из поля (№ инвойса) или номер заказа
+  const labelNum  = document.getElementById('wh-label-num')?.value.trim() || String(order.order_number);
 
   let labelsData = [];
 
@@ -6707,12 +6732,13 @@ function renderLabels(order) {
           boxSize: f.box_size||snap.box_size||'', fw: f.flower_weight||snap.flower_weight||'',
           temp: '+2 / +8 °C', country: 'Китай / China / 中国',
           seller, buyer, prodDate: today,
-          batch: String(order.order_number), orderNum: `#${order.order_number}`,
+          batch: labelNum, orderNum: `#${labelNum}`,
           client, clientName: item.client_name||'', comment: item.comment||'',
           boxNum: i+1, totalBoxes: qty });
       }
     });
     printArea.innerHTML = _currentLabelType === 'ru' ? buildLabelsRU(labelsData) : buildLabelsCN(labelsData);
+    makeLabelsEditable(printArea);
   } else {
     let seq = 1;
     items.forEach(item => {
@@ -6727,12 +6753,13 @@ function renderLabels(order) {
       for (let i = 0; i < qty; i++) {
         labelsData.push({ ru, cn, bpb, spb, wb,
           boxSize: f.box_size||snap.box_size||'', pack: f.pack||snap.pack||'',
-          orderNum: String(order.order_number), client,
+          orderNum: labelNum, client,
           clientName: item.client_name||client, comment: item.comment||'',
           boxNum: i+1, totalBoxes: qty, seq: seq++ });
       }
     });
     printArea.innerHTML = buildLabelsBox(labelsData);
+    makeLabelsEditable(printArea);
   }
 
   const typeLabel = _currentLabelType==='ru' ? '🇷🇺 RU/EN транспортные' :
@@ -6743,6 +6770,7 @@ function renderLabels(order) {
       <span style="font-size:12px;color:var(--sage-d);font-weight:700">${typeLabel}</span>
       <span style="font-size:12px;color:var(--mid)">${labelsData.length} шт.</span>
       <button class="btn btn-primary btn-sm" onclick="whDoPrint()">🖨 Печать / 打印</button>
+      <span style="font-size:11px;color:var(--gold, #9A7B2D);width:100%">✏️ Кликните по любому тексту этикетки, чтобы исправить его перед печатью. Изменения пропадут при перегенерации (смене заказа/типа/номера).</span>
     </div>`;
 }
 
@@ -6927,6 +6955,15 @@ function buildLabelsBox(data) {
   </div></div>`).join('');
 
   return css + summary + `<div class="b-area" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px 0">${labels}</div>`;
+}
+
+// Делает текст этикеток редактируемым кликом (до печати)
+function makeLabelsEditable(printArea) {
+  if (!printArea) return;
+  printArea.setAttribute('contenteditable', 'true');
+  printArea.setAttribute('spellcheck', 'false');
+  printArea.style.outline = 'none';
+  printArea.style.cursor = 'text';
 }
 
 function whDoPrint() {
