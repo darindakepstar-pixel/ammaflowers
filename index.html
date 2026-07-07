@@ -1304,6 +1304,32 @@ function goBack() {
 }
 
 // ══════════════════════════════════════════════════════════
+//  ВЕСОВЫЕ ПОЗИЦИИ (зелень/эвкалипт): граммы вместо стеблей
+// ══════════════════════════════════════════════════════════
+function isWeightItem(x) {
+  if (!x) return false;
+  const cat = [x.cat_ru, x.cat_en, x.cat_cn].filter(Boolean).join(' ');
+  if (/зелень|листья|叶材|greenery|foliage|leaves/i.test(cat)) return true;
+  // Запасной признак: единица веса в поле «Упаковка» ("500г/банч", "0.5кг")
+  return /\d\s*(г|гр|кг|克|公斤|g|kg)\b/i.test(x.pack || '');
+}
+// Для позиции заказа: snapshot (полная копия цветка) → joined flower → прайс
+function itemWeightBased(item) {
+  const snap = item?.flower_snapshot || {};
+  if (snap.cat_ru || snap.cat_en || snap.pack) return isWeightItem(snap);
+  if (item?.flower?.cat_ru || item?.flower?.pack) return isWeightItem(item.flower);
+  const f = (typeof flowers !== 'undefined' ? flowers : []).find(z => z.id === item?.flower_id);
+  return f ? isWeightItem(f) : false;
+}
+// Форматирование количества: 500 → "500 г", 1500 → "1.5 кг"; для цветов — просто число
+function fmtStems(v, weight) {
+  v = parseInt(v) || 0;
+  if (!v) return '—';
+  if (!weight) return String(v);
+  return v >= 1000 ? ((v/1000).toFixed(v % 1000 ? 1 : 0) + ' кг') : (v + ' г');
+}
+
+// ══════════════════════════════════════════════════════════
 //  PHOTO: сжатие + Supabase Storage
 // ══════════════════════════════════════════════════════════
 const PHOTO_BUCKET = 'flower-photos';
@@ -1644,8 +1670,8 @@ function renderPrice() {
       <td style="font-size:10px;color:var(--mid)">${f.pack||''}</td>
       <td>${priceCell}</td>
       <td style="color:var(--mid)">${f.boxes_per_box}</td>
-      <td style="color:var(--mid)">${f.stems||''}</td>
-      <td style="color:var(--mid);font-size:10px">${(f.stems && f.boxes_per_box) ? (f.stems * f.boxes_per_box) : ''}</td>
+      <td style="color:var(--mid)">${f.stems ? fmtStems(f.stems, isWeightItem(f)) : ''}</td>
+      <td style="color:var(--mid);font-size:10px">${(f.stems && f.boxes_per_box) ? fmtStems(f.stems * f.boxes_per_box, isWeightItem(f)) : ''}</td>
       <td style="color:var(--mid);font-size:10px">${f.length||''}</td>
       <td style="color:var(--mid);font-size:10px">${f.order_qty||''}</td>
       <td style="color:var(--mid);font-size:10px">${f.flower_weight||''}</td>
@@ -2204,12 +2230,14 @@ function renderMyOrder() {
       const wo = snap.wh_orig || {};
       const chBpb = wo.bpb && item.wh_confirmed_at && parseInt(wo.bpb) !== parseInt(item.bunches_per_box);
       const chSpb = wo.spb && item.wh_confirmed_at && snap.stems && parseInt(wo.spb) !== parseInt(snap.stems);
+      const wgt = isWeightItem(snap) || itemWeightBased(item);
+      const uR = wgt ? 'г' : 'ст';
       const packLine = item.bunches_per_box || snap.stems
-        ? `<div style="font-size:10px;color:${(chBpb||chSpb)?'#d97706':'var(--mid)'}">${item.bunches_per_box?item.bunches_per_box+' банч/кор':''}${snap.stems?' · '+snap.stems+' ст/банч':''}</div>`
+        ? `<div style="font-size:10px;color:${(chBpb||chSpb)?'#d97706':'var(--mid)'}">${item.bunches_per_box?item.bunches_per_box+' банч/кор':''}${snap.stems?' · '+fmtStems(snap.stems,wgt)+'/банч':''}</div>`
         : '';
       const whChangeLine = (chBpb || chSpb)
         ? `<div style="font-size:10px;font-weight:700;color:#92400e;background:#fff7ed;border-radius:4px;padding:2px 6px;margin-top:2px;display:inline-block">
-             📦 Пакинг скорректирован складом:${chBpb?` банч/кор ${wo.bpb}→${item.bunches_per_box}`:''}${chSpb?` · ст/банч ${wo.spb}→${snap.stems}`:''} / 包装已调整
+             📦 Пакинг скорректирован складом:${chBpb?` банч/кор ${wo.bpb}→${item.bunches_per_box}`:''}${chSpb?` · ${uR}/банч ${wo.spb}→${snap.stems}`:''} / 包装已调整
            </div>`
         : '';
       return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;${idx?'border-top:1px solid var(--border)':''}">
@@ -2293,6 +2321,7 @@ function _myOrderRows(o) {
       boxes: parseInt(it.qty_boxes) || 0,
       bpb: it.bunches_per_box || snap.boxes_per_box || '',
       spb: snap.stems || '',
+      wgt: isWeightItem(snap) || itemWeightBased(it),
       price: parseFloat(it.price_per_box) || 0,
       sub: parseFloat(it.subtotal) || 0,
       client: it.client_name || '',
@@ -2312,8 +2341,8 @@ function exportMyOrderExcel(orderId) {
     ['Номер / 单号:', o.order_number, '', 'Дата / 日期:', o.date_order || ''],
     ['Статус / 状态:', statusLabel(o.status).replace(/<[^>]*>/g,''), '', 'Отгрузка / 出货:', o.date_ship || '—'],
     [],
-    ['№', 'Название / Name', '名称', 'Кор. / 箱', 'Банч/кор 扎/箱', 'Ст/банч 枝/扎', '¥/кор 件价', 'Сумма / 金额 ¥', 'Субклиент / 子客户', 'Комментарий / 备注'],
-    ...rows.map(r => [r.n, r.ru, r.cn, r.boxes, r.bpb, r.spb, r.price, r.sub, r.client, r.comment]),
+    ['№', 'Название / Name', '名称', 'Кор. / 箱', 'Банч/кор 扎/箱', 'Ст(г)/банч 枝(克)/扎', '¥/кор 件价', 'Сумма / 金额 ¥', 'Субклиент / 子客户', 'Комментарий / 备注'],
+    ...rows.map(r => [r.n, r.ru, r.cn, r.boxes, r.bpb, r.wgt && r.spb ? fmtStems(r.spb, true) : r.spb, r.price, r.sub, r.client, r.comment]),
     [],
     ['', '', 'ИТОГО / 合计:', totalBoxes, '', '', '', total, '', ''],
   ];
@@ -2334,7 +2363,7 @@ function exportMyOrderPDF(orderId) {
   const totalBoxes = rows.reduce((s, r) => s + r.boxes, 0);
   const tr = rows.map(r => `<tr>
     <td>${r.n}</td><td class="L"><b>${escHtml(r.ru)}</b><br><span class="cn">${escHtml(r.cn)}</span></td>
-    <td>${r.boxes}</td><td>${r.bpb||'—'}</td><td>${r.spb||'—'}</td>
+    <td>${r.boxes}</td><td>${r.bpb||'—'}</td><td>${r.spb ? fmtStems(r.spb, r.wgt) : '—'}</td>
     <td>¥${r.price.toFixed(2)}</td><td><b>¥${r.sub.toFixed(2)}</b></td>
     <td class="L">${escHtml(r.client)}</td><td class="L">${escHtml(r.comment)}</td>
   </tr>`).join('');
@@ -2355,7 +2384,7 @@ function exportMyOrderPDF(orderId) {
     <h1>AMMA FLOWERS · ${o.order_number}</h1>
     <div class="sub">Дата заказа / 下单日期: ${o.date_order || '—'}${o.date_ship ? ' · Отгрузка / 出货: ' + o.date_ship : ''} · Позиций / 件数: ${rows.length}</div>
     <table>
-      <tr><th>№</th><th>Название / 名称</th><th>Кор.<br>箱</th><th>Банч/кор<br>扎/箱</th><th>Ст/банч<br>枝/扎</th><th>¥/кор<br>件价</th><th>Сумма ¥<br>金额</th><th>Субклиент<br>子客户</th><th>Комментарий<br>备注</th></tr>
+      <tr><th>№</th><th>Название / 名称</th><th>Кор.<br>箱</th><th>Банч/кор<br>扎/箱</th><th>Ст(г)/банч<br>枝(克)/扎</th><th>¥/кор<br>件价</th><th>Сумма ¥<br>金额</th><th>Субклиент<br>子客户</th><th>Комментарий<br>备注</th></tr>
       ${tr}
       <tr class="tot"><td colspan="2">ИТОГО / 合计</td><td>${totalBoxes}</td><td></td><td></td><td></td><td>¥${total.toFixed(2)}</td><td></td><td></td></tr>
     </table>
@@ -2706,7 +2735,7 @@ function renderOrderDetail(order) {
             : `<span style="color:#92400e;margin-left:8px">
                 По договору: ${ordB} кор × ${ordBpb} банч = <b>¥${ordTotal.toFixed(2)}</b>
                 → Факт: ${factB} кор × ${factBpb} банч = <b style="color:${factTotal!==ordTotal?'#dc2626':'inherit'}">¥${factTotal.toFixed(2)}</b>
-                ${it.wh_fact_spb != null ? `· стеблей/банч: <b>${it.wh_fact_spb}</b>` : ''}
+                ${it.wh_fact_spb != null ? `· ${itemWeightBased(it) ? 'вес/банч' : 'стеблей/банч'}: <b>${fmtStems(it.wh_fact_spb, itemWeightBased(it))}</b>` : ''}
                 ${it.wh_note ? `<i style="color:#6b7280;margin-left:6px">(${it.wh_note})</i>` : ''}
               </span>`}
         </div>`;
@@ -2732,7 +2761,7 @@ function renderOrderDetail(order) {
     const whBadge = whPending
       ? `<div style="font-size:9px;color:#d97706;font-weight:700;margin-top:2px">🏭 Склад изменил пакинг — см. баннер выше</div>`
       : (whBpbApplied || whSpbApplied)
-        ? `<div style="font-size:9px;color:#d97706;margin-top:2px">✏️ Склад:${whBpbApplied?` банч ${wo.bpb}→${item.bunches_per_box}`:''}${whSpbApplied?` · ст ${wo.spb}→${snap.stems}`:''}</div>`
+        ? `<div style="font-size:9px;color:#d97706;margin-top:2px">✏️ Склад:${whBpbApplied?` банч ${wo.bpb}→${item.bunches_per_box}`:''}${whSpbApplied?` · ${itemWeightBased(item)?'г':'ст'} ${wo.spb}→${snap.stems}`:''}</div>`
         : '';
     return `
     <tr class="${i%2?'stripe':''}" id="mgr-row-${i}" ${whPending?'style="background:#fff7ed"':''}>
@@ -6228,6 +6257,7 @@ async function loadWhPending() {
       const curBpb = (item.wh_fact_bpb != null && !item.wh_confirmed_at) ? item.wh_fact_bpb : bpb;
       const curSpb = (item.wh_fact_spb != null && !item.wh_confirmed_at) ? item.wh_fact_spb : spb;
       const qty = parseInt(item.qty_boxes) || 1;
+      const wgt = isWeightItem(item.flower_snapshot || {}) || itemWeightBased(item);
       window._whPendItems = window._whPendItems || {};
       window._whPendItems[item.id] = item;
       return `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
@@ -6242,14 +6272,14 @@ async function loadWhPending() {
                 oninput="whPendRecalc('${order.id}','${item.id}')"
                 style="width:52px;text-align:center;padding:2px 4px;font-size:11px;font-weight:700${curBpb&&bpb&&curBpb!=bpb?';background:#fff7ed;border-color:#f59e0b':''}">
             </label>
-            <label style="font-size:10px;color:var(--mid);display:flex;align-items:center;gap:3px">ст/банч 枝/扎
-              <input type="number" min="0" class="inp wh-pend-spb" data-order="${order.id}" data-item="${item.id}" data-orig="${spb||0}" data-qty="${qty}"
+            <label style="font-size:10px;color:var(--mid);display:flex;align-items:center;gap:3px">${wgt?'г/банч 克/扎':'ст/банч 枝/扎'}
+              <input type="number" min="0" class="inp wh-pend-spb" data-order="${order.id}" data-item="${item.id}" data-orig="${spb||0}" data-qty="${qty}" data-wb="${wgt?1:0}"
                 value="${curSpb||''}" placeholder="${spb||'—'}"
                 oninput="whPendRecalc('${order.id}','${item.id}')"
                 style="width:52px;text-align:center;padding:2px 4px;font-size:11px;font-weight:700${curSpb&&spb&&curSpb!=spb?';background:#fff7ed;border-color:#f59e0b':''}">
             </label>
             <span id="wh-pend-tot-${item.id}" style="font-size:10px;font-weight:700;color:${(curBpb&&bpb&&curBpb!=bpb)||(curSpb&&spb&&curSpb!=spb)?'#d97706':'var(--sage-d)'}">
-              = ${curBpb?qty*curBpb:'—'} банч · ${(curBpb&&curSpb)?qty*curBpb*curSpb:'—'} ст
+              = ${curBpb?qty*curBpb:'—'} банч · ${(curBpb&&curSpb)?fmtStems(qty*curBpb*curSpb,wgt):'—'}${wgt?'':' ст'}
             </span>
             ${pack?`<span style="font-size:10px;background:#f0f9ff;color:#0369a1;padding:1px 6px;border-radius:4px">${pack}</span>`:''}
           </div>
@@ -6288,7 +6318,7 @@ async function loadWhPending() {
       <!-- Items list with packing notes -->
       <div style="margin-bottom:10px">${rows}</div>
       <div id="wh-ordstems-${order.id}" style="font-size:12px;font-weight:700;color:var(--sage-d);padding:6px 10px;background:var(--sage-l);border-radius:6px;margin-bottom:8px">
-        🌸 Всего по заказу: <span class="ws-b">…</span> банчей · <span class="ws-s">…</span> стеблей
+        🌸 Всего по заказу: <span class="ws-b">…</span> банчей · <span class="ws-s">…</span>
       </div>
 
       <!-- General note -->
@@ -6331,7 +6361,8 @@ function whPendRecalc(orderId, itemId) {
   spbInp.style.borderColor = sChanged ? '#f59e0b' : '';
   const tot = document.getElementById('wh-pend-tot-' + itemId);
   if (tot) {
-    tot.innerHTML = `= ${bpb ? qty*bpb : '—'} банч · ${(bpb&&spb) ? qty*bpb*spb : '—'} ст`;
+    const wb = spbInp.dataset.wb === '1';
+    tot.innerHTML = `= ${bpb ? qty*bpb : '—'} банч · ${(bpb&&spb) ? fmtStems(qty*bpb*spb, wb) : '—'}${wb?'':' ст'}`;
     tot.style.color = (bChanged || sChanged) ? '#d97706' : 'var(--sage-d)';
   }
   whPendOrderTotal(orderId);
@@ -6339,19 +6370,21 @@ function whPendRecalc(orderId, itemId) {
 
 // Итог банчей/стеблей по всему заказу
 function whPendOrderTotal(orderId) {
-  let tb = 0, ts = 0;
+  let tb = 0, ts = 0, tg = 0; // банчи, стебли, граммы
   document.querySelectorAll(`.wh-pend-bpb[data-order="${orderId}"]`).forEach(bi => {
     const si  = document.querySelector(`.wh-pend-spb[data-item="${bi.dataset.item}"]`);
     const qty = parseInt(bi.dataset.qty) || 1;
     const b   = parseInt(bi.value) || 0;
     const sp  = parseInt(si?.value) || 0;
     tb += qty * b;
-    ts += qty * b * sp;
+    if (si?.dataset.wb === '1') tg += qty * b * sp;
+    else ts += qty * b * sp;
   });
   const box = document.getElementById('wh-ordstems-' + orderId);
   if (box) {
     box.querySelector('.ws-b').textContent = tb || '—';
-    box.querySelector('.ws-s').textContent = ts || '—';
+    box.querySelector('.ws-s').textContent =
+      (ts ? ts + ' ст' : '') + (ts && tg ? ' + ' : '') + (tg ? fmtStems(tg, true) + ' зелени' : '') || '—';
   }
 }
 
@@ -6668,8 +6701,9 @@ function renderLabels(order) {
       const spb  = parseInt(f.stems || snap.stems) || '';
       const spbox = (bpb && spb) ? bpb * spb : '';
       const qty  = parseInt(item.qty_boxes) || 1;
+      const wb = isWeightItem((snap.cat_ru || snap.pack) ? snap : f);
       for (let i = 0; i < qty; i++) {
-        labelsData.push({ ru, cn, bpb, spb, spbox,
+        labelsData.push({ ru, cn, bpb, spb, spbox, wb,
           boxSize: f.box_size||snap.box_size||'', fw: f.flower_weight||snap.flower_weight||'',
           temp: '+2 / +8 °C', country: 'Китай / China / 中国',
           seller, buyer, prodDate: today,
@@ -6689,8 +6723,9 @@ function renderLabels(order) {
       const bpb  = parseInt(item.bunches_per_box) || parseInt(f.boxes_per_box || snap.boxes_per_box) || '';
       const spb  = parseInt(f.stems || snap.stems) || '';
       const qty  = parseInt(item.qty_boxes) || 1;
+      const wb = isWeightItem((snap.cat_ru || snap.pack) ? snap : f);
       for (let i = 0; i < qty; i++) {
-        labelsData.push({ ru, cn, bpb, spb,
+        labelsData.push({ ru, cn, bpb, spb, wb,
           boxSize: f.box_size||snap.box_size||'', pack: f.pack||snap.pack||'',
           orderNum: String(order.order_number), client,
           clientName: item.client_name||client, comment: item.comment||'',
@@ -6745,9 +6780,9 @@ function buildLabelsRU(data) {
   </style>`;
   const labels = data.map(d => {
     const parts=[];
-    if(d.spb)   parts.push('Стеблей в связке: '+d.spb);
+    if(d.spb)   parts.push(d.wb ? 'Вес связки: '+fmtStems(d.spb,true) : 'Стеблей в связке: '+d.spb);
     if(d.bpb)   parts.push('Связок в коробе: '+d.bpb);
-    if(d.spbox) parts.push('Стеблей в коробе: '+d.spbox);
+    if(d.spbox) parts.push(d.wb ? 'Вес в коробе: '+fmtStems(d.spbox,true) : 'Стеблей в коробе: '+d.spbox);
     const stemLine = parts.length ? '<div class="rlabel-stem">'+parts.join(' &middot; ')+'</div>' : '';
     return '<div class="rwrap"><div class="rlabel">'
       +'<div class="rlabel-boxn">Box '+d.boxNum+'/'+d.totalBoxes+'</div>'
@@ -6866,7 +6901,7 @@ function buildLabelsBox(data) {
     <td style="text-align:center;font-weight:700">${d.seq}</td>
     <td><b>${escHtml(d.clientName)}</b></td>
     <td>${escHtml(d.cn||d.ru)}<br><span style="font-size:9px;color:#666">${escHtml(d.ru)}</span></td>
-    <td style="text-align:center">${escHtml(d.pack||(d.spb?d.spb+'枝/扎':''))}</td>
+    <td style="text-align:center">${escHtml(d.pack||(d.spb?d.spb+(d.wb?'克/扎':'枝/扎'):''))}</td>
     <td style="text-align:center">${d.bpb||'—'} 扎</td>
     <td style="text-align:center">${d.boxSize||'—'}</td>
   </tr>`).join('');
@@ -6884,7 +6919,7 @@ function buildLabelsBox(data) {
     </div>
     <div class="blabel-row"><span class="blabel-k">商品:</span><span class="blabel-v">${escHtml(d.cn||d.ru)}</span></div>
     ${d.cn&&d.ru?`<div class="blabel-ru">${escHtml(d.ru)}</div>`:''}
-    ${d.pack||d.spb?`<div class="blabel-row"><span class="blabel-k">规格:</span><span class="blabel-v">${escHtml(d.pack||(d.spb+'枝/扎'))}</span></div>`:''}
+    ${d.pack||d.spb?`<div class="blabel-row"><span class="blabel-k">规格:</span><span class="blabel-v">${escHtml(d.pack||(d.spb+(d.wb?'克/扎':'枝/扎')))}</span></div>`:''}
     ${d.bpb?`<div class="blabel-row"><span class="blabel-k">装箱数:</span><span class="blabel-v">${d.bpb} 扎</span></div>`:''}
     ${d.boxSize?`<div class="blabel-row"><span class="blabel-k">箱型:</span><span class="blabel-v">${d.boxSize}</span></div>`:''}
     <div class="blabel-row"><span class="blabel-k">订单:</span><span class="blabel-v">#${d.orderNum}</span></div>
