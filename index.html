@@ -5891,7 +5891,7 @@ function appendChatMessage(msg, scroll = true) {
       padding:8px 12px;font-size:13px;line-height:1.5;word-break:break-word;
       border:1px solid ${isMine?'transparent':'var(--border)'}">
       ${msg.attachment_url ? (
-        msg.attachment_type === 'image'
+        (msg.attachment_type === 'image' || /\.(jpe?g|png|webp|gif)(\?|$)/i.test(msg.attachment_url))
           ? `<a href="${msg.attachment_url}" target="_blank" style="display:block;margin-bottom:${msg.body&&!msg.body.startsWith('📎')?'6px':'0'}">
                <img src="${msg.attachment_url}" style="max-width:220px;max-height:220px;border-radius:8px;display:block" loading="lazy"></a>`
           : `<a href="${msg.attachment_url}" target="_blank" download="${escHtml(msg.attachment_name||'file')}"
@@ -8657,10 +8657,12 @@ async function submitClaim() {
   if (files.length) {
     toast('⏳ Загружаем фото / 上传照片中...');
     for (const file of files) {
-      const ext  = file.name.split('.').pop().toLowerCase();
-      const path = `claims/${currentUser.id}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      // Сжимаем до 1200px — надёжнее загрузка и быстрее просмотр у менеджера
+      let blob = file;
+      try { blob = await compressImage(file, 1200, 0.85); } catch(e) { blob = file; }
+      const path = `claims/${currentUser.id}_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
       const { data: up, error: upErr } = await sb.storage
-        .from('claim-photos').upload(path, file, { upsert: true, contentType: file.type });
+        .from('claim-photos').upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
       if (!upErr) {
         const { data: urlData } = sb.storage.from('claim-photos').getPublicUrl(path);
         if (urlData?.publicUrl) photosUrls.push(urlData.publicUrl);
@@ -8670,7 +8672,8 @@ async function submitClaim() {
       }
     }
     if (photoFailCount > 0) {
-      toast(`⚠️ ${photoFailCount} фото не загрузились (проверьте bucket claim-photos) / ${photoFailCount}张照片上传失败`);
+      const goOn = confirm(`⚠️ ${photoFailCount} из ${files.length} фото НЕ загрузились — претензия уйдёт без них.\n(Обычно причина: в Supabase не создан бакет claim-photos — см. setup_storage_all.sql)\n\nОтправить претензию без фото? / 照片上传失败，是否继续提交?`);
+      if (!goOn) { toast('Отправка отменена / 已取消'); return; }
     }
   }
 
