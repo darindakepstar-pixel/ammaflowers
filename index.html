@@ -639,6 +639,7 @@ document.addEventListener('DOMContentLoaded', function(){
             <span>Автонаценка / 自动加价</span>
           </label>
           <button class="btn btn-secondary btn-sm" style="padding:3px 9px;font-size:11px" onclick="showMarkupClientsModal()" title="Выбрать, каким клиентам показывать цены с наценкой">⚙️ Клиенты / 客户</button>
+          <button class="btn btn-secondary btn-sm" id="btn-photo-migrate" style="padding:3px 9px;font-size:11px" onclick="migratePhotosToStorage()" title="Перенести base64-фото из таблицы в Supabase Storage — разгружает прайс">📤 Фото → Storage</button>
         </span>
         <span class="btn btn-primary mgr-only" onclick="showAddFlowerModal()" id="btn-add-flower" style="display:none">+ Добавить цветок / 添加花材</span>
         <span style="font-size:11px;color:var(--light)" id="price-count"></span>
@@ -1296,6 +1297,98 @@ function goBack() {
 }
 
 // ══════════════════════════════════════════════════════════
+//  PHOTO: сжатие + Supabase Storage
+// ══════════════════════════════════════════════════════════
+const PHOTO_BUCKET = 'flower-photos';
+
+// Сжатие изображения: max 900px по большей стороне, JPEG ~82%
+async function compressImage(input, maxDim = 900, quality = 0.82) {
+  const blob = input instanceof Blob ? input : new Blob([input]);
+  const bmp = await createImageBitmap(blob);
+  const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * scale));
+  const h = Math.max(1, Math.round(bmp.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  bmp.close?.();
+  return await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+}
+
+// Blob → base64 data-URL (запасной вариант, если Storage недоступен)
+function blobToDataURL(blob) {
+  return new Promise(res => {
+    const r = new FileReader();
+    r.onload = e => res(e.target.result);
+    r.readAsDataURL(blob);
+  });
+}
+
+// Загрузка фото в Storage → публичная ссылка
+async function uploadFlowerPhoto(fileOrBlob, flowerId) {
+  const blob = await compressImage(fileOrBlob);
+  const path = `flower-${flowerId || 'new'}-${Date.now()}-${Math.random().toString(36).slice(2,7)}.jpg`;
+  const { error } = await sb.storage.from(PHOTO_BUCKET)
+    .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+  if (error) throw error;
+  return sb.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+// Универсально: пробуем Storage, при недоступности — сжатый base64
+async function processFlowerPhoto(file, flowerId) {
+  try {
+    return await uploadFlowerPhoto(file, flowerId);
+  } catch (e) {
+    console.warn('Storage недоступен, сохраняю сжатый base64:', e.message);
+    toast('⚠️ Storage не настроен — фото сохранено в таблицу (сжатое). См. setup_storage.sql');
+    return await blobToDataURL(await compressImage(file));
+  }
+}
+
+// ── Миграция: base64-фото из таблицы → Storage ──
+async function migratePhotosToStorage() {
+  if (!confirm('Перенести все фото из таблицы flowers в Supabase Storage?\n\nЭто разгрузит прайс и уберёт ошибку 500.\nПеред запуском создайте бакет — см. setup_storage.sql.\n\nПродолжить?')) return;
+  const btn = document.getElementById('btn-photo-migrate');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Перенос...'; }
+  let moved = 0, failed = 0, lastId = 0;
+  try {
+    while (true) {
+      // По одной строке — большие base64 иначе не пролезают
+      const { data, error } = await sb.from('flowers')
+        .select('id,photo_url').like('photo_url', 'data:%')
+        .gt('id', lastId).order('id').limit(1);
+      if (error) { toast('❌ ' + error.message); break; }
+      if (!data || !data.length) break;
+      const f = data[0];
+      lastId = f.id;
+      try {
+        const blob = await (await fetch(f.photo_url)).blob();
+        const url = await uploadFlowerPhoto(blob, f.id);
+        const { error: upErr } = await sb.from('flowers')
+          .update({ photo_url: url }).eq('id', f.id);
+        if (upErr) throw upErr;
+        moved++;
+        const lf = flowers.find(x => x.id === f.id);
+        if (lf) lf.photo_url = url;
+        if (btn) btn.textContent = `⏳ Перенесено: ${moved}`;
+      } catch (e) {
+        console.error('Миграция фото id=' + f.id, e);
+        failed++;
+        if (/bucket|Bucket|not found/i.test(e.message||'')) {
+          toast('❌ Бакет flower-photos не найден. Выполните setup_storage.sql в Supabase');
+          break;
+        }
+      }
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📤 Фото → Storage'; }
+  }
+  toast(`✅ Перенесено фото: ${moved}` + (failed ? ` · ошибок: ${failed} (см. консоль)` : ''));
+  logActivity('photo_migrate', 'flowers', null, `${moved} фото`, 'Фото перенесены из таблицы в Storage');
+  renderPrice();
+}
+
+// ══════════════════════════════════════════════════════════
 //  FLOWERS / PRICE LIST
 // ══════════════════════════════════════════════════════════
 async function loadFlowers() {
@@ -1647,15 +1740,11 @@ async function addNewFlower() {
 
   if (!ru || !catRu) { toast('❌ Введите название и категорию / 请填写名称和类别'); return; }
 
-  // Photo → base64 (if provided)
+  // Photo → Storage (со сжатием); при недоступности Storage — сжатый base64
   let photoBase64 = null;
   const photoFile = document.getElementById('nf-photo')?.files[0];
   if (photoFile) {
-    photoBase64 = await new Promise((res) => {
-      const reader = new FileReader();
-      reader.onload = e => res(e.target.result);
-      reader.readAsDataURL(photoFile);
-    });
+    photoBase64 = await processFlowerPhoto(photoFile, null);
   }
 
   const payload = {
@@ -1765,14 +1854,10 @@ async function saveEditFlower(flowerId) {
     updated_at: new Date().toISOString(),
   };
 
-  // Photo
+  // Photo → Storage (со сжатием); при недоступности Storage — сжатый base64
   const photoFile = document.getElementById('ef-photo')?.files[0];
   if (photoFile) {
-    updates.photo_url = await new Promise((res) => {
-      const reader = new FileReader();
-      reader.onload = e => res(e.target.result);
-      reader.readAsDataURL(photoFile);
-    });
+    updates.photo_url = await processFlowerPhoto(photoFile, flowerId);
   }
 
   const { error } = await sb.from('flowers').update(updates).eq('id', flowerId);
