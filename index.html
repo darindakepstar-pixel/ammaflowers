@@ -2128,6 +2128,9 @@ function renderMyOrder() {
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
           <div class="card-title" style="margin:0">${editTitle}</div>
           ${currentEditOrderId ? `<button class="btn btn-danger btn-sm" onclick="cancelEdit()">✕ Отменить / 取消</button>` : ''}
+          <span style="flex:1"></span>
+          <button class="btn btn-secondary btn-sm" onclick="openMixBoxModal()">🧺 Микс-короб / 混合箱</button>
+          <button class="btn btn-secondary btn-sm" onclick="openCustomItemModal()">➕ Нет в прайсе / 询价商品</button>
         </div>
         <div class="field-row">
           <div class="field"><label>Дата отгрузки / 出货日期</label>
@@ -2171,6 +2174,10 @@ function renderMyOrder() {
           onclick="showPage('price',document.querySelectorAll('.nav-tab')[0])">
           → Перейти в прайс / 前往价格单
         </button>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="openMixBoxModal()">🧺 Собрать микс-короб / 混合箱</button>
+          <button class="btn btn-secondary btn-sm" onclick="openCustomItemModal()">➕ Позиции нет в прайсе / 询价商品</button>
+        </div>
       </div>
     </div>`;
   }
@@ -2241,6 +2248,12 @@ function renderMyOrder() {
       const packLine = item.bunches_per_box || snap.stems
         ? `<div style="font-size:10px;color:${(chBpb||chSpb)?'#d97706':'var(--mid)'}">${item.bunches_per_box?item.bunches_per_box+' банч/кор':''}${snap.stems?' · '+fmtStems(snap.stems,wgt)+'/банч':''}</div>`
         : '';
+      const mixLine = (snap.mix && snap.mix.length)
+        ? `<div style="font-size:10px;color:var(--sage-d)">🧺 ${snap.mix.map(c=>escHtml(c.ru)+' ×'+c.bunches).join(' · ')}</div>`
+        : '';
+      const customLine = snap.custom && !(parseFloat(item.price_per_box) > 0)
+        ? `<div style="font-size:10px;font-weight:700;color:#92400e">❓ Цена согласуется менеджером / 价格待确认</div>`
+        : '';
       const whChangeLine = (chBpb || chSpb)
         ? `<div style="font-size:10px;font-weight:700;color:#92400e;background:#fff7ed;border-radius:4px;padding:2px 6px;margin-top:2px;display:inline-block">
              📦 Пакинг скорректирован складом:${chBpb?` банч/кор ${wo.bpb}→${item.bunches_per_box}`:''}${chSpb?` · ${uR}/банч ${wo.spb}→${snap.stems}`:''} / 包装已调整
@@ -2252,6 +2265,8 @@ function renderMyOrder() {
           <div style="font-size:12px;font-weight:700">${snap.ru||item.flower?.ru||'—'}</div>
           <div style="font-size:10px;color:var(--mid)">${snap.cn||item.flower?.cn||''}</div>
           ${packLine}
+          ${mixLine}
+          ${customLine}
           ${whChangeLine}
         </div>
         <div style="text-align:right;font-size:11px;flex-shrink:0">
@@ -2314,6 +2329,199 @@ function renderMyOrder() {
         История заказов / 订单历史 (${myOrders.length})
       </div>
       ${ordersHTML}` : '');
+}
+
+// ══════════════════════════════════════════════════════════
+//  МИКС-КОРОБ и ПОЗИЦИЯ ВНЕ ПРАЙСА
+// ══════════════════════════════════════════════════════════
+let _mixComponents = []; // {flower, bunches}
+
+function openMixBoxModal() {
+  _mixComponents = [];
+  openModal();
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">🧺 Микс-короб / 混合箱</div>
+    <div style="font-size:12px;color:var(--mid);margin-bottom:10px">
+      Соберите состав ОДНОЙ коробки из позиций прайса, затем укажите количество таких коробок.<br>
+      从价格单中选择品种组成一箱，然后填写箱数。
+    </div>
+    <div class="field" style="position:relative">
+      <label>Добавить позицию / 添加品种</label>
+      <input class="inp" id="mix-search" placeholder="Поиск по прайсу / 搜索..." autocomplete="off"
+        oninput="mixSearchFlowers(this.value)">
+      <div id="mix-search-results" style="position:absolute;z-index:50;left:0;right:0;top:100%;background:var(--card,#fff);border:1px solid var(--border);border-radius:8px;max-height:210px;overflow:auto;display:none;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+    </div>
+    <div id="mix-components" style="margin:10px 0"></div>
+    <div class="field-row">
+      <div class="field"><label>Коробок / 箱数</label>
+        <input class="inp" type="number" id="mix-qty" min="1" value="1" oninput="mixRecalc()"></div>
+      <div class="field"><label>Название микса / 名称 <span style="font-size:10px;color:var(--light)">(необязательно)</span></label>
+        <input class="inp" id="mix-name" placeholder="напр.: Эвкалипт микс / 尤加利混"></div>
+    </div>
+    <div id="mix-totals" style="padding:10px 12px;background:var(--sage-l);border-radius:8px;font-size:13px;font-weight:700;color:var(--sage-d);margin:8px 0">
+      Состав пуст / 请添加品种
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+      <button class="btn btn-primary" onclick="addMixToCart()">🧺 В заказ / 加入订单</button>
+    </div>`;
+  setTimeout(() => document.getElementById('mix-search')?.focus(), 100);
+}
+
+function mixSearchFlowers(q) {
+  const box = document.getElementById('mix-search-results');
+  if (!box) return;
+  q = (q || '').trim().toLowerCase();
+  if (q.length < 1) { box.style.display = 'none'; return; }
+  const found = flowers.filter(f => f.in_stock !== false &&
+      ((f.ru||'').toLowerCase().includes(q) || (f.cn||'').includes(q) || (f.en||'').toLowerCase().includes(q)))
+    .slice(0, 12);
+  if (!found.length) { box.innerHTML = `<div style="padding:10px;font-size:12px;color:var(--mid)">Не найдено / 未找到</div>`; box.style.display='block'; return; }
+  box.innerHTML = found.map(f => `
+    <div style="padding:8px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border)"
+      onmouseover="this.style.background='var(--sage-l)'" onmouseout="this.style.background=''"
+      onclick="mixAddComponent(${f.id})">
+      <b>${escHtml(f.ru)}</b> <span style="color:var(--mid)">${escHtml(f.cn||'')}</span>
+      <span style="float:right;color:var(--sage-d)">¥${(f.price_a||0).toFixed(2)}/банч</span>
+    </div>`).join('');
+  box.style.display = 'block';
+}
+
+function mixAddComponent(fid) {
+  const f = flowers.find(x => x.id === fid);
+  if (!f) return;
+  if (!_mixComponents.find(c => c.flower.id === fid))
+    _mixComponents.push({ flower: f, bunches: 1 });
+  document.getElementById('mix-search').value = '';
+  document.getElementById('mix-search-results').style.display = 'none';
+  renderMixComponents();
+}
+
+function mixRemoveComponent(fid) {
+  _mixComponents = _mixComponents.filter(c => c.flower.id !== fid);
+  renderMixComponents();
+}
+
+function mixSetBunches(fid, v) {
+  const c = _mixComponents.find(c => c.flower.id === fid);
+  if (c) c.bunches = Math.max(0, parseInt(v) || 0);
+  mixRecalc();
+}
+
+function renderMixComponents() {
+  const wrap = document.getElementById('mix-components');
+  if (!wrap) return;
+  wrap.innerHTML = _mixComponents.map(c => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:5px;font-size:12px">
+      <div style="flex:1;min-width:0">
+        <b>${escHtml(c.flower.ru)}</b>
+        <span style="color:var(--mid);font-size:10px">${escHtml(c.flower.cn||'')}</span>
+        <div style="font-size:10px;color:var(--sage-d)">¥${(c.flower.price_a||0).toFixed(2)}/банч${isWeightItem(c.flower)?' · '+fmtStems(c.flower.stems,true)+'/банч':''}</div>
+      </div>
+      <label style="font-size:10px;color:var(--mid);display:flex;align-items:center;gap:4px">банчей/кор 扎
+        <input class="inp" type="number" min="0" value="${c.bunches}"
+          style="width:56px;text-align:center;padding:4px" oninput="mixSetBunches(${c.flower.id},this.value)">
+      </label>
+      <button class="btn-icon" onclick="mixRemoveComponent(${c.flower.id})">×</button>
+    </div>`).join('') || '';
+  mixRecalc();
+}
+
+function mixRecalc() {
+  const tot = document.getElementById('mix-totals');
+  if (!tot) return;
+  const qty = Math.max(1, parseInt(document.getElementById('mix-qty')?.value) || 1);
+  const bunches = _mixComponents.reduce((s, c) => s + c.bunches, 0);
+  const pbox = _mixComponents.reduce((s, c) => s + c.bunches * (c.flower.price_a || 0), 0);
+  tot.innerHTML = _mixComponents.length
+    ? `1 короб = ${bunches} банчей · ¥${pbox.toFixed(2)} &nbsp;|&nbsp; ${qty} кор. = <b>¥${(pbox*qty).toFixed(2)}</b>`
+    : 'Состав пуст / 请添加品种';
+}
+
+function addMixToCart() {
+  const comps = _mixComponents.filter(c => c.bunches > 0);
+  if (!comps.length) { toast('Добавьте позиции в состав / 请添加品种'); return; }
+  const qty = Math.max(1, parseInt(document.getElementById('mix-qty')?.value) || 1);
+  const name = document.getElementById('mix-name')?.value.trim();
+  const bunches = comps.reduce((s, c) => s + c.bunches, 0);
+  const pbox = +comps.reduce((s, c) => s + c.bunches * (c.flower.price_a || 0), 0).toFixed(2);
+  const compShort = comps.map(c => `${c.flower.ru} ×${c.bunches}`).join(', ');
+  const pseudoId = -Math.floor(Date.now() % 1e9);
+  const pseudo = {
+    id: pseudoId,
+    ru: `🧺 ${name || 'Микс-короб'}: ${compShort}`,
+    cn: `混合箱${name ? '·' + name : ''}`,
+    pack: `${bunches} банч/кор`,
+    boxes_per_box: bunches,
+    price_a: +(pbox / bunches).toFixed(2),
+    photo_url: null,
+    cat_ru: '🧺 Микс',
+    mix: comps.map(c => ({
+      flower_id: c.flower.id, ru: c.flower.ru, cn: c.flower.cn || '',
+      bunches: c.bunches, price_bunch: c.flower.price_a || 0,
+      stems: c.flower.stems || null, weight: isWeightItem(c.flower),
+    })),
+  };
+  cart[pseudoId] = { flower: pseudo, qty, priceType: 'a', price: pseudo.price_a, pbox, client_name: '', comment: '' };
+  closeModal();
+  updateCartUI();
+  renderMyOrder();
+  toast('🧺 Микс-короб добавлен в заказ / 已加入订单');
+}
+
+// ── Позиция вне прайса ──
+function openCustomItemModal() {
+  openModal();
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">➕ Позиция не из прайса / 询价商品</div>
+    <div style="font-size:12px;color:var(--mid);margin-bottom:10px">
+      Впишите, что нужно — менеджер проверит наличие и согласует цену.<br>
+      填写所需商品 — 经理确认供货及价格。
+    </div>
+    <div class="field"><label>Название / 名称 <span style="color:var(--red)">*</span></label>
+      <input class="inp" id="cust-name" placeholder="напр.: Протея / 帝王花"></div>
+    <div class="field-row">
+      <div class="field"><label>Коробок / 箱数</label>
+        <input class="inp" type="number" id="cust-qty" min="1" value="1"></div>
+      <div class="field"><label>Банчей/кор 扎/箱 <span style="font-size:10px;color:var(--light)">(если знаете)</span></label>
+        <input class="inp" type="number" id="cust-bpb" min="0" placeholder="—"></div>
+      <div class="field"><label>Шт/банч 支/扎</label>
+        <input class="inp" type="number" id="cust-spb" min="0" placeholder="—"></div>
+    </div>
+    <div class="field"><label>Комментарий / 备注</label>
+      <input class="inp" id="cust-comment" placeholder="Цвет, размер, требования... / 颜色、尺寸、要求..."></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+      <button class="btn btn-primary" onclick="addCustomToCart()">➕ В заказ / 加入订单</button>
+    </div>`;
+  setTimeout(() => document.getElementById('cust-name')?.focus(), 100);
+}
+
+function addCustomToCart() {
+  const name = document.getElementById('cust-name')?.value.trim();
+  if (!name) { toast('Укажите название / 请填写名称'); return; }
+  const qty = Math.max(1, parseInt(document.getElementById('cust-qty')?.value) || 1);
+  const bpb = parseInt(document.getElementById('cust-bpb')?.value) || null;
+  const spb = parseInt(document.getElementById('cust-spb')?.value) || null;
+  const comment = document.getElementById('cust-comment')?.value.trim() || '';
+  const pseudoId = -Math.floor(Date.now() % 1e9) - 1;
+  const pseudo = {
+    id: pseudoId,
+    ru: `❓ ${name}`,
+    cn: '询价商品',
+    pack: bpb ? `${bpb} банч/кор` : '',
+    boxes_per_box: bpb,
+    stems: spb,
+    price_a: 0,
+    photo_url: null,
+    cat_ru: '❓ Вне прайса',
+    custom: true,
+  };
+  cart[pseudoId] = { flower: pseudo, qty, priceType: 'a', price: 0, pbox: 0, client_name: '', comment };
+  closeModal();
+  updateCartUI();
+  renderMyOrder();
+  toast('➕ Позиция добавлена — цену согласует менеджер / 已添加，价格待经理确认');
 }
 
 // ══ Экспорт заказа клиента: Excel ══
@@ -2436,7 +2644,7 @@ async function submitOrder(existingOrderId = null) {
     await sb.from('order_items').delete().eq('order_id', existingOrderId);
     const itemRows = items.map(o => ({
       order_id: existingOrderId,
-      flower_id: o.flower.id, flower_snapshot: o.flower,
+      flower_id: (o.flower.id > 0 ? o.flower.id : null), flower_snapshot: o.flower,
       price_type: o.priceType, price_per_bunch: o.price,
       bunches_per_box: o.flower.boxes_per_box, price_per_box: o.pbox,
       qty_boxes: o.qty, subtotal: o.pbox * o.qty,
@@ -2473,7 +2681,7 @@ async function submitOrder(existingOrderId = null) {
     if (oErr) { toast('Ошибка: ' + oErr.message); return; }
 
     const itemRows = items.map(o => ({
-      order_id: order.id, flower_id: o.flower.id, flower_snapshot: o.flower,
+      order_id: order.id, flower_id: (o.flower.id > 0 ? o.flower.id : null), flower_snapshot: o.flower,
       price_type: o.priceType, price_per_bunch: o.price,
       bunches_per_box: o.flower.boxes_per_box, price_per_box: o.pbox,
       qty_boxes: o.qty, subtotal: o.pbox * o.qty,
@@ -2769,6 +2977,11 @@ function renderOrderDetail(order) {
       : (whBpbApplied || whSpbApplied)
         ? `<div style="font-size:9px;color:#d97706;margin-top:2px">✏️ Склад:${whBpbApplied?` банч ${wo.bpb}→${item.bunches_per_box}`:''}${whSpbApplied?` · ${itemWeightBased(item)?'г':'ст'} ${wo.spb}→${snap.stems}`:''}</div>`
         : '';
+    const specialBadge = snap.custom
+      ? `<div style="font-size:9px;font-weight:700;color:#92400e;background:#fff7ed;border-radius:4px;padding:2px 6px;margin-top:3px;display:inline-block">❓ ВНЕ ПРАЙСА — проверьте наличие и установите цену / 询价商品</div>`
+      : (snap.mix && snap.mix.length)
+        ? `<div style="font-size:9px;color:var(--sage-d);background:var(--sage-l);border-radius:4px;padding:2px 6px;margin-top:3px;display:inline-block">🧺 Состав короба: ${snap.mix.map(c=>escHtml(c.ru)+' ×'+c.bunches).join(' · ')}</div>`
+        : '';
     return `
     <tr class="${i%2?'stripe':''}" id="mgr-row-${i}" ${whPending?'style="background:#fff7ed"':''}>
       <td style="color:var(--light);font-size:10px">${i+1}</td>
@@ -2776,6 +2989,7 @@ function renderOrderDetail(order) {
         <b style="font-size:12px">${item.flower?.ru || item.flower_snapshot?.ru || '—'}</b>
         <div style="font-size:10px;color:var(--mid)">${item.flower?.cn || item.flower_snapshot?.cn ||''}</div>
         ${whBadge}
+        ${specialBadge}
       </td>
       <td>
         <select class="inp" style="padding:3px 5px;font-size:11px"
@@ -6272,12 +6486,16 @@ async function loadWhPending() {
       const curSpb = (item.wh_fact_spb != null && !item.wh_confirmed_at) ? item.wh_fact_spb : spb;
       const qty = parseInt(item.qty_boxes) || 1;
       const wgt = isWeightItem(item.flower_snapshot || {}) || itemWeightBased(item);
+      const snapMix = (item.flower_snapshot?.mix && item.flower_snapshot.mix.length)
+        ? `<div style="font-size:10px;color:var(--sage-d);margin:2px 0">🧺 ${item.flower_snapshot.mix.map(c=>escHtml(c.ru)+' ×'+c.bunches).join(' · ')}</div>`
+        : '';
       window._whPendItems = window._whPendItems || {};
       window._whPendItems[item.id] = item;
       return `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
         ${imgH}
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;font-weight:700">${ru} <span style="font-size:10px;color:var(--mid)">${cn}</span></div>
+          ${snapMix}
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:3px;align-items:center">
             <span style="font-size:10px;background:var(--sage-l);color:var(--sage-d);padding:1px 6px;border-radius:4px">📦 ${qty} кор.</span>
             <label style="font-size:10px;color:var(--mid);display:flex;align-items:center;gap:3px">банч/кор 扎/箱
