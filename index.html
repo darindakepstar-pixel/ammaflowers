@@ -3001,8 +3001,9 @@ function renderOrderDetail(order) {
       <td>
         <input class="inp" type="number" min="0" step="0.5"
           value="${item.price_per_bunch||0}"
-          style="width:58px;padding:3px 5px;font-size:12px;text-align:center"
+          style="width:58px;padding:3px 5px;font-size:12px;text-align:center${snap.custom&&!(parseFloat(item.price_per_bunch)>0)?';background:#fff7ed;border-color:#f59e0b':''}"
           oninput="mgrUpdateItem(${i},'price_per_bunch',this.value);mgrRecalcRow(${i})">
+        ${snap.custom?`<div style="font-size:8px;color:#92400e;margin-top:1px">${parseInt(item.bunches_per_box)?'¥/банч':'= ¥/КОРОБ'}</div>`:''}
       </td>
       <td>
         <input class="inp" type="number" min="1"
@@ -3218,8 +3219,10 @@ function mgrUpdateItem(i, field, val) {
 function mgrRecalcRow(i) {
   const item = _mgrOrderItems[i];
   if (!item) return;
-  // Recalc price_per_box = price_per_bunch * bunches_per_box
-  const pbox = (parseFloat(item.price_per_bunch)||0) * (parseInt(item.bunches_per_box)||0);
+  // Recalc price_per_box = price_per_bunch * bunches_per_box.
+  // Для позиций вне прайса без указанных банчей/кор введённая цена = цена за короб.
+  const bpb = parseInt(item.bunches_per_box) || 0;
+  const pbox = (parseFloat(item.price_per_bunch)||0) * (bpb || 1);
   item.price_per_box = pbox;
   item.subtotal = pbox * (parseInt(item.qty_boxes)||0);
 
