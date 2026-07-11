@@ -3376,6 +3376,7 @@ function renderOrderDetail(order) {
 async function loadOrderShipmentSelect(order) {
   const el = document.getElementById('od-shipment-select');
   if (!el) return;
+  window._odOrder = order; // чтобы обновить селектор после создания машины из модалки
   const c = orderCubes(_mgrOrderItems);
   // Формирующиеся машины + их текущая загрузка
   const { data: shps } = await sb.from('shipments').select('*')
@@ -3409,7 +3410,8 @@ async function loadOrderShipmentSelect(order) {
       <option value="">— не назначена / 未挂车 —</option>
       ${opts}
     </select>
-    ${!(shps||[]).length ? '<span style="font-size:11px;color:var(--light)">нет формирующихся машин — создайте на вкладке 🚚 Отгрузки</span>' : ''}`;
+    <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:3px 8px" onclick="showCreateShipmentModal()">＋ Создать отгрузку / 新车次</button>
+    ${!(shps||[]).length ? '<span style="font-size:11px;color:var(--light)">формирующихся машин пока нет / 暂无组车中车次</span>' : ''}`;
 }
 
 async function assignOrderToShipment(orderId, shipmentId, orderNum) {
@@ -9301,7 +9303,7 @@ function renderShipments() {
         <span style="flex:1"></span>
         <span style="color:var(--mid)">📦 ${bx} кор · ${c.est?'≈':''}${fmtM3(c.m3)} м³</span>
         ${isMgrLocal && shp.status === 'forming'
-          ? `<button class="btn-icon" title="Открепить / 移除" onclick="detachOrderFromShipment(${o.id}, ${shp.id})">×</button>` : ''}
+          ? `<button class="btn-icon" title="Открепить / 移除" onclick="detachOrderFromShipment('${o.id}', ${shp.id})">×</button>` : ''}
       </div>`;
     }).join('') || '<div style="padding:10px;color:var(--light);font-size:12px">Заказы не прикреплены / 未挂单</div>';
 
@@ -9399,6 +9401,9 @@ async function createShipment() {
   logActivity('shipment_create', 'shipment', null, num, 'Создана отгрузка ' + (truck?.name_ru || vol + ' м³'));
   closeModal();
   loadShipments();
+  if (document.getElementById('od-shipment-select') && window._odOrder) {
+    loadOrderShipmentSelect(window._odOrder); // селектор в открытом заказе
+  }
   toast('✅ Отгрузка создана: ' + num);
 }
 
@@ -9481,7 +9486,7 @@ function attachPreview(shipmentId) {
 }
 
 async function attachOrdersToShipment(shipmentId) {
-  const ids = [...document.querySelectorAll('.attach-chk:checked')].map(c => parseInt(c.value));
+  const ids = [...document.querySelectorAll('.attach-chk:checked')].map(c => c.value);
   if (!ids.length) { toast('Выбери заказы / 请选择订单'); return; }
   const shp = shipmentsData.find(x => x.id === shipmentId);
   const { error } = await sb.from('orders').update({shipment_id: shipmentId}).in('id', ids);
@@ -9504,7 +9509,7 @@ async function detachOrderFromShipment(orderId, shipmentId) {
   const { error } = await sb.from('orders').update({shipment_id: null}).eq('id', orderId);
   if (error) { toast('❌ ' + error.message); return; }
   const shp = shipmentsData.find(x => x.id === shipmentId);
-  logActivity('shipment_detach', 'shipment', shipmentId, shp?.ship_number || '', 'Откреплён заказ #' + orderId);
+  logActivity('shipment_detach', 'shipment', shipmentId, shp?.ship_number || '', 'Откреплён заказ ' + orderId);
   loadShipments();
 }
 
