@@ -3110,60 +3110,7 @@ async function openOrder(id) {
   renderOrderDetail(order);
 }
 
-function renderOrderDetail(order) {
-  const id = order.id;
-  const items = _mgrOrderItems;
-
-  const clientEditedBanner = order.client_edited_at
-    ? `<div style="margin-bottom:14px;padding:10px 14px;background:#fffbeb;border-radius:8px;border-left:4px solid #f59e0b;font-size:12px">
-        ✏️ <b>Клиент изменил этот заказ</b> ${new Date(order.client_edited_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} / 客户已修改此订单
-       </div>`
-    : '';
-
-  // Warehouse packing changes banner — show if any item has wh_fact_boxes set and not yet confirmed
-  const packChangedItems = items.filter(it =>
-    (it.wh_fact_boxes != null || it.wh_fact_bpb != null || it.wh_fact_spb != null) && !it.wh_confirmed_at
-  );
-  const packChangeBanner = packChangedItems.length ? `
-    <div style="margin-bottom:14px;padding:12px 16px;background:#fff7ed;border-radius:8px;border-left:4px solid #f59e0b">
-      <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:8px">
-        ⚠️ Склад изменил пакинг — требует вашего подтверждения / 仓库修改了包装，需您确认
-      </div>
-      ${packChangedItems.map(it => {
-        const ru   = it.flower?.ru || it.flower_snapshot?.ru || '—';
-        const ordB = parseInt(it.qty_boxes)||0;
-        const ordBpb = parseInt(it.bunches_per_box)||0;
-        const factB  = parseInt(it.wh_fact_boxes) || ordB;
-        const factBpb= parseInt(it.wh_fact_bpb)   || ordBpb;
-        const priceBunch = parseFloat(it.price_per_bunch)||0;
-        const ordPrice   = priceBunch * ordBpb;
-        const factPrice  = priceBunch * factBpb;
-        const ordTotal   = ordPrice * ordB;
-        const factTotal  = factPrice * factB;
-        const isRepl = !!it.wh_replaced_name;
-        return `<div style="font-size:11px;padding:6px 0;border-bottom:1px solid #fde68a">
-          <b>${ru}</b>
-          ${isRepl
-            ? `<span style="color:#dc2626;margin-left:8px">🔄 Замена → ${escHtml(it.wh_replaced_name)}</span>`
-            : `<span style="color:#92400e;margin-left:8px">
-                По договору: ${ordB} кор × ${ordBpb} банч = <b>¥${ordTotal.toFixed(2)}</b>
-                → Факт: ${factB} кор × ${factBpb} банч = <b style="color:${factTotal!==ordTotal?'#dc2626':'inherit'}">¥${factTotal.toFixed(2)}</b>
-                ${it.wh_fact_spb != null ? `· ${itemWeightBased(it) ? 'вес/банч' : 'стеблей/банч'}: <b>${fmtStems(it.wh_fact_spb, itemWeightBased(it))}</b>` : ''}
-                ${it.wh_note ? `<i style="color:#6b7280;margin-left:6px">(${it.wh_note})</i>` : ''}
-              </span>`}
-        </div>`;
-      }).join('')}
-      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" onclick="confirmPackingChanges('${id}')">
-          ✅ Принять изменения и обновить накладную / 接受并更新出货单
-        </button>
-        <button class="btn btn-danger btn-sm" onclick="rejectPackingChanges('${id}')">
-          ❌ Отклонить — оставить по договору / 拒绝，保持原合同数量
-        </button>
-      </div>
-    </div>` : '';
-
-  const rows = items.map((item, i) => {
+function mgrRowHTML(item, i, id) {
     const sub = (parseFloat(item.price_per_box)||0) * (parseInt(item.qty_boxes)||0);
     const snap = item.flower_snapshot || {};
     // Изменения склада: неподтверждённые (оранжевая строка) и подтверждённые (бейдж «было→стало»)
@@ -3219,6 +3166,15 @@ function renderOrderDetail(order) {
           style="width:52px;padding:3px 5px;font-size:12px;text-align:center"
           oninput="mgrUpdateItem(${i},'qty_boxes',this.value);mgrRecalcRow(${i})">
       </td>
+      <td id="mgr-bn-${i}" style="color:var(--mid);font-size:11px">${(parseInt(item.qty_boxes)||0)*(parseInt(item.bunches_per_box)||0) || '—'}</td>
+      <td id="mgr-un-${i}" style="color:var(--mid);font-size:11px;white-space:nowrap">${(snap.stems && item.bunches_per_box) ? fmtStems((parseInt(item.qty_boxes)||0)*(parseInt(item.bunches_per_box)||0)*(parseInt(snap.stems)||0), itemWeightBased(item)) : '—'}</td>
+      <td>
+        <input class="inp" type="text" value="${snap.box_size||''}"
+          placeholder="100*40*20"
+          style="width:86px;padding:3px 5px;font-size:11px;text-align:center"
+          oninput="mgrUpdateSnapField(${i},'box_size',this.value);mgrRecalcRow(${i})">
+      </td>
+      <td id="mgr-m3-${i}" style="color:var(--mid);font-size:11px;white-space:nowrap">${itemBoxM3(snap).est?'≈':''}${fmtM3((parseInt(item.qty_boxes)||0)*itemBoxM3(snap).m3)}</td>
       <td id="mgr-sub-${i}" style="font-weight:700;color:var(--sage-d)">
         ¥${sub.toFixed(2)}
       </td>
@@ -3239,7 +3195,62 @@ function renderOrderDetail(order) {
           onclick="mgrRemoveItem(${i},'${id}')">×</button>
       </td>
     </tr>`;
-  }).join('');
+}
+
+function renderOrderDetail(order) {
+  const id = order.id;
+  const items = _mgrOrderItems;
+
+  const clientEditedBanner = order.client_edited_at
+    ? `<div style="margin-bottom:14px;padding:10px 14px;background:#fffbeb;border-radius:8px;border-left:4px solid #f59e0b;font-size:12px">
+        ✏️ <b>Клиент изменил этот заказ</b> ${new Date(order.client_edited_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} / 客户已修改此订单
+       </div>`
+    : '';
+
+  // Warehouse packing changes banner — show if any item has wh_fact_boxes set and not yet confirmed
+  const packChangedItems = items.filter(it =>
+    (it.wh_fact_boxes != null || it.wh_fact_bpb != null || it.wh_fact_spb != null) && !it.wh_confirmed_at
+  );
+  const packChangeBanner = packChangedItems.length ? `
+    <div style="margin-bottom:14px;padding:12px 16px;background:#fff7ed;border-radius:8px;border-left:4px solid #f59e0b">
+      <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:8px">
+        ⚠️ Склад изменил пакинг — требует вашего подтверждения / 仓库修改了包装，需您确认
+      </div>
+      ${packChangedItems.map(it => {
+        const ru   = it.flower?.ru || it.flower_snapshot?.ru || '—';
+        const ordB = parseInt(it.qty_boxes)||0;
+        const ordBpb = parseInt(it.bunches_per_box)||0;
+        const factB  = parseInt(it.wh_fact_boxes) || ordB;
+        const factBpb= parseInt(it.wh_fact_bpb)   || ordBpb;
+        const priceBunch = parseFloat(it.price_per_bunch)||0;
+        const ordPrice   = priceBunch * ordBpb;
+        const factPrice  = priceBunch * factBpb;
+        const ordTotal   = ordPrice * ordB;
+        const factTotal  = factPrice * factB;
+        const isRepl = !!it.wh_replaced_name;
+        return `<div style="font-size:11px;padding:6px 0;border-bottom:1px solid #fde68a">
+          <b>${ru}</b>
+          ${isRepl
+            ? `<span style="color:#dc2626;margin-left:8px">🔄 Замена → ${escHtml(it.wh_replaced_name)}</span>`
+            : `<span style="color:#92400e;margin-left:8px">
+                По договору: ${ordB} кор × ${ordBpb} банч = <b>¥${ordTotal.toFixed(2)}</b>
+                → Факт: ${factB} кор × ${factBpb} банч = <b style="color:${factTotal!==ordTotal?'#dc2626':'inherit'}">¥${factTotal.toFixed(2)}</b>
+                ${it.wh_fact_spb != null ? `· ${itemWeightBased(it) ? 'вес/банч' : 'стеблей/банч'}: <b>${fmtStems(it.wh_fact_spb, itemWeightBased(it))}</b>` : ''}
+                ${it.wh_note ? `<i style="color:#6b7280;margin-left:6px">(${it.wh_note})</i>` : ''}
+              </span>`}
+        </div>`;
+      }).join('')}
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="confirmPackingChanges('${id}')">
+          ✅ Принять изменения и обновить накладную / 接受并更新出货单
+        </button>
+        <button class="btn btn-danger btn-sm" onclick="rejectPackingChanges('${id}')">
+          ❌ Отклонить — оставить по договору / 拒绝，保持原合同数量
+        </button>
+      </div>
+    </div>` : '';
+
+  const rows = items.map((item, i) => mgrRowHTML(item, i, id)).join('');
 
   const total     = items.reduce((s,it)=>s+((parseFloat(it.price_per_box)||0)*(parseInt(it.qty_boxes)||0)),0);
   const totalBoxes= items.reduce((s,it)=>s+(parseInt(it.qty_boxes)||0),0);
@@ -3251,7 +3262,7 @@ function renderOrderDetail(order) {
     <div class="card" style="margin-bottom:14px;padding:10px 16px">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px">
         <b>🚚 Логистика:</b>
-        <span>📦 ${totalBoxes} кор · ${odCubes.est?'≈':''}${fmtM3(odCubes.m3)} м³</span>
+        <span id="od-cubes">📦 ${totalBoxes} кор · ${odCubes.est?'≈':''}${fmtM3(odCubes.m3)} м³</span>
         <span id="od-shipment-select" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span class="spinner" style="width:14px;height:14px"></span>
         </span>
@@ -3340,7 +3351,7 @@ function renderOrderDetail(order) {
     </div>
 
     <div class="tbl-wrap">
-      <table style="min-width:820px" id="mgr-order-table">
+      <table style="min-width:1150px" id="mgr-order-table">
         <thead><tr>
           <th style="width:28px">№</th>
           <th class="L" style="min-width:150px">Название / 名称</th>
@@ -3349,6 +3360,10 @@ function renderOrderDetail(order) {
           <th style="width:65px">Бан./кор.<br>扎/件</th>
           <th style="width:80px">¥/КОРОБ<br>件价</th>
           <th style="width:65px">Кор./箱</th>
+          <th style="width:60px">Банчей<br>总扎数</th>
+          <th style="width:78px">Всего шт/кг<br>总数</th>
+          <th style="width:94px">Короб, см<br>箱规</th>
+          <th style="width:58px">м³</th>
           <th style="width:88px">Итого/小计</th>
           <th style="min-width:110px">Субклиент / 子客户</th>
           <th style="min-width:120px">Коммент./备注</th>
@@ -3360,6 +3375,10 @@ function renderOrderDetail(order) {
             ИТОГО / 合计: <span style="font-size:11px;color:var(--mid);font-weight:400">${items.length} поз./件</span>
           </td>
           <td id="mgr-tot-boxes" style="font-weight:700;font-size:13px">${totalBoxes}</td>
+          <td id="mgr-tot-bunches" style="font-weight:700;font-size:12px;color:var(--sage-d)"></td>
+          <td id="mgr-tot-units" style="font-weight:700;font-size:11px;color:var(--sage-d);white-space:nowrap"></td>
+          <td></td>
+          <td id="mgr-tot-m3" style="font-weight:700;font-size:12px;color:var(--sage-d);white-space:nowrap"></td>
           <td id="mgr-tot-sum" style="font-weight:700;font-size:14px;color:var(--sage-d)">¥${total.toFixed(2)}</td>
           <td colspan="3"></td>
         </tr></tfoot>
@@ -3379,6 +3398,7 @@ function renderOrderDetail(order) {
       </button>
     </div>`;
 
+  mgrRecalcFooter();
   loadOrderShipmentSelect(order);
 }
 
@@ -3493,6 +3513,14 @@ function mgrUpdateItem(i, field, val) {
   _mgrOrderItems[i][field] = numFields.includes(field) ? (parseFloat(val)||0) : val;
 }
 
+// Правка полей snapshot (размер короба и т.п.) — сохранится вместе с позицией
+function mgrUpdateSnapField(i, field, val) {
+  const item = _mgrOrderItems[i];
+  if (!item) return;
+  if (!item.flower_snapshot) item.flower_snapshot = item.flower ? {...item.flower} : {};
+  item.flower_snapshot[field] = val;
+}
+
 function mgrRecalcRow(i) {
   const item = _mgrOrderItems[i];
   if (!item) return;
@@ -3509,74 +3537,57 @@ function mgrRecalcRow(i) {
   if (pbEl) pbEl.textContent = '¥' + pbox.toFixed(2);
   if (stEl) stEl.textContent = '¥' + item.subtotal.toFixed(2);
 
-  // Update footer totals
-  const total      = _mgrOrderItems.reduce((s,it)=>s+(it.subtotal||0),0);
-  const totalBoxes = _mgrOrderItems.reduce((s,it)=>s+(parseInt(it.qty_boxes)||0),0);
-  const totBoxEl = document.getElementById('mgr-tot-boxes');
-  const totSumEl = document.getElementById('mgr-tot-sum');
-  if (totBoxEl) totBoxEl.textContent = totalBoxes;
-  if (totSumEl) totSumEl.textContent = '¥' + total.toFixed(2);
+  // Расчётные ячейки строки: банчи, штуки/граммы, кубы
+  const q    = parseInt(item.qty_boxes) || 0;
+  const snap = item.flower_snapshot || {};
+  const bnEl = document.getElementById(`mgr-bn-${i}`);
+  if (bnEl) bnEl.textContent = (q * bpb) || '—';
+  const unEl = document.getElementById(`mgr-un-${i}`);
+  if (unEl) unEl.textContent = (snap.stems && bpb)
+    ? fmtStems(q * bpb * (parseInt(snap.stems)||0), itemWeightBased(item)) : '—';
+  const bv = itemBoxM3(snap);
+  const m3El = document.getElementById(`mgr-m3-${i}`);
+  if (m3El) m3El.textContent = (bv.est?'≈':'') + fmtM3(q * bv.m3);
+
+  mgrRecalcFooter();
+}
+
+// Итоги менеджерской таблицы + кубатура в блоке «Логистика»
+function mgrRecalcFooter() {
+  const items = _mgrOrderItems || [];
+  let total = 0, boxes = 0, bunches = 0, stems = 0, grams = 0;
+  items.forEach(it => {
+    total += (it.subtotal || 0);
+    const q = parseInt(it.qty_boxes) || 0;
+    const bpb = parseInt(it.bunches_per_box) || 0;
+    boxes += q; bunches += q * bpb;
+    const per = parseInt(it.flower_snapshot?.stems) || 0;
+    if (per && bpb) {
+      if (itemWeightBased(it)) grams += q * bpb * per;
+      else stems += q * bpb * per;
+    }
+  });
+  const c = orderCubes(items);
+  const set = (eid, v) => { const el = document.getElementById(eid); if (el) el.textContent = v; };
+  set('mgr-tot-boxes', boxes);
+  set('mgr-tot-bunches', bunches || '—');
+  set('mgr-tot-units', [stems ? stems + ' шт' : '', grams ? fmtStems(grams, true) : ''].filter(Boolean).join(' + ') || '—');
+  set('mgr-tot-m3', (c.est?'≈':'') + fmtM3(c.m3));
+  set('mgr-tot-sum', '¥' + total.toFixed(2));
+  set('od-cubes', '📦 ' + boxes + ' кор · ' + (c.est?'≈':'') + fmtM3(c.m3) + ' м³');
 }
 
 function mgrRemoveItem(i, orderId) {
   if (!confirm(`Удалить позицию? / 确认删除?
 ${_mgrOrderItems[i]?.flower?.ru || _mgrOrderItems[i]?.flower_snapshot?.ru || ''}`)) return;
   _mgrOrderItems.splice(i, 1);
-  // Re-render the order (need full order object — reload)
-  const orderPage = document.getElementById('order-detail-content');
-  // Rebuild just the tbody
+  // Перерисовываем tbody тем же шаблоном, что и основной рендер (единый вид, все колонки)
   const tbody = document.getElementById('mgr-order-tbody');
-  if (tbody) {
-    // Re-render all rows with updated indices
-    const rows = _mgrOrderItems.map((item, idx) => {
-      const sub = (parseFloat(item.price_per_box)||0) * (parseInt(item.qty_boxes)||0);
-      return `
-      <tr class="${idx%2?'stripe':''}" id="mgr-row-${idx}">
-        <td style="color:var(--light);font-size:10px">${idx+1}</td>
-        <td class="L">
-          <b style="font-size:12px">${item.flower?.ru||item.flower_snapshot?.ru||'—'}</b>
-          <div style="font-size:10px;color:var(--mid)">${item.flower?.cn||item.flower_snapshot?.cn||''}</div>
-        </td>
-        <td>
-          <select class="inp" style="padding:3px 5px;font-size:11px"
-            onchange="mgrUpdateItem(${idx},'price_type',this.value)">
-            <option value="a"  ${item.price_type==='a' ?'selected':''}>A</option>
-            <option value="ap" ${item.price_type==='ap'?'selected':''}>A+</option>
-          </select>
-        </td>
-        <td><input class="inp" type="number" min="0" step="0.5" value="${item.price_per_bunch||0}"
-          style="width:58px;padding:3px 5px;font-size:12px;text-align:center"
-          oninput="mgrUpdateItem(${idx},'price_per_bunch',this.value);mgrRecalcRow(${idx})"></td>
-        <td><input class="inp" type="number" min="1" value="${item.bunches_per_box||0}"
-          style="width:52px;padding:3px 5px;font-size:12px;text-align:center"
-          oninput="mgrUpdateItem(${idx},'bunches_per_box',this.value);mgrRecalcRow(${idx})"></td>
-        <td id="mgr-pbox-${idx}" style="font-weight:700;color:var(--gold)">¥${item.price_per_box?.toFixed(2)||0}</td>
-        <td><input class="inp" type="number" min="1" value="${item.qty_boxes||1}"
-          style="width:52px;padding:3px 5px;font-size:12px;text-align:center"
-          oninput="mgrUpdateItem(${idx},'qty_boxes',this.value);mgrRecalcRow(${idx})"></td>
-        <td id="mgr-sub-${idx}" style="font-weight:700;color:var(--sage-d)">¥${sub.toFixed(2)}</td>
-        <td><input class="inp" type="text" value="${item.client_name||''}" placeholder="Субклиент..."
-          style="width:100px;padding:3px 5px;font-size:11px"
-          oninput="mgrUpdateItem(${idx},'client_name',this.value)"></td>
-        <td><input class="inp" type="text" value="${item.item_comment||''}" placeholder="Коммент..."
-          style="width:110px;padding:3px 5px;font-size:11px"
-          oninput="mgrUpdateItem(${idx},'item_comment',this.value)"></td>
-        <td><button class="rbtn" onclick="mgrRemoveItem(${idx},'${orderId}')">×</button></td>
-      </tr>`;
-    }).join('');
-    tbody.innerHTML = rows;
-    // Update footer
-    const total      = _mgrOrderItems.reduce((s,it)=>s+(it.subtotal||0),0);
-    const totalBoxes = _mgrOrderItems.reduce((s,it)=>s+(parseInt(it.qty_boxes)||0),0);
-    const totBoxEl = document.getElementById('mgr-tot-boxes');
-    const totSumEl = document.getElementById('mgr-tot-sum');
-    if (totBoxEl) totBoxEl.textContent = totalBoxes;
-    if (totSumEl) totSumEl.textContent = '¥' + total.toFixed(2);
-  }
-  toast(`🗑 Позиция удалена / 已删除`);
+  if (tbody) tbody.innerHTML = _mgrOrderItems.map((item, idx) => mgrRowHTML(item, idx, orderId)).join('');
+  mgrRecalcFooter();
+  toast('Позиция убрана. Не забудь 💾 Сохранить / 已移除，请保存');
 }
 
-// ── Confirm warehouse packing changes → update order_items ──
 async function confirmPackingChanges(orderId) {
   const items = _mgrOrderItems.filter(it =>
     (it.wh_fact_boxes != null || it.wh_fact_bpb != null || it.wh_fact_spb != null) && !it.wh_confirmed_at
