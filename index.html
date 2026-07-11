@@ -1314,10 +1314,15 @@ function goBack() {
 // ══════════════════════════════════════════════════════════
 function isWeightItem(x) {
   if (!x) return false;
+  // Явный флаг из прайса (задаётся в редактировании позиции): true=граммы, false=стебли
+  if (x.is_weight === true)  return true;
+  if (x.is_weight === false) return false;
+  // Авто: по категории
   const cat = [x.cat_ru, x.cat_en, x.cat_cn].filter(Boolean).join(' ');
   if (/зелень|листья|叶材|greenery|foliage|leaves/i.test(cat)) return true;
   // Запасной признак: единица веса в поле «Упаковка» ("500г/банч", "0.5кг")
-  return /\d\s*(г|гр|кг|克|公斤|g|kg)\b/i.test(x.pack || '');
+  // NB: \b не работает с кириллицей в JS, поэтому lookahead
+  return /\d\s*(кг|килограмм\w*|грамм\w*|гр|г|克|公斤|kg|g)(?![a-zа-яё0-9])/i.test(x.pack || '');
 }
 // Для позиции заказа: snapshot (полная копия цветка) → joined flower → прайс
 function itemWeightBased(item) {
@@ -1722,7 +1727,17 @@ function showAddFlowerModal() {
     </div>
     <div class="field-row">
       <div class="field"><label>Банчей в коробке / 扎/件</label><input class="inp" type="number" id="nf-bpb" min="1" placeholder="10"></div>
-      <div class="field"><label>Стеблей в банче / 枝/扎</label><input class="inp" type="number" id="nf-stems" min="1" placeholder="20"></div>
+      <div class="field"><label>Кол-во в банче / 每扎数量</label><input class="inp" type="number" id="nf-stems" min="1" placeholder="20"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Единица счёта / 计量单位</label>
+        <select class="inp" id="nf-unit">
+          <option value="">Авто (по категории/упаковке) / 自动</option>
+          <option value="stems">Стебли / 枝</option>
+          <option value="grams">Граммы / 克</option>
+        </select>
+      </div>
+      <div class="field"></div>
     </div>
     <div class="field-row">
       <div class="field"><label>Упаковка / 规格</label><input class="inp" id="nf-pack" placeholder="20ст/банч..."></div>
@@ -1810,6 +1825,7 @@ async function addNewFlower() {
     flower_weight: flowerWeight,
     box_size: boxSize,
     in_stock: true,
+    is_weight: (() => { const u = document.getElementById('nf-unit')?.value; return u === 'grams' ? true : u === 'stems' ? false : null; })(),
     photo_url: photoBase64 || null,
     updated_at: new Date().toISOString(),
   };
@@ -1860,7 +1876,17 @@ function showEditFlowerModal(flowerId) {
     </div>
     <div class="field-row">
       <div class="field"><label>Банчей в коробке</label><input class="inp" type="number" id="ef-bpb" value="${f.boxes_per_box||10}"></div>
-      <div class="field"><label>Стеблей в банче</label><input class="inp" type="number" id="ef-stems" value="${f.stems||''}"></div>
+      <div class="field"><label>Кол-во в банче (ст/г)</label><input class="inp" type="number" id="ef-stems" value="${f.stems||''}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Единица счёта / 计量单位</label>
+        <select class="inp" id="ef-unit">
+          <option value="" ${f.is_weight==null?'selected':''}>Авто (по категории/упаковке)${f.is_weight==null?(isWeightItem(f)?' → сейчас: граммы':' → сейчас: стебли'):''}</option>
+          <option value="stems" ${f.is_weight===false?'selected':''}>Стебли / 枝</option>
+          <option value="grams" ${f.is_weight===true?'selected':''}>Граммы / 克</option>
+        </select>
+      </div>
+      <div class="field"></div>
     </div>
     <div class="field-row">
       <div class="field"><label>Упаковка</label><input class="inp" id="ef-pack" value="${f.pack||''}"></div>
@@ -1902,6 +1928,7 @@ async function saveEditFlower(flowerId) {
     order_qty: document.getElementById('ef-order-qty')?.value.trim() || null,
     flower_weight: document.getElementById('ef-flower-weight')?.value.trim() || null,
     box_size: document.getElementById('ef-box-size')?.value.trim() || null,
+    is_weight: (() => { const u = document.getElementById('ef-unit')?.value; return u === 'grams' ? true : u === 'stems' ? false : null; })(),
     updated_at: new Date().toISOString(),
   };
 
@@ -2021,6 +2048,8 @@ function updateCartQty(id, v) {
   const newTotal = Object.values(cart).reduce((s,o) => s + o.pbox * o.qty, 0);
   const footEl = document.getElementById('cart-table-total');
   if (footEl) footEl.textContent = '¥' + newTotal.toFixed(2);
+  const boxEl = document.getElementById('cart-table-boxes');
+  if (boxEl) boxEl.textContent = '📦 ' + Object.values(cart).reduce((s,o) => s + (parseInt(o.qty)||0), 0) + ' кор.';
 
   updateCartUI(); // updates the sticky bottom bar total
 }
@@ -2038,7 +2067,8 @@ function updateCartUI() {
   if (cntEl) cntEl.textContent = cnt;
   document.getElementById('cart-footer').style.display = cnt ? 'flex' : 'none';
   document.getElementById('cart-total').textContent = '¥ ' + total.toFixed(2);
-  document.getElementById('cart-count').textContent = cnt + ' поз.';
+  const totBoxes = items.reduce((s,o) => s + (parseInt(o.qty)||0), 0);
+  document.getElementById('cart-count').textContent = cnt + ' поз. · ' + totBoxes + ' кор.';
 }
 
 function goToOrder() {
@@ -2097,6 +2127,7 @@ function renderMyOrder() {
   let editHTML = '';
   if (cartItems.length || currentEditOrderId) {
     let total = 0, rows = '';
+    const totalBoxes = cartItems.reduce((s2,o) => s2 + (parseInt(o.qty)||0), 0);
     cartItems.forEach((o, i) => {
       const sub = o.pbox * o.qty; total += sub;
       const thumb = o.flower.photo_url || THUMBS[o.flower.en] || '';
@@ -2152,7 +2183,9 @@ function renderMyOrder() {
           </tr></thead>
           <tbody>${rows}</tbody>
           <tfoot><tr>
-            <td colspan="5" style="text-align:right;padding:8px;font-weight:700">ИТОГО / 合计:</td>
+            <td colspan="4" style="text-align:right;padding:8px;font-weight:700">ИТОГО / 合计:</td>
+            <td style="font-weight:700;font-size:12px;color:var(--mid)">${cartItems.length} поз.</td>
+            <td id="cart-table-boxes" style="font-weight:700;font-size:13px;color:var(--sage-d);white-space:nowrap">📦 ${totalBoxes} кор.</td>
             <td id="cart-table-total" style="font-weight:700;font-size:14px;color:var(--sage-d)">¥${total.toFixed(2)}</td>
             <td colspan="3"></td>
           </tr></tfoot>
