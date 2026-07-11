@@ -3243,10 +3243,20 @@ function renderOrderDetail(order) {
 
   const total     = items.reduce((s,it)=>s+((parseFloat(it.price_per_box)||0)*(parseInt(it.qty_boxes)||0)),0);
   const totalBoxes= items.reduce((s,it)=>s+(parseInt(it.qty_boxes)||0),0);
+  const odCubes   = orderCubes(items);
 
   document.getElementById('order-detail-content').innerHTML = `
     ${clientEditedBanner}
     ${packChangeBanner}
+    <div class="card" style="margin-bottom:14px;padding:10px 16px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px">
+        <b>🚚 Логистика:</b>
+        <span>📦 ${totalBoxes} кор · ${odCubes.est?'≈':''}${fmtM3(odCubes.m3)} м³</span>
+        <span id="od-shipment-select" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="spinner" style="width:14px;height:14px"></span>
+        </span>
+      </div>
+    </div>
     <div class="card" style="margin-bottom:14px">
       <div class="field-row">
         <div class="field"><label>Статус / 状态</label>
@@ -9435,7 +9445,7 @@ async function showAttachOrdersModal(shipmentId) {
     client:users!orders_client_id_fkey(company_name,login),
     order_items(qty_boxes, flower_snapshot)
   `).is('shipment_id', null)
-    .in('status', ['confirmed','invoiced','paid'])
+    .neq('status', 'cancelled')
     .order('created_at', {ascending:false});
 
   const L = shipmentLoad(shp);
@@ -9445,6 +9455,7 @@ async function showAttachOrdersModal(shipmentId) {
     return `<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;font-size:12px">
       <input type="checkbox" class="attach-chk" value="${o.id}" data-m3="${c.m3}" onchange="attachPreview(${shipmentId})">
       <b>${o.order_number}</b>
+      <span class="badge" style="font-size:9px">${statusLabel(o.status)}</span>
       <span style="color:var(--mid)">${o.client?.company_name || o.client?.login || ''}</span>
       <span style="flex:1"></span>
       <span style="color:var(--mid)">🚢 ${o.date_ship || '—'}</span>
@@ -9455,7 +9466,7 @@ async function showAttachOrdersModal(shipmentId) {
   document.getElementById('modal-content').innerHTML = `
     <div class="modal-title">➕ Заказы в ${shp.ship_number} / 挂单</div>
     <div style="font-size:12px;color:var(--mid);margin-bottom:8px">
-      Сейчас: ${fmtM3(L.m3)} / ${shp.max_load_m3} м³ · подтверждённые заказы без машины / 已确认且未挂车的订单
+      Сейчас: ${fmtM3(L.m3)} / ${shp.max_load_m3} м³ · все заказы без машины, кроме отменённых — планируйте загрузку до утверждения / 全部未挂车订单
     </div>
     <div id="attach-preview" style="font-size:12px;font-weight:700;margin-bottom:8px"></div>
     <div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
