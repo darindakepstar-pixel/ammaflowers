@@ -9305,7 +9305,16 @@ async function loadShipments() {
     `).in('shipment_id', ids);
     orders = data || [];
   }
-  shipments.forEach(shp => { shp._orders = orders.filter(o => o.shipment_id === shp.id); });
+  // Счётчик актов приёмки по машинам
+  let docCounts = {};
+  if (ids.length) {
+    const { data: docs } = await sb.from('receiving_docs').select('shipment_id').in('shipment_id', ids);
+    (docs || []).forEach(d => { docCounts[d.shipment_id] = (docCounts[d.shipment_id] || 0) + 1; });
+  }
+  shipments.forEach(shp => {
+    shp._orders = orders.filter(o => o.shipment_id === shp.id);
+    shp._docCount = docCounts[shp.id] || 0;
+  });
   shipmentsData = shipments;
   renderShipments();
 }
@@ -9370,6 +9379,7 @@ function renderShipments() {
         <span style="font-size:12px;color:var(--mid)">🚛 ${shp.truck_name || ''} · ${shp.truck_volume_m3} м³ (лимит ${shp.max_load_m3} м³)</span>
         ${shp.direction ? `<span style="font-size:12px;color:var(--mid)">➡ ${shp.direction}</span>` : ''}
         <span style="flex:1"></span>
+        ${shp._docCount ? `<button class="btn btn-secondary btn-sm" onclick="showReceivingDocsModal(${shp.id})">📄 Акты (${shp._docCount})</button>` : ''}
         ${isMgrLocal ? `
           <select class="inp" style="width:auto;padding:5px 8px;font-size:11px" onchange="setShipmentStatus(${shp.id}, this.value)">
             ${Object.entries(SHP_STATUS).map(([k,v]) => `<option value="${k}" ${shp.status===k?'selected':''}>${v.icon} ${v.ru}</option>`).join('')}
@@ -9929,6 +9939,7 @@ async function loadSupplierDeliveries() {
         <span style="font-size:12px;color:var(--mid)">Σ ${totBn} банчей</span>
         <span style="flex:1"></span>
         <button class="btn btn-secondary btn-sm" onclick="printReceivingForm(${gi})">🖨 Форма приёмки / 验收单</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportReceivingFormExcel(${gi})">📊 Excel</button>
         <label class="btn btn-primary btn-sm" style="cursor:pointer">📤 Загрузить акт / 上传
           <input type="file" accept="image/*,.pdf" multiple style="display:none" onchange="uploadReceivingDoc(${shpId}, ${g.sp ? g.sp.id : 'null'}, this)">
         </label>
@@ -10000,6 +10011,36 @@ function printReceivingForm(gi) {
   w.document.close();
 }
 
+// ── Excel-версия формы приёмки (та же структура, что печатная) ──
+function exportReceivingFormExcel(gi) {
+  const g = _supDeliv.groups[gi];
+  const shp = _supDeliv.shipment;
+  if (!g || !shp) return;
+  const supName = g.sp ? (g.sp.name_ru + (g.sp.name_cn ? ' / ' + g.sp.name_cn : '')) : '';
+  const aoa = [
+    ['AMMA FLOWERS — Акт приёмки товара / 收货验收单'],
+    ['Машина / 车次:', shp.ship_number + ' · ' + (shp.ship_date||''), '', 'Поставщик / 供应商:', supName],
+    ['Тел / 电话:', g.sp?.phone || '', '', 'Дата приёмки / 验收日期:', ''],
+    [],
+    ['№','Наименование / 品名','中文名','Заказано банчей / 订购扎数','Принято / 实收','Брак / 退货数','Причина возврата / 退货原因','Требования к качеству / 质量要求'],
+  ];
+  g.rows.forEach((r, i) => aoa.push([i+1, r.item_ru||'', r.item_cn||'', r.qty_bunches||0, '', '', '', '']));
+  for (let i = 0; i < 4; i++) aoa.push(['','','','','','','','']); // запасные строки
+  aoa.push([]);
+  aoa.push(['Причины / 原因: увядание/萎蔫 · мехповреждения/机械损伤 · болезни/病虫害 · несоответствие сорта/品种不符 · длина, вес/长度重量不符 · другое/其他']);
+  aoa.push([]);
+  aoa.push(['Принял (склад) / 仓库验收人:','','','','Сдал (поставщик) / 供应商交货人:','','','']);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = [
+    {s:{r:0,c:0}, e:{r:0,c:7}},
+    {s:{r:aoa.length-3,c:0}, e:{r:aoa.length-3,c:7}},
+  ];
+  ws['!cols'] = [{wch:4},{wch:24},{wch:14},{wch:12},{wch:9},{wch:9},{wch:28},{wch:26}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Приёмка');
+  XLSX.writeFile(wb, `Приёмка_${shp.ship_number}_${(g.sp?.name_ru||'поставщик').replace(/[\/:*?"<>|]/g,'')}.xlsx`);
+}
+
 // ── Загрузка заполненных актов ──
 async function uploadReceivingDoc(shipmentId, supplierId, input) {
   const files = [...(input.files || [])];
@@ -10054,6 +10095,21 @@ async function renderReceivingDocs(shipmentId, targetId) {
         <span style="color:var(--light)">${dt}</span>
       </div>`;
     }).join('');
+}
+
+// ── Модалка актов приёмки по машине (для карточки отгрузки) ──
+async function showReceivingDocsModal(shipmentId) {
+  const shp = shipmentsData.find(x => x.id === shipmentId);
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">📄 Акты приёмки: ${shp?.ship_number || ''} / 验收单</div>
+    <div id="recv-docs-modal-list" style="max-height:380px;overflow-y:auto">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Закрыть / 关闭</button>
+    </div>`;
+  openModal();
+  renderReceivingDocs(shipmentId, 'recv-docs-modal-list');
 }
 
 // ── Manager: view claims ──
