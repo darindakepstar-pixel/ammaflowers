@@ -935,7 +935,19 @@ document.addEventListener('DOMContentLoaded', function(){
 
       <!-- ── RECEIVING / ПРИЁМКА ── -->
       <div id="whpanel-receiving" class="hidden">
-        <div class="page-sub" style="margin-bottom:12px">Введите фактическое количество при приёмке товара / 请输入实际到货数量</div>
+        <!-- Поставки от поставщиков -->
+        <div class="card" style="margin-bottom:18px">
+          <div style="font-weight:700;font-size:14px;margin-bottom:8px">🚛 Поставщики: кто везёт на склад / 供应商到货</div>
+          <div class="ctrl-bar" style="flex-wrap:wrap;gap:10px;margin-bottom:10px">
+            <select class="inp" id="recv-shp-select" onchange="loadSupplierDeliveries()" style="min-width:230px">
+              <option value="">— Выберите машину / 请选择车次 —</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="loadSupplierDeliveries()">🔄</button>
+          </div>
+          <div id="supplier-deliveries"></div>
+          <div id="receiving-docs-list" style="margin-top:10px"></div>
+        </div>
+        <div class="page-sub" style="margin-bottom:12px">Приёмка по заказам: введите фактическое количество / 按订单收货：请输入实际到货数量</div>
         <div class="ctrl-bar" style="flex-wrap:wrap;gap:10px;margin-bottom:12px">
           <select class="inp" id="recv-order-select" onchange="loadReceiving()" style="min-width:220px">
             <option value="">— Выберите заказ / 请选择订单 —</option>
@@ -6723,7 +6735,7 @@ function switchWhTab(name, btn) {
   });
   if (name === 'pending')   loadWhPending();
   if (name === 'assembly')  loadWarehouseOrders();
-  if (name === 'receiving') loadReceivingOrders();
+  if (name === 'receiving') { loadReceivingOrders(); fillRecvShipmentSelect(); }
   if (name === 'labels')    loadWhLabelOrders();
   if (name === 'claims')    loadWhClaims();
   if (name === 'stats')     loadWhStats();
@@ -9707,8 +9719,10 @@ function renderPurchase(isSaved) {
     <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn btn-secondary btn-sm" onclick="purchAddRow()">+ Позиция / 添加</button>
       <span style="font-size:10px;color:var(--light);align-self:center">Закупочные цены видят только менеджеры / 采购价仅经理可见</span>
-    </div>`;
+    </div>
+    <div id="purch-docs-list" style="margin-top:14px"></div>`;
   purchFooter();
+  renderReceivingDocs(shp.id, 'purch-docs-list');
 }
 
 function purchUpd(i, f, v) {
@@ -9849,6 +9863,197 @@ async function deactivateSupplier(id) {
   const { error } = await sb.from('suppliers').update({active:false}).eq('id', id);
   if (error) { toast('❌ ' + error.message); return; }
   showSuppliersModal();
+}
+
+// ══════════════════════════════════════════════════════════
+//  ПРИЁМКА ОТ ПОСТАВЩИКОВ: график поставок, форма приёмки, акты
+// ══════════════════════════════════════════════════════════
+let _supDeliv = { shipment: null, groups: [] };
+
+async function fillRecvShipmentSelect() {
+  const sel = document.getElementById('recv-shp-select');
+  if (!sel) return;
+  const { data } = await sb.from('shipments').select('id, ship_number, ship_date, truck_name, status')
+    .in('status', ['forming','departed']).order('created_at', {ascending:false}).limit(30);
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— Выберите машину / 请选择车次 —</option>' +
+    (data || []).map(sh => `<option value="${sh.id}" ${String(sh.id)===cur?'selected':''}>🚚 ${sh.ship_number} · ${sh.ship_date||''} ${sh.truck_name?('· '+sh.truck_name):''}</option>`).join('');
+  if (!sel.value && data?.length === 1) { sel.value = data[0].id; loadSupplierDeliveries(); }
+}
+
+async function loadSupplierDeliveries() {
+  const wrap = document.getElementById('supplier-deliveries');
+  const shpId = parseInt(document.getElementById('recv-shp-select')?.value);
+  if (!wrap) return;
+  if (!shpId) { wrap.innerHTML = ''; document.getElementById('receiving-docs-list').innerHTML=''; return; }
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  await loadSuppliers();
+  const [{ data: shp }, { data: purch }] = await Promise.all([
+    sb.from('shipments').select('*').eq('id', shpId).single(),
+    sb.from('purchases').select('id, supplier_id, item_ru, item_cn, qty_bunches, delivery_time, note')
+      .eq('shipment_id', shpId).order('id'),
+  ]);
+  if (!purch?.length) {
+    wrap.innerHTML = '<div style="padding:12px;color:var(--light);font-size:12px">Закуп по этой машине ещё не заполнен менеджером / 该车次采购单尚未填写</div>';
+    renderReceivingDocs(shpId);
+    return;
+  }
+  // Группируем по поставщику (закупочных цен в этом экране нет — склад их не видит)
+  const groups = {};
+  purch.forEach(r => {
+    const sp = suppliersData.find(x => x.id === r.supplier_id);
+    const k = sp ? sp.id : 0;
+    if (!groups[k]) groups[k] = { sp, rows: [] };
+    groups[k].rows.push(r);
+  });
+  _supDeliv = { shipment: shp, groups: Object.values(groups) };
+
+  wrap.innerHTML = _supDeliv.groups.map((g, gi) => {
+    const times = [...new Set(g.rows.map(r => r.delivery_time).filter(Boolean))].join(', ');
+    const totBn = g.rows.reduce((s2,r) => s2 + (parseFloat(r.qty_bunches)||0), 0);
+    const rows = g.rows.map((r, i) => `
+      <tr class="${i%2?'stripe':''}">
+        <td style="color:var(--light);font-size:10px">${i+1}</td>
+        <td class="L" style="font-size:12px"><b>${escHtml(r.item_ru||'')}</b>
+          <div style="font-size:10px;color:var(--mid)">${escHtml(r.item_cn||'')}</div></td>
+        <td style="text-align:center;font-weight:700">${r.qty_bunches||0}</td>
+        <td style="text-align:center;font-size:11px">${escHtml(r.delivery_time||'—')}</td>
+        <td style="font-size:10px;color:var(--mid)">${escHtml(r.note||'')}</td>
+      </tr>`).join('');
+    return `<div class="card" style="margin-bottom:12px;border-left:4px solid var(--gold)">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <b style="font-size:14px">${g.sp ? escHtml(g.sp.name_ru) : '(поставщик не указан / 未指定)'}</b>
+        ${g.sp?.name_cn ? `<span style="font-size:12px;color:var(--mid)">${escHtml(g.sp.name_cn)}</span>` : ''}
+        ${g.sp?.phone ? `<span style="font-size:12px;color:var(--mid)">📞 ${escHtml(g.sp.phone)}</span>` : ''}
+        ${times ? `<span style="font-size:12px;color:var(--mid)">🕐 ${escHtml(times)}</span>` : ''}
+        <span style="font-size:12px;color:var(--mid)">Σ ${totBn} банчей</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-secondary btn-sm" onclick="printReceivingForm(${gi})">🖨 Форма приёмки / 验收单</button>
+        <label class="btn btn-primary btn-sm" style="cursor:pointer">📤 Загрузить акт / 上传
+          <input type="file" accept="image/*,.pdf" multiple style="display:none" onchange="uploadReceivingDoc(${shpId}, ${g.sp ? g.sp.id : 'null'}, this)">
+        </label>
+      </div>
+      <div class="tbl-wrap"><table style="min-width:440px">
+        <thead><tr><th style="width:26px">№</th><th class="L">Наименование / 品名</th>
+        <th>Банчей / 扎数</th><th>Время / 送达</th><th>Примечание / 备注</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+  }).join('');
+  renderReceivingDocs(shpId);
+}
+
+// ── Печатная форма приёмки (A4, RU+CN, графы для брака) ──
+function printReceivingForm(gi) {
+  const g = _supDeliv.groups[gi];
+  const shp = _supDeliv.shipment;
+  if (!g || !shp) return;
+  const rows = g.rows.map((r, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td style="text-align:left"><b>${escHtml(r.item_ru||'')}</b><br><span style="font-size:9px">${escHtml(r.item_cn||'')}</span></td>
+      <td>${r.qty_bunches||0}</td>
+      <td></td><td></td><td></td><td></td>
+    </tr>`).join('');
+  const extra = Array.from({length:4}, () => '<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join('');
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Приёмка ${shp.ship_number}</title>
+  <style>
+    @page { size: A4; margin: 12mm; }
+    body { font-family: Arial, 'Microsoft YaHei', sans-serif; font-size: 11px; color: #000; }
+    h2 { font-size: 15px; margin: 0 0 2px; }
+    .meta { display: flex; justify-content: space-between; margin: 8px 0 10px; flex-wrap: wrap; gap: 4px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #000; padding: 5px 4px; text-align: center; vertical-align: top; }
+    th { background: #f0f0f0; font-size: 10px; }
+    td { height: 26px; }
+    .sig { display: flex; justify-content: space-between; margin-top: 24px; }
+    .sig div { width: 44%; border-top: 1px solid #000; padding-top: 4px; font-size: 10px; text-align: center; }
+    .hint { font-size: 9px; color: #333; margin-top: 8px; }
+  </style></head><body>
+  <h2>AMMA FLOWERS — Акт приёмки товара / 收货验收单</h2>
+  <div class="meta">
+    <span><b>Машина / 车次:</b> ${shp.ship_number} · ${shp.ship_date||''}</span>
+    <span><b>Поставщик / 供应商:</b> ${g.sp ? escHtml(g.sp.name_ru) : '_________'} ${g.sp?.name_cn ? escHtml(g.sp.name_cn) : ''}</span>
+    <span><b>Тел / 电话:</b> ${g.sp?.phone ? escHtml(g.sp.phone) : '_________'}</span>
+    <span><b>Дата приёмки / 验收日期:</b> ____________</span>
+  </div>
+  <table>
+    <thead><tr>
+      <th style="width:24px">№</th>
+      <th style="width:22%">Наименование / 品名</th>
+      <th style="width:8%">Заказано банчей<br>订购扎数</th>
+      <th style="width:8%">Принято<br>实收</th>
+      <th style="width:8%">Брак / возврат<br>退货数</th>
+      <th style="width:26%">Причина возврата<br>退货原因</th>
+      <th style="width:22%">Требования к качеству<br>质量要求</th>
+    </tr></thead>
+    <tbody>${rows}${extra}</tbody>
+  </table>
+  <div class="hint">Причины: увядание/萎蔫 · механические повреждения/机械损伤 · болезни, вредители/病虫害 · несоответствие сорта/品种不符 · длина, вес не по заказу/长度重量不符 · другое/其他</div>
+  <div class="sig">
+    <div>Принял (склад) / 仓库验收人</div>
+    <div>Сдал (поставщик) / 供应商交货人</div>
+  </div>
+  <script>window.onload = () => window.print();<\/script>
+  </body></html>`);
+  w.document.close();
+}
+
+// ── Загрузка заполненных актов ──
+async function uploadReceivingDoc(shipmentId, supplierId, input) {
+  const files = [...(input.files || [])];
+  if (!files.length) return;
+  const note = prompt('Комментарий к акту (что забраковано, кратко) / 简要备注退货情况:') || null;
+  toast('⏳ Загрузка... / 上传中');
+  try {
+    for (const file of files) {
+      let blob = file, name = file.name;
+      if (/^image\//.test(file.type)) {
+        try { blob = await compressImage(file, 1600, 0.85); name = name.replace(/\.[^.]+$/, '') + '.jpg'; } catch(e) { blob = file; }
+      }
+      const ext = (name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g,'') || 'bin';
+      const path = `shp-${shipmentId}/${Date.now()}-${Math.random().toString(36).slice(2,7)}.${ext}`;
+      const { error } = await sb.storage.from('receiving-docs')
+        .upload(path, blob, { contentType: blob.type || file.type || 'application/octet-stream' });
+      if (error) throw error;
+      const url = sb.storage.from('receiving-docs').getPublicUrl(path).data.publicUrl;
+      const { error: insErr } = await sb.from('receiving_docs').insert({
+        shipment_id: shipmentId, supplier_id: supplierId,
+        file_url: url, file_name: name, note,
+        uploaded_by: currentUser?.id || null,
+      });
+      if (insErr) throw insErr;
+    }
+    logActivity('receiving_doc', 'shipment', shipmentId, '', 'Загружен акт приёмки' + (note ? ': ' + note : ''));
+    toast('✅ Акт загружен / 验收单已上传');
+    input.value = '';
+    renderReceivingDocs(shipmentId);
+  } catch(e) {
+    toast('❌ Ошибка загрузки: ' + (e.message || e) + ' — проверь SQL-миграцию бакета');
+  }
+}
+
+// ── Список актов по машине (видят и склад, и менеджер) ──
+async function renderReceivingDocs(shipmentId, targetId) {
+  const el = document.getElementById(targetId || 'receiving-docs-list');
+  if (!el) return;
+  const { data: docs } = await sb.from('receiving_docs').select('*')
+    .eq('shipment_id', shipmentId).order('created_at', {ascending:false});
+  if (!docs?.length) { el.innerHTML = ''; return; }
+  await loadSuppliers();
+  el.innerHTML = `<div style="font-weight:700;font-size:12px;margin-bottom:6px">📄 Акты приёмки / 验收单 (${docs.length})</div>` +
+    docs.map(d => {
+      const sp = suppliersData.find(x => x.id === d.supplier_id);
+      const dt = new Date(d.created_at).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+      return `<div style="display:flex;gap:8px;align-items:center;padding:5px 8px;border-bottom:1px solid var(--border);font-size:11px;flex-wrap:wrap">
+        <a href="${d.file_url}" target="_blank" style="color:var(--sage-d);font-weight:700">📎 ${escHtml(d.file_name||'файл')}</a>
+        <span style="color:var(--mid)">${sp ? escHtml(sp.name_ru) : ''}</span>
+        ${d.note ? `<span style="color:#92400e">⚠️ ${escHtml(d.note)}</span>` : ''}
+        <span style="flex:1"></span>
+        <span style="color:var(--light)">${dt}</span>
+      </div>`;
+    }).join('');
 }
 
 // ── Manager: view claims ──
