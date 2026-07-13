@@ -624,6 +624,11 @@ document.addEventListener('DOMContentLoaded', function(){
       <div class="page-title">Прайс-лист / 价格单 / Price List</div>
       <div class="page-sub" id="price-updated">Актуальные цены AMMA FLOWERS</div>
       <div class="ctrl-bar">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;width:100%;margin-bottom:8px" id="catalog-tabs">
+          <button class="wh-tab active" data-cat="cut" onclick="switchCatalog('cut',this)">🌸 Срезы / 鲜切</button>
+          <button class="wh-tab" data-cat="potted" onclick="switchCatalog('potted',this)">🪴 Горшечные / 盆栽</button>
+          <button class="wh-tab" data-cat="supplies" onclick="switchCatalog('supplies',this)">📦 Упаковка / 包装辅材</button>
+        </div>
         <input class="inp inp-search" type="text" id="srch" placeholder="🔍 Поиск RU / 中文 / EN...">
         <select class="inp inp-select" id="cat-filter"><option value="">Все категории</option></select>
         <button class="btn btn-secondary" id="btn-hide-out" onclick="toggleHide()">👁 Скрыть нет в наличии / 隐藏无货</button>
@@ -1406,9 +1411,11 @@ function boxVolumeM3(x) {
   if (!m) return null; // неизвестен
   return Math.round((parseFloat(m[1])/100)*(parseFloat(m[2])/100)*(parseFloat(m[3])/100)*10000)/10000;
 }
-// Объём с фолбэком + признак «оценочно»
+// Объём с фолбэком + признак «оценочно».
+// Упаковка/сопутка без указанного короба кубы не добавляет (иначе завысим машину).
 function itemBoxM3(x) {
   const v = boxVolumeM3(x);
+  if (v == null && (x?.catalog === 'supplies')) return { m3: 0, est: false };
   return { m3: (v ?? DEFAULT_BOX_M3), est: (v == null) };
 }
 function fmtM3(v) { return (Math.round((v||0)*100)/100).toFixed(2); }
@@ -1585,8 +1592,21 @@ function showOrderTrackModal(orderId) {
     d ? (d.frozen ? '🔒 Изменения закрыты / 修改已截止'
       : `🕐 ${d.daysLeft===0?'Выезд сегодня':'До выезда '+d.daysLeft+' дн'} · правки до ${d.lastEditDay} / 可修改至`) : '',
     `📦 ${boxes} кор · ${c.est?'≈':''}${fmtM3(c.m3)} м³ · ¥${total.toFixed(2)}`,
-  ].filter(Boolean).map(x => `<div style="font-size:12px;margin-bottom:5px">${x}</div>`).join('');
+  ].filter(Boolean).map(x => `<div style="font-size:12px;margin-bottom:5px">${x}</div>`).join('')
+  + '<div id="trk-client-last" style="font-size:12px;margin-bottom:5px;color:var(--sage-d);font-weight:700"></div>';
 
+  if (o.shipment_id) {
+    sb.from('shipment_tracking').select('title, happened_at')
+      .eq('shipment_id', o.shipment_id).eq('kind', 'checkpoint')
+      .order('happened_at', {ascending: false}).limit(1)
+      .then(({data}) => {
+        const el = document.getElementById('trk-client-last');
+        if (el && data?.[0]) {
+          const dt = new Date(data[0].happened_at).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+          el.innerHTML = '📍 ' + escHtml(data[0].title) + ' · ' + dt;
+        }
+      });
+  }
   document.getElementById('modal-content').innerHTML = `
     <div class="modal-title">🌸 ${o.order_number} — сводка / 订单状态 🌷</div>
     <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
@@ -1752,8 +1772,8 @@ async function loadFlowers() {
   document.getElementById('price-updated').textContent =
     `Актуальные цены AMMA FLOWERS · Обновлено: ${localStorage.getItem('ammaPriceUpdated') || '—'}`;
 
-  // Fill category filter
-  const cats = [...new Set(flowers.map(f => f.cat_ru))];
+  // Fill category filter (только текущий каталог)
+  const cats = [...new Set(flowers.filter(f => flowerCatalog(f) === currentCatalog).map(f => f.cat_ru))];
   const sel = document.getElementById('cat-filter');
   sel.innerHTML = '<option value="">Все категории / 所有类别</option>';
   cats.forEach(c => {
@@ -1874,6 +1894,21 @@ async function saveMarkupClients() {
   renderPrice();
 }
 
+let currentCatalog = 'cut';   // 🌸 cut | 🪴 potted | 📦 supplies
+function flowerCatalog(f) { return f?.catalog || 'cut'; }
+function switchCatalog(cat, btn) {
+  currentCatalog = cat;
+  document.querySelectorAll('#catalog-tabs .wh-tab').forEach(b => b.classList.toggle('active', b === btn));
+  fillCatFilterForCatalog();
+  renderPrice();
+}
+function fillCatFilterForCatalog() {
+  const sel = document.getElementById('cat-filter');
+  if (!sel) return;
+  const cats = [...new Set(flowers.filter(f => flowerCatalog(f) === currentCatalog).map(f => f.cat_ru).filter(Boolean))];
+  sel.innerHTML = '<option value="">Все категории</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
 function renderPrice() {
   const q = document.getElementById('srch').value.toLowerCase().trim();
   const cf = document.getElementById('cat-filter').value;
@@ -1883,6 +1918,7 @@ function renderPrice() {
   let vis = 0, lastCat = null, row = 0;
 
   flowers.forEach(f => {
+    if (flowerCatalog(f) !== currentCatalog) return;
     if (hiddenOut && !f.in_stock) return;
     if (cf && f.cat_ru !== cf) return;
     if (q && ![f.ru,f.cn,f.en,f.cat_ru].join(' ').toLowerCase().includes(q)) return;
@@ -2012,7 +2048,13 @@ function showAddFlowerModal() {
           <option value="grams">Граммы / 克</option>
         </select>
       </div>
-      <div class="field"></div>
+      <div class="field"><label>Каталог / 目录</label>
+        <select class="inp" id="nf-catalog">
+          <option value="cut">🌸 Срезы / 鲜切</option>
+          <option value="potted">🪴 Горшечные / 盆栽</option>
+          <option value="supplies">📦 Упаковка / 包装辅材</option>
+        </select>
+      </div>
     </div>
     <div class="field-row">
       <div class="field"><label>Упаковка / 规格</label><input class="inp" id="nf-pack" placeholder="20ст/банч..."></div>
@@ -2100,6 +2142,7 @@ async function addNewFlower() {
     flower_weight: flowerWeight,
     box_size: boxSize,
     in_stock: true,
+    catalog: document.getElementById('nf-catalog')?.value || currentCatalog || 'cut',
     is_weight: (() => { const u = document.getElementById('nf-unit')?.value; return u === 'grams' ? true : u === 'stems' ? false : null; })(),
     photo_url: photoBase64 || null,
     updated_at: new Date().toISOString(),
@@ -2154,6 +2197,13 @@ function showEditFlowerModal(flowerId) {
       <div class="field"><label>Кол-во в банче (ст/г)</label><input class="inp" type="number" id="ef-stems" value="${f.stems||''}"></div>
     </div>
     <div class="field-row">
+      <div class="field"><label>Каталог / 目录</label>
+        <select class="inp" id="ef-catalog">
+          <option value="cut" ${(f.catalog||'cut')==='cut'?'selected':''}>🌸 Срезы / 鲜切</option>
+          <option value="potted" ${f.catalog==='potted'?'selected':''}>🪴 Горшечные / 盆栽</option>
+          <option value="supplies" ${f.catalog==='supplies'?'selected':''}>📦 Упаковка / 包装辅材</option>
+        </select>
+      </div>
       <div class="field"><label>Единица счёта / 计量单位</label>
         <select class="inp" id="ef-unit">
           <option value="" ${f.is_weight==null?'selected':''}>Авто (по категории/упаковке)${f.is_weight==null?(isWeightItem(f)?' → сейчас: граммы':' → сейчас: стебли'):''}</option>
@@ -2161,7 +2211,6 @@ function showEditFlowerModal(flowerId) {
           <option value="grams" ${f.is_weight===true?'selected':''}>Граммы / 克</option>
         </select>
       </div>
-      <div class="field"></div>
     </div>
     <div class="field-row">
       <div class="field"><label>Упаковка</label><input class="inp" id="ef-pack" value="${f.pack||''}"></div>
@@ -2203,6 +2252,7 @@ async function saveEditFlower(flowerId) {
     order_qty: document.getElementById('ef-order-qty')?.value.trim() || null,
     flower_weight: document.getElementById('ef-flower-weight')?.value.trim() || null,
     box_size: document.getElementById('ef-box-size')?.value.trim() || null,
+    catalog: document.getElementById('ef-catalog')?.value || 'cut',
     is_weight: (() => { const u = document.getElementById('ef-unit')?.value; return u === 'grams' ? true : u === 'stems' ? false : null; })(),
     updated_at: new Date().toISOString(),
   };
@@ -3674,6 +3724,8 @@ async function assignOrderToShipment(orderId, shipmentId, orderNum) {
     ]);
     let m3 = 0;
     (attached || []).forEach(o => { m3 += orderCubes(o.order_items).m3; });
+    await loadTruckTypes();
+    cargoMismatchWarn(shp, _mgrOrderItems, orderNum);
     const max = parseFloat(shp?.max_load_m3) || 0;
     const pct = max ? m3 / max * 100 : 0;
     if (pct > 100)      toast(`🔴 ${shp.ship_number}: ПЕРЕГРУЗ ${fmtM3(m3)} из ${max} м³!`);
@@ -9541,6 +9593,26 @@ const SHP_STATUS = {
   delivered: { icon:'🏁', ru:'Доставлена',  cn:'已到达' },
 };
 
+// Типы груза в заказе (по snapshot позиций)
+function orderCargoTypes(items) {
+  const t = new Set();
+  (items || []).forEach(it => {
+    const c = (it.flower_snapshot || it.flower || {}).catalog || 'cut';
+    if (c !== 'supplies') t.add(c); // упаковка едет с чем угодно
+  });
+  return t;
+}
+// Предупреждение при несоответствии груза и машины
+function cargoMismatchWarn(shp, items, orderNum) {
+  const truck = truckTypesData.find(t => t.id === shp?.truck_type_id);
+  if (!truck?.cargo) return;
+  const types = orderCargoTypes(items);
+  if (truck.cargo === 'cut' && types.has('potted'))
+    toast(`⚠️ ${orderNum || 'Заказ'}: горшечные в машине для срезов! / 盆栽装入鲜切车!`);
+  if (truck.cargo === 'potted' && types.has('cut'))
+    toast(`⚠️ ${orderNum || 'Заказ'}: срезы в машине для горшечных! / 鲜切装入盆栽车!`);
+}
+
 // Кубатура отгрузки + цвет индикатора относительно ЛИМИТА погрузки
 function shipmentLoad(shp) {
   let m3 = 0, boxes = 0, est = false;
@@ -9595,6 +9667,7 @@ function renderShipments() {
         <span style="font-size:12px;color:var(--mid)">🚛 ${shp.truck_name || ''} · ${shp.truck_volume_m3} м³ (лимит ${shp.max_load_m3} м³)</span>
         ${shp.direction ? `<span style="font-size:12px;color:var(--mid)">➡ ${shp.direction}</span>` : ''}
         <span style="flex:1"></span>
+        <button class="btn btn-secondary btn-sm" onclick="showTrackingModal(${shp.id})">📍 Трекинг / 追踪</button>
         ${shp._docCount ? `<button class="btn btn-secondary btn-sm" onclick="showReceivingDocsModal(${shp.id})">📄 Акты (${shp._docCount})</button>` : ''}
         ${isMgrLocal ? `
           <select class="inp" style="width:auto;padding:5px 8px;font-size:11px" onchange="setShipmentStatus(${shp.id}, this.value)">
@@ -9727,6 +9800,7 @@ async function showAttachOrdersModal(shipmentId) {
     return `<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;font-size:12px">
       <input type="checkbox" class="attach-chk" value="${o.id}" data-m3="${c.m3}" onchange="attachPreview(${shipmentId})">
       <b>${o.order_number}</b>
+      ${orderCargoTypes(o.order_items).has('potted') ? '<span title="Горшечные / 盆栽">🪴</span>' : ''}
       <span class="badge" style="font-size:9px">${statusLabel(o.status)}</span>
       <span style="color:var(--mid)">${o.client?.company_name || o.client?.login || ''}</span>
       <span style="flex:1"></span>
@@ -9778,8 +9852,10 @@ async function attachOrdersToShipment(shipmentId) {
     'Прикреплено заказов: ' + ids.length);
   closeModal();
   await loadShipments();
-  // Предупреждение о загрузке после прикрепления
+  // Предупреждение о загрузке и типе груза после прикрепления
   const upd = shipmentsData.find(x => x.id === shipmentId);
+  if (upd) (upd._orders || []).filter(o => ids.includes(o.id))
+    .forEach(o => cargoMismatchWarn(upd, o.order_items, o.order_number));
   if (upd) {
     const L = shipmentLoad(upd);
     if (L.pct > 100)      toast('🔴 ВНИМАНИЕ: перегруз! ' + fmtM3(L.m3) + ' из ' + upd.max_load_m3 + ' м³');
@@ -10328,6 +10404,136 @@ async function renderReceivingDocs(shipmentId, targetId) {
         <span style="color:var(--light)">${dt}</span>
       </div>`;
     }).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+//  ЛОГИСТИЧЕСКИЙ ТРЕКЕР: чекпоинты маршрута + журнал температур
+// ══════════════════════════════════════════════════════════
+const TEMP_MIN = 2, TEMP_MAX = 8;   // коридор для срезов, °C
+const CHECKPOINT_PRESETS = [
+  'Выехала из Куньмина / 昆明出发',
+  'Граница КНР (Хоргос) / 霍尔果斯口岸',
+  'Прошла таможню / 已清关',
+  'Казахстан, в пути / 哈萨克斯坦在途',
+  'Россия, в пути / 俄罗斯在途',
+  'Прибыла к клиенту / 已到达',
+];
+let _trkShipmentId = null;
+
+async function showTrackingModal(shipmentId) {
+  _trkShipmentId = shipmentId;
+  const shp = shipmentsData.find(x => x.id === shipmentId);
+  const isMgrLocal = currentUser?.role === 'manager';
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">📍 Трекинг: ${shp?.ship_number || ''} / 物流追踪</div>
+    <div id="trk-content" style="max-height:420px;overflow-y:auto"><div class="loading"><div class="spinner"></div></div></div>
+    ${isMgrLocal ? `
+    <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        <select class="inp" id="trk-preset" style="flex:2;min-width:180px;padding:5px 8px;font-size:11px">
+          ${CHECKPOINT_PRESETS.map(c => `<option>${c}</option>`).join('')}
+          <option value="__custom__">✏️ Свой чекпоинт / 自定义</option>
+        </select>
+        <input class="inp" id="trk-note" placeholder="Комментарий / 备注" style="flex:2;min-width:140px;padding:5px 8px;font-size:11px">
+        <button class="btn btn-primary btn-sm" onclick="addCheckpoint()">📍 Отметить / 打点</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <input class="inp" id="trk-temp" type="number" step="0.1" placeholder="°C" style="width:80px;padding:5px 8px;font-size:12px;text-align:center">
+        <input class="inp" id="trk-temp-note" placeholder="Где замер / 测点备注" style="flex:1;min-width:140px;padding:5px 8px;font-size:11px">
+        <button class="btn btn-secondary btn-sm" onclick="addTempPoint()">🌡 Записать t° / 记录温度</button>
+      </div>
+      <div style="font-size:10px;color:var(--light);margin-top:4px">Коридор для срезов: +${TEMP_MIN}…+${TEMP_MAX} °C — выход подсвечивается красным</div>
+    </div>` : ''}
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Закрыть / 关闭</button>
+    </div>`;
+  openModal();
+  renderTracking();
+}
+
+async function renderTracking() {
+  const el = document.getElementById('trk-content');
+  if (!el || !_trkShipmentId) return;
+  const { data: rows } = await sb.from('shipment_tracking').select('*')
+    .eq('shipment_id', _trkShipmentId).order('happened_at', {ascending: true});
+  const isMgrLocal = currentUser?.role === 'manager';
+  const cps = (rows || []).filter(r => r.kind === 'checkpoint');
+  const temps = (rows || []).filter(r => r.kind === 'temp');
+
+  const cpHTML = cps.length ? cps.map((r, i) => {
+    const dt = new Date(r.happened_at).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    return `<div style="display:flex;align-items:flex-start;gap:10px">
+      <div style="display:flex;flex-direction:column;align-items:center">
+        <div style="width:14px;height:14px;border-radius:50%;background:var(--sage-d);flex-shrink:0;margin-top:2px"></div>
+        ${i < cps.length-1 ? '<div style="width:2px;height:22px;background:var(--sage-d)"></div>' : ''}
+      </div>
+      <div style="font-size:12px;flex:1">
+        <b>${escHtml(r.title||'')}</b> <span style="color:var(--mid)">· ${dt}</span>
+        ${r.note ? `<div style="font-size:10px;color:var(--mid)">${escHtml(r.note)}</div>` : ''}
+      </div>
+      ${isMgrLocal ? `<button class="rbtn" onclick="delTrackRow(${r.id})">×</button>` : ''}
+    </div>`;
+  }).join('') : '<div style="color:var(--light);font-size:12px;padding:6px 0">Чекпоинтов пока нет / 暂无打点</div>';
+
+  const tempHTML = temps.length ? `
+    <table style="width:100%;margin-top:4px"><thead><tr>
+      <th style="font-size:10px">Когда / 时间</th><th style="font-size:10px">°C</th>
+      <th style="font-size:10px" class="L">Примечание / 备注</th><th style="width:26px"></th>
+    </tr></thead><tbody>
+    ${temps.map(r => {
+      const bad = r.temp_c != null && (r.temp_c < TEMP_MIN || r.temp_c > TEMP_MAX);
+      const dt = new Date(r.happened_at).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+      return `<tr>
+        <td style="font-size:11px;text-align:center">${dt}</td>
+        <td style="text-align:center;font-weight:800;font-size:13px;color:${bad?'#c62828':'var(--sage-d)'}">${bad?'⚠️ ':''}${r.temp_c}°</td>
+        <td class="L" style="font-size:10px;color:var(--mid)">${escHtml(r.note||'')}</td>
+        <td>${isMgrLocal ? `<button class="rbtn" onclick="delTrackRow(${r.id})">×</button>` : ''}</td>
+      </tr>`;
+    }).join('')}</tbody></table>` : '<div style="color:var(--light);font-size:12px;padding:6px 0">Замеров пока нет / 暂无温度记录</div>';
+
+  el.innerHTML = `
+    <div style="font-weight:700;font-size:12px;margin-bottom:6px">🗺 Маршрут / 路线</div>${cpHTML}
+    <div style="font-weight:700;font-size:12px;margin:12px 0 2px">🌡 Температура / 温度</div>${tempHTML}`;
+}
+
+async function addCheckpoint() {
+  let title = document.getElementById('trk-preset')?.value;
+  if (title === '__custom__') {
+    title = prompt('Название чекпоинта / 打点名称:');
+    if (!title) return;
+  }
+  const note = document.getElementById('trk-note')?.value.trim() || null;
+  const { error } = await sb.from('shipment_tracking').insert({
+    shipment_id: _trkShipmentId, kind: 'checkpoint', title, note,
+    happened_at: new Date().toISOString(), created_by: currentUser?.id || null,
+  });
+  if (error) { toast('❌ ' + error.message); return; }
+  const shp = shipmentsData.find(x => x.id === _trkShipmentId);
+  logActivity('tracking', 'shipment', _trkShipmentId, shp?.ship_number || '', '📍 ' + title);
+  document.getElementById('trk-note').value = '';
+  toast('✅ Чекпоинт отмечен / 已打点');
+  renderTracking();
+}
+
+async function addTempPoint() {
+  const t = parseFloat(document.getElementById('trk-temp')?.value);
+  if (isNaN(t)) { toast('Введи температуру / 请输入温度'); return; }
+  const note = document.getElementById('trk-temp-note')?.value.trim() || null;
+  const { error } = await sb.from('shipment_tracking').insert({
+    shipment_id: _trkShipmentId, kind: 'temp', temp_c: t, note,
+    happened_at: new Date().toISOString(), created_by: currentUser?.id || null,
+  });
+  if (error) { toast('❌ ' + error.message); return; }
+  document.getElementById('trk-temp').value = '';
+  document.getElementById('trk-temp-note').value = '';
+  toast(t < TEMP_MIN || t > TEMP_MAX ? `⚠️ ${t}° вне коридора +${TEMP_MIN}…+${TEMP_MAX}! / 超出温度区间` : '✅ Записано / 已记录');
+  renderTracking();
+}
+
+async function delTrackRow(id) {
+  const { error } = await sb.from('shipment_tracking').delete().eq('id', id);
+  if (error) { toast('❌ ' + error.message); return; }
+  renderTracking();
 }
 
 // ── Модалка актов приёмки по машине (для карточки отгрузки) ──
