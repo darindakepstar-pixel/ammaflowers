@@ -9941,7 +9941,7 @@ async function loadSupplierDeliveries() {
         <button class="btn btn-secondary btn-sm" onclick="printReceivingForm(${gi})">🖨 Форма приёмки / 验收单</button>
         <button class="btn btn-secondary btn-sm" onclick="exportReceivingFormExcel(${gi})">📊 Excel</button>
         <label class="btn btn-primary btn-sm" style="cursor:pointer">📤 Загрузить акт / 上传
-          <input type="file" accept="image/*,.pdf" multiple style="display:none" onchange="uploadReceivingDoc(${shpId}, ${g.sp ? g.sp.id : 'null'}, this)">
+          <input type="file" accept="image/*,.pdf,.xls,.xlsx,.doc,.docx,.heic" multiple style="display:none" onchange="uploadReceivingDoc(${shpId}, ${g.sp ? g.sp.id : 'null'}, this)">
         </label>
       </div>
       <div class="tbl-wrap"><table style="min-width:440px">
@@ -10042,16 +10042,30 @@ function exportReceivingFormExcel(gi) {
 }
 
 // ── Загрузка заполненных актов ──
+const RECV_MAX_FILE_MB = 15;   // жёсткий лимит на один файл
+const RECV_MAX_FILES   = 10;   // максимум файлов за одну загрузку
+
 async function uploadReceivingDoc(shipmentId, supplierId, input) {
-  const files = [...(input.files || [])];
+  let files = [...(input.files || [])];
   if (!files.length) return;
+  if (files.length > RECV_MAX_FILES) {
+    toast(`⚠️ Не больше ${RECV_MAX_FILES} файлов за раз / 一次最多${RECV_MAX_FILES}个文件`);
+    files = files.slice(0, RECV_MAX_FILES);
+  }
   const note = prompt('Комментарий к акту (что забраковано, кратко) / 简要备注退货情况:') || null;
   toast('⏳ Загрузка... / 上传中');
+  let ok = 0, skipped = 0;
   try {
     for (const file of files) {
       let blob = file, name = file.name;
       if (/^image\//.test(file.type)) {
         try { blob = await compressImage(file, 1600, 0.85); name = name.replace(/\.[^.]+$/, '') + '.jpg'; } catch(e) { blob = file; }
+      }
+      // Лимит размера — бережём хранилище и трафик Supabase
+      if (blob.size > RECV_MAX_FILE_MB * 1024 * 1024) {
+        toast(`⚠️ ${name}: больше ${RECV_MAX_FILE_MB} МБ — пропущен. Сфотографируй вместо скана / 文件过大已跳过`);
+        skipped++;
+        continue;
       }
       const ext = (name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g,'') || 'bin';
       const path = `shp-${shipmentId}/${Date.now()}-${Math.random().toString(36).slice(2,7)}.${ext}`;
@@ -10062,12 +10076,14 @@ async function uploadReceivingDoc(shipmentId, supplierId, input) {
       const { error: insErr } = await sb.from('receiving_docs').insert({
         shipment_id: shipmentId, supplier_id: supplierId,
         file_url: url, file_name: name, note,
+        file_size: blob.size,
         uploaded_by: currentUser?.id || null,
       });
       if (insErr) throw insErr;
+      ok++;
     }
-    logActivity('receiving_doc', 'shipment', shipmentId, '', 'Загружен акт приёмки' + (note ? ': ' + note : ''));
-    toast('✅ Акт загружен / 验收单已上传');
+    if (ok) logActivity('receiving_doc', 'shipment', shipmentId, '', `Загружено актов: ${ok}` + (note ? ' · ' + note : ''));
+    toast(ok ? `✅ Загружено: ${ok}${skipped ? ', пропущено: ' + skipped : ''} / 已上传` : '⚠️ Ничего не загружено / 未上传');
     input.value = '';
     renderReceivingDocs(shipmentId);
   } catch(e) {
@@ -10089,6 +10105,7 @@ async function renderReceivingDocs(shipmentId, targetId) {
       const dt = new Date(d.created_at).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
       return `<div style="display:flex;gap:8px;align-items:center;padding:5px 8px;border-bottom:1px solid var(--border);font-size:11px;flex-wrap:wrap">
         <a href="${d.file_url}" target="_blank" style="color:var(--sage-d);font-weight:700">📎 ${escHtml(d.file_name||'файл')}</a>
+        ${d.file_size ? `<span style="color:var(--light);font-size:10px">${d.file_size > 1048576 ? (d.file_size/1048576).toFixed(1)+' МБ' : Math.round(d.file_size/1024)+' КБ'}</span>` : ''}
         <span style="color:var(--mid)">${sp ? escHtml(sp.name_ru) : ''}</span>
         ${d.note ? `<span style="color:#92400e">⚠️ ${escHtml(d.note)}</span>` : ''}
         <span style="flex:1"></span>
