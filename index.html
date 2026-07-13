@@ -1412,6 +1412,71 @@ function itemBoxM3(x) {
   return { m3: (v ?? DEFAULT_BOX_M3), est: (v == null) };
 }
 function fmtM3(v) { return (Math.round((v||0)*100)/100).toFixed(2); }
+// ══════════════════════════════════════════════════════════
+//  СЧЁТЧИК ДНЕЙ: отсчёт до выезда машины и заморозка правок
+//  Цикл AMMA: закуп за 2 дня до выезда → правки клиента
+//  закрываются за ORDER_FREEZE_DAYS дней до выезда.
+// ══════════════════════════════════════════════════════════
+const ORDER_FREEZE_DAYS = 2;
+
+// Дедлайн заказа: дата выезда машины, иначе date_ship заказа
+function orderDeadline(o) {
+  const dateStr = o?.shipment?.ship_date || o?.date_ship || null;
+  if (!dateStr) return null;
+  const ship = new Date(dateStr + 'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  const daysLeft = Math.round((ship - today) / 86400000);   // дней до выезда
+  const editLeft = daysLeft - ORDER_FREEZE_DAYS;            // дней на правки
+  return {
+    dateStr, daysLeft,
+    frozen: editLeft < 0 || ['departed','delivered'].includes(o?.shipment?.status),
+    lastEditDay: new Date(ship.getTime() - ORDER_FREEZE_DAYS * 86400000)
+      .toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'}),
+  };
+}
+
+// Бейдж-счётчик для карточек заказа
+function deadlineBadge(o, compact) {
+  const d = orderDeadline(o);
+  if (!d) return '';
+  const done = ['delivered'].includes(o?.shipment?.status);
+  if (done) return '';
+  if (d.daysLeft < 0) return '';
+  if (d.frozen) return `<span class="badge" style="background:#fee2e2;color:#991b1b;font-weight:700">🔒 Изменения закрыты / 修改已截止</span>`;
+  const urgent = d.daysLeft - ORDER_FREEZE_DAYS <= 1;
+  return `<span class="badge" style="background:${urgent?'#fff3e0':'#eef7ee'};color:${urgent?'#e65100':'var(--sage-d)'};font-weight:700">
+    🕐 Выезд ${d.daysLeft === 0 ? 'сегодня' : 'через ' + d.daysLeft + ' дн'} · правки до ${d.lastEditDay}${compact ? '' : ' / 出发前'+ORDER_FREEZE_DAYS+'天截止修改'}
+  </span>`;
+}
+
+// Плавающий счётчик в углу: ближайший дедлайн по активным заказам клиента
+function renderDeadlineWidget() {
+  let el = document.getElementById('deadline-widget');
+  if (currentUser?.role !== 'client') { if (el) el.remove(); return; }
+  const active = (myOrders || []).filter(o =>
+    !['cancelled','delivered'].includes(o.status) && orderDeadline(o) && orderDeadline(o).daysLeft >= 0
+    && o.shipment?.status !== 'delivered');
+  if (!active.length) { if (el) el.remove(); return; }
+  active.sort((a,b) => orderDeadline(a).daysLeft - orderDeadline(b).daysLeft);
+  const o = active[0];
+  const d = orderDeadline(o);
+  const editDays = d.daysLeft - ORDER_FREEZE_DAYS;
+  let color, txt;
+  if (d.frozen) { color = '#991b1b'; txt = `🔒 ${o.order_number}: правки закрыты, выезд ${d.daysLeft===0?'сегодня':'через '+d.daysLeft+' дн'}`; }
+  else if (editDays <= 0) { color = '#e65100'; txt = `⏰ ${o.order_number}: последний день правок! Выезд через ${d.daysLeft} дн`; }
+  else if (editDays === 1) { color = '#e65100'; txt = `⏰ ${o.order_number}: правки до завтра (${d.lastEditDay}), выезд через ${d.daysLeft} дн`; }
+  else { color = 'var(--sage-d)'; txt = `🕐 ${o.order_number}: выезд через ${d.daysLeft} дн · правки до ${d.lastEditDay}`; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'deadline-widget';
+    el.style.cssText = 'position:fixed;top:64px;right:12px;z-index:900;padding:8px 14px;border-radius:20px;font-size:11px;font-weight:700;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer;max-width:320px;backdrop-filter:blur(6px)';
+    el.onclick = () => { const tab = document.querySelector('.nav-tab[onclick*="my-order"]'); if (tab) tab.click(); };
+    document.body.appendChild(el);
+  }
+  el.style.background = color;
+  el.textContent = txt;
+}
+
 // Кубатура заказа по позициям (order_items со snapshot)
 function orderCubes(items) {
   let m3 = 0, est = false;
@@ -2212,14 +2277,21 @@ let currentEditOrderId = null;
 
 async function loadMyOrders() {
   const { data } = await sb.from('orders').select(`
-    *, order_items(*, flower:flowers(ru,cn))
+    *, order_items(*, flower:flowers(ru,cn)),
+    shipment:shipments(ship_number, ship_date, status)
   `).eq('client_id', currentUser.id).order('created_at', {ascending: false});
   myOrders = data || [];
+  renderDeadlineWidget();
 }
 
 async function editOrder(orderId) {
   const order = myOrders.find(o => o.id === orderId);
   if (!order) return;
+  const dl = orderDeadline(order);
+  if (dl?.frozen && !order.client_edit_allowed) {
+    toast(`🔒 Правки закрыты: закуп по машине ${order.shipment?.ship_number || ''} уже идёт. Свяжитесь с менеджером / 已截止修改，请联系经理`);
+    return;
+  }
   cart = {};
   (order.order_items || []).forEach(item => {
     const f = {...(item.flower_snapshot || {})};
@@ -2498,6 +2570,7 @@ function renderMyOrder() {
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
             <span style="font-family:var(--font-h);font-size:16px;font-weight:700;color:var(--sage-d)">${o.order_number}</span>
             <span class="badge" style="background:${col}20;color:${col}">${statusLabel(o.status)}</span>
+            ${deadlineBadge(o)}
             ${(o.order_items||[]).some(it => {
               const w = it.flower_snapshot?.wh_orig || {};
               return it.wh_confirmed_at && ((w.bpb && parseInt(w.bpb)!==parseInt(it.bunches_per_box)) || (w.spb && it.flower_snapshot?.stems && parseInt(w.spb)!==parseInt(it.flower_snapshot.stems)));
@@ -3105,6 +3178,7 @@ async function openOrder(id) {
 
   const { data: order } = await sb.from('orders').select(`
     *, client:users!orders_client_id_fkey(company_name,login,contact),
+    shipment:shipments(ship_number, ship_date, status),
     order_items(*, flower:flowers(ru,cn,en,cat_ru))
   `).eq('id', id).single();
 
@@ -3278,6 +3352,7 @@ function renderOrderDetail(order) {
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px">
         <b>🚚 Логистика:</b>
         <span id="od-cubes">📦 ${totalBoxes} кор · ${odCubes.est?'≈':''}${fmtM3(odCubes.m3)} м³</span>
+        ${deadlineBadge(order, true)}
         <span id="od-shipment-select" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span class="spinner" style="width:14px;height:14px"></span>
         </span>
