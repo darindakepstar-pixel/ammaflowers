@@ -626,8 +626,12 @@ document.addEventListener('DOMContentLoaded', function(){
       <div class="ctrl-bar">
         <div style="display:flex;gap:6px;flex-wrap:wrap;width:100%;margin-bottom:8px" id="catalog-tabs">
           <button class="wh-tab active" data-cat="cut" onclick="switchCatalog('cut',this)">🌸 Срезы / 鲜切</button>
-          <button class="wh-tab" data-cat="potted" onclick="switchCatalog('potted',this)">🪴 Горшечные / 盆栽</button>
-          <button class="wh-tab" data-cat="supplies" onclick="switchCatalog('supplies',this)">📦 Упаковка / 包装辅材</button>
+          <button class="wh-tab" data-cat="potted" onclick="switchCatalog('potted',this)">🪴 Горшечные / 盆栽 <span style="font-size:9px">🚧</span></button>
+          <button class="wh-tab" data-cat="supplies" onclick="switchCatalog('supplies',this)">📦 Упаковка / 包装辅材 <span style="font-size:9px">🚧</span></button>
+        </div>
+        <div id="catalog-dev-note" style="display:none;width:100%;margin-bottom:8px;padding:8px 12px;background:#fff7ed;border-left:4px solid var(--gold);border-radius:8px;font-size:12px">
+          🚧 Раздел наполняется — ассортимент и цены уточняются. По вопросам пишите менеджеру.<br>
+          <span style="color:var(--mid)">🚧 目录完善中，品类与价格待更新，详询经理。</span>
         </div>
         <input class="inp inp-search" type="text" id="srch" placeholder="🔍 Поиск RU / 中文 / EN...">
         <select class="inp inp-select" id="cat-filter"><option value="">Все категории</option></select>
@@ -1899,6 +1903,8 @@ function flowerCatalog(f) { return f?.catalog || 'cut'; }
 function switchCatalog(cat, btn) {
   currentCatalog = cat;
   document.querySelectorAll('#catalog-tabs .wh-tab').forEach(b => b.classList.toggle('active', b === btn));
+  const note = document.getElementById('catalog-dev-note');
+  if (note) note.style.display = cat === 'cut' ? 'none' : 'block';
   fillCatFilterForCatalog();
   renderPrice();
 }
@@ -3104,8 +3110,9 @@ async function submitOrder(existingOrderId = null) {
 
     await sb.from('orders').update(updatePayload).eq('id', existingOrderId);
 
-    // Replace items
-    await sb.from('order_items').delete().eq('order_id', existingOrderId);
+    // Replace items: сначала вставляем новые, потом удаляем старые
+    // (при сбое лучше задвоение, которое видно, чем пустой заказ)
+    const oldIds = (await sb.from('order_items').select('id').eq('order_id', existingOrderId)).data?.map(x => x.id) || [];
     const itemRows = items.map(o => ({
       order_id: existingOrderId,
       flower_id: (o.flower.id > 0 ? o.flower.id : null), flower_snapshot: o.flower,
@@ -3114,7 +3121,12 @@ async function submitOrder(existingOrderId = null) {
       qty_boxes: o.qty, subtotal: o.pbox * o.qty,
       client_name: o.client_name || null, item_comment: o.comment || null,
     }));
-    await sb.from('order_items').insert(itemRows);
+    const { error: updErr } = await sb.from('order_items').insert(itemRows);
+    if (updErr) {
+      toast('❌ Изменения не сохранились: ' + updErr.message + '. Заказ остался прежним, попробуйте ещё раз / 保存失败，请重试');
+      return;
+    }
+    if (oldIds.length) await sb.from('order_items').delete().in('id', oldIds);
     cart = {}; currentEditOrderId = null;
 
     // Notify managers
@@ -3150,7 +3162,13 @@ async function submitOrder(existingOrderId = null) {
       qty_boxes: o.qty, subtotal: o.pbox * o.qty,
       client_name: o.client_name || null, item_comment: o.comment || null,
     }));
-    await sb.from('order_items').insert(itemRows);
+    const { error: itErr } = await sb.from('order_items').insert(itemRows);
+    if (itErr) {
+      // Позиции не записались — убираем пустой заказ, корзину сохраняем
+      await sb.from('orders').delete().eq('id', order.id);
+      toast('❌ Заказ не отправлен: ' + itErr.message + '. Корзина сохранена, попробуйте ещё раз / 提交失败，请重试');
+      return;
+    }
     cart = {};
 
     // Notify managers about new order
