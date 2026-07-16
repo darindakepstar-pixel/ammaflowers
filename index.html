@@ -11082,12 +11082,27 @@ async function exportPriceExcel() {
   toast(`✅ Скачан прайс «${CATALOG_FILE_LABELS[currentCatalog]}» с фото / 已下载`);
 }
 
-function exportPricePDF() {
-  if (!flowers.length) { toast('Нет данных / 没有数据'); return; }
-  // Build HTML table, open in new window for printing as PDF
+async function exportPricePDF() {
+  const list = flowers.filter(f => flowerCatalog(f) === currentCatalog && (!hiddenOut || f.in_stock));
+  if (!list.length) { toast('В этой вкладке нет позиций / 该目录暂无数据'); return; }
+
   const isMgr = currentUser?.role === 'manager';
   const markup = (!isMgr && (currentUser?.show_markup || globalMarkupActive)) ? 1.15 : 1;
   const today = new Date().toLocaleDateString('ru-RU');
+
+  // Сначала тянем миниатюры фото (base64), чтобы PDF открывался с картинками без интернета
+  toast('⏳ Готовлю PDF с фото... / 生成中');
+  const photoTasks = list.filter(f => f.photo_url);
+  const thumbs = {}; // flower.id -> dataURL
+  const CONC = 6;
+  for (let i = 0; i < photoTasks.length; i += CONC) {
+    await Promise.all(photoTasks.slice(i, i + CONC).map(async f => {
+      const th = await _thumbForExcel(f.photo_url, 96);
+      if (th) thumbs[f.id] = th.base64;
+    }));
+    const done = Math.min(i + CONC, photoTasks.length);
+    if (done % 30 < CONC) toast(`⏳ Фото: ${done}/${photoTasks.length}...`);
+  }
 
   let html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>AMMA FLOWERS Price List</title>
@@ -11097,15 +11112,19 @@ function exportPricePDF() {
   p{margin:0 0 8px;font-size:9px;color:#666}
   table{border-collapse:collapse;width:100%;font-size:8px}
   th{background:#2d6a4f;color:#fff;padding:4px 5px;text-align:left;border:1px solid #ccc;white-space:nowrap}
-  td{padding:3px 5px;border:1px solid #ddd;white-space:nowrap}
+  td{padding:3px 5px;border:1px solid #ddd;white-space:nowrap;vertical-align:middle}
+  td.ph{width:52px;text-align:center;padding:2px}
+  td.ph img{max-width:48px;max-height:48px;display:block;margin:0 auto;border-radius:3px}
   .cat{background:#d8f3dc;font-weight:700;font-size:8px}
   tr:nth-child(even) td{background:#f9f9f9}
+  tr{page-break-inside:avoid}
   @media print{@page{size:A3 landscape;margin:8mm}}
 </style></head><body>
-<h2>AMMA FLOWERS — Price List / 价格单</h2>
+<h2>AMMA FLOWERS — Price List / 价格单 · ${CATALOG_TITLES[currentCatalog] || ''}</h2>
 <p>Дата / 日期: ${today}</p>
 <table>
 <thead><tr>
+<th>Фото 图片</th>
 <th>Product Name</th><th>名称</th><th>规格</th>
 <th>A ¥/扎</th><th>A+ ¥/扎</th>
 <th>A ¥/件</th><th>A+ ¥/件</th>
@@ -11114,23 +11133,25 @@ function exportPricePDF() {
 </tr></thead><tbody>`;
 
   let lastCat = null;
-  flowers.forEach(f => {
-    if (flowerCatalog(f) !== currentCatalog) return;
-    if (!f.in_stock && hiddenOut) return;
+  list.forEach(f => {
     if (f.cat_ru !== lastCat) {
-      html += `<tr><td colspan="14" class="cat">${f.cat_ru||''} · ${f.cat_en||''}</td></tr>`;
+      html += `<tr><td colspan="15" class="cat">${f.cat_ru||''} · ${f.cat_en||''}</td></tr>`;
       lastCat = f.cat_ru;
     }
+    const wgt = isWeightItem(f);
     const pa  = (f.price_a  * markup).toFixed(1);
     const pap = (f.price_ap * markup).toFixed(1);
     const pab  = (f.price_a  * (f.boxes_per_box||1) * markup).toFixed(0);
     const papb = (f.price_ap * (f.boxes_per_box||1) * markup).toFixed(0);
-    const stemsPerBox = (f.stems && f.boxes_per_box) ? (f.stems * f.boxes_per_box) : '';
+    const perBunch = f.stems ? fmtStems(f.stems, wgt) : '';
+    const perBox = (f.stems && f.boxes_per_box) ? fmtStems(f.stems * f.boxes_per_box, wgt) : '';
+    const img = thumbs[f.id] ? `<img src="${thumbs[f.id]}">` : '';
     html += `<tr>
+<td class="ph">${img}</td>
 <td>${f.ru||''}</td><td>${f.cn||''}</td><td>${f.pack||''}</td>
 <td>¥${pa}</td><td>¥${pap}</td>
 <td>¥${pab}</td><td>¥${papb}</td>
-<td>${f.boxes_per_box||''}</td><td>${f.stems||''}</td><td>${stemsPerBox}</td>
+<td>${f.boxes_per_box||''}</td><td>${perBunch}</td><td>${perBox}</td>
 <td>${f.length||''}</td><td>${f.order_qty||''}</td><td>${f.flower_weight||''}</td><td>${f.box_size||''}</td>
 </tr>`;
   });
@@ -11141,7 +11162,8 @@ function exportPricePDF() {
   if (!w) { toast('⚠️ Разрешите всплывающие окна / 请允许弹出窗口'); return; }
   w.document.write(html);
   w.document.close();
-  setTimeout(() => { w.print(); }, 400);
+  toast('✅ PDF готов — выбери «Сохранить как PDF» / 已生成');
+  setTimeout(() => { w.print(); }, 600);
 }
 
 </script>
