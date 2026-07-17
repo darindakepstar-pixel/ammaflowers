@@ -1216,6 +1216,8 @@ async function initApp() {
   const isMgr = currentUser.role === 'manager';
   const isWh  = currentUser.role === 'warehouse';
 
+  renderInfoWidget();  // плавающий виджет: сезон дождей + праздники (все роли)
+
   // Top bar
   const now = new Date();
   document.getElementById('top-date').textContent =
@@ -1403,23 +1405,23 @@ function fmtD(iso) { const [y,m,dd] = iso.split('-'); return `${dd}.${m}`; }
 
 // Виджеты-баннеры (glass-стиль): видят все роли
 function _infoWidgetHTML(w) {
-  return `<div style="background:${w.grad};border-radius:16px;padding:13px 16px;margin-bottom:10px;color:#fff;box-shadow:0 8px 22px rgba(30,41,120,.28)">
-    <div style="display:flex;align-items:center;gap:12px">
-      <div style="width:44px;height:44px;min-width:44px;border-radius:12px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:22px">${w.icon}</div>
+  return `<div style="background:${w.grad};border-left:4px solid ${w.accent || 'var(--gold)'};border-radius:14px;padding:11px 14px;margin-bottom:8px;color:#fff;box-shadow:0 6px 18px rgba(42,63,36,.25)">
+    <div style="display:flex;align-items:center;gap:11px">
+      <div style="width:40px;height:40px;min-width:40px;border-radius:11px;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font-size:20px">${w.icon}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:14px;line-height:1.25">${w.title}</div>
-        <div style="font-size:11px;opacity:.78;margin-top:1px">${w.sub}</div>
+        <div style="font-weight:700;font-size:13px;line-height:1.25">${w.title}</div>
+        <div style="font-size:10.5px;opacity:.75;margin-top:1px">${w.sub}</div>
       </div>
       <div style="text-align:right">
-        <div style="font-weight:800;font-size:16px;white-space:nowrap">${w.metric}</div>
-        <div style="font-size:10.5px;opacity:.78;white-space:nowrap">${w.metricSub}</div>
+        <div style="font-weight:800;font-size:15px;white-space:nowrap;color:var(--gold)">${w.metric}</div>
+        <div style="font-size:10px;opacity:.75;white-space:nowrap">${w.metricSub}</div>
       </div>
     </div>
-    <div style="margin-top:11px">
-      <div style="height:5px;border-radius:3px;background:rgba(255,255,255,.25);overflow:hidden">
-        <div style="height:100%;width:${Math.min(100, Math.max(2, w.pct))}%;background:#fff;border-radius:3px"></div>
+    <div style="margin-top:10px">
+      <div style="height:4px;border-radius:2px;background:rgba(255,255,255,.18);overflow:hidden">
+        <div style="height:100%;width:${Math.min(100, Math.max(2, w.pct))}%;background:var(--gold);border-radius:2px"></div>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:10px;opacity:.85">
+      <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9.5px;opacity:.8">
         ${w.stages.map(x => `<span>${x}</span>`).join('')}
       </div>
     </div>
@@ -1439,7 +1441,7 @@ function infoBannersHTML() {
     const mon = now.getMonth() + 1;
     const phase = (mon >= 6 && mon <= 8) ? 'Пик / 高峰' : (mon === 5 ? 'Начало' : 'Спад');
     html += _infoWidgetHTML({
-      grad: 'linear-gradient(135deg,#1e3a8a,#2563eb 55%,#38bdf8)',
+      grad: 'linear-gradient(135deg,var(--sage-d) 0%,#1a2e16 100%)', accent: '#8FBADB',
       icon: '🌧',
       title: 'Сезон дождей в Куньмине / 雨季',
       sub: 'Сушим цветок перед упаковкой — влага в коробке = плесень / 包装前必须干燥',
@@ -1454,7 +1456,7 @@ function infoBannersHTML() {
   const h = nextCnHoliday(now);
   if (h && (h.ongoing || h.days <= 14)) {
     html += _infoWidgetHTML({
-      grad: 'linear-gradient(135deg,#4f46e5,#7c3aed 60%,#a855f7)',
+      grad: 'linear-gradient(135deg,var(--sage-d) 0%,#1a2e16 100%)', accent: 'var(--gold)',
       icon: '🎉',
       title: h.name,
       sub: h.ongoing
@@ -1718,6 +1720,63 @@ function _ringSVG(pct, size, stroke) {
     <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#a7d7a7" stroke-width="${stroke}"
       stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - pct/100)}"/>
   </svg>`;
+}
+
+// ── Плавающий инфо-виджет: сезон дождей + праздники, перетаскиваемый ──
+let _iwDrag = null;
+function renderInfoWidget() {
+  let el = document.getElementById('info-widget');
+  const inner = infoBannersHTML();
+  if (!inner) { if (el) el.remove(); return; }
+  const collapsed = localStorage.getItem('amma-iw-min') === '1';
+
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'info-widget';
+    el.style.cssText = 'position:fixed;z-index:890;cursor:grab;user-select:none;touch-action:none;width:310px;max-width:92vw';
+    let pos = null;
+    try { pos = JSON.parse(localStorage.getItem('amma-iw-pos') || 'null'); } catch(e) {}
+    if (pos && pos.x != null) {
+      el.style.left = Math.min(Math.max(0, pos.x), innerWidth - 60) + 'px';
+      el.style.top  = Math.min(Math.max(0, pos.y), innerHeight - 60) + 'px';
+    } else { el.style.bottom = '16px'; el.style.right = '14px'; }
+    el.addEventListener('pointerdown', e => {
+      const r = el.getBoundingClientRect();
+      _iwDrag = { dx: e.clientX - r.left, dy: e.clientY - r.top, sx: e.clientX, sy: e.clientY, moved: false };
+      el.setPointerCapture(e.pointerId);
+      el.style.cursor = 'grabbing';
+    });
+    el.addEventListener('pointermove', e => {
+      if (!_iwDrag) return;
+      if (Math.abs(e.clientX - _iwDrag.sx) + Math.abs(e.clientY - _iwDrag.sy) > 6) _iwDrag.moved = true;
+      if (!_iwDrag.moved) return;
+      el.style.right = 'auto'; el.style.bottom = 'auto';
+      el.style.left = Math.min(Math.max(4, e.clientX - _iwDrag.dx), innerWidth - el.offsetWidth - 4) + 'px';
+      el.style.top  = Math.min(Math.max(4, e.clientY - _iwDrag.dy), innerHeight - el.offsetHeight - 4) + 'px';
+    });
+    el.addEventListener('pointerup', e => {
+      el.style.cursor = 'grab';
+      if (_iwDrag?.moved) {
+        localStorage.setItem('amma-iw-pos', JSON.stringify({ x: parseFloat(el.style.left), y: parseFloat(el.style.top) }));
+      } else {
+        // клик без переноса = свернуть/развернуть
+        localStorage.setItem('amma-iw-min', localStorage.getItem('amma-iw-min') === '1' ? '0' : '1');
+        renderInfoWidget();
+      }
+      _iwDrag = null;
+    });
+    document.body.appendChild(el);
+  }
+
+  if (collapsed) {
+    el.style.width = 'auto';
+    const h = nextCnHoliday();
+    const icon = (h && (h.ongoing || h.days <= 14)) ? '🎉' : '🌧';
+    el.innerHTML = `<div title="Развернуть / 展开" style="width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,var(--sage-d),#1a2e16);border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 6px 18px rgba(42,63,36,.3)">${icon}</div>`;
+  } else {
+    el.style.width = '310px';
+    el.innerHTML = inner + `<div style="text-align:center;font-size:9px;color:var(--mid);margin-top:-4px">перетащи меня · клик = свернуть / 点击收起</div>`;
+  }
 }
 
 let _dwDrag = null;
@@ -2145,8 +2204,6 @@ function fillCatFilterForCatalog() {
 }
 
 function renderPrice() {
-  const prb = document.getElementById('price-info-banners');
-  if (prb) prb.innerHTML = infoBannersHTML();
   const q = document.getElementById('srch').value.toLowerCase().trim();
   const cf = document.getElementById('cat-filter').value;
   const isMgr = currentUser?.role === 'manager';
@@ -2851,6 +2908,7 @@ async function loadMyOrders() {
   `).eq('client_id', currentUser.id).order('created_at', {ascending: false});
   myOrders = data || [];
   renderDeadlineWidget();
+  renderInfoWidget();
 }
 
 async function editOrder(orderId) {
@@ -7730,8 +7788,6 @@ async function saveWhPackingNotes(orderId) {
 }
 
 async function loadWarehouseOrders() {
-  const whb = document.getElementById('wh-info-banners');
-  if (whb) whb.innerHTML = infoBannersHTML();
   const wrap = document.getElementById('warehouse-list');
   if (!wrap) return;
   wrap.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
@@ -9064,8 +9120,6 @@ async function sendNotification(userId, title, body, icon) {
 //  DASHBOARD — ДАШБОРД / 数据看板
 // ══════════════════════════════════════════════════════════
 async function loadDashboard() {
-  const dbb = document.getElementById('dash-info-banners');
-  if (dbb) dbb.innerHTML = infoBannersHTML();
   const wrap = document.getElementById('dashboard-content');
   if (!wrap) return;
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
