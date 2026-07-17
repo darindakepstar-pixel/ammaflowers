@@ -9609,8 +9609,11 @@ function exportClaimPDF() {
 }
 
 function previewClaimPhotos(input) {
+  const preview = document.getElementById('claim-photos-preview');
+  if (!preview) return;
   preview.innerHTML = '';
-  const files = Array.from(input.files).slice(0, 5);
+  const files = Array.from(input.files).slice(0, 8);
+  if (input.files.length > 8) toast('⚠️ Максимум 8 фото — лишние не будут отправлены / 最多8张照片');
   files.forEach(file => {
     const reader = new FileReader();
     reader.onload = e => {
@@ -9661,7 +9664,7 @@ async function submitClaim() {
 
   // Upload photos
   const photosUrls = [];
-  const files = Array.from(photoInp?.files || []).slice(0, 5);
+  const files = Array.from(photoInp?.files || []).slice(0, 8);
   let photoFailCount = 0;
 
   if (files.length) {
