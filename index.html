@@ -9608,22 +9608,48 @@ function exportClaimPDF() {
   toast('📄 PDF открыт для печати / PDF已打开');
 }
 
+// Фото претензии копятся в массиве: можно добавлять по одной,
+// повторный выбор в <input type="file"> не затирает предыдущие
+let _claimPhotoFiles = [];
+
 function previewClaimPhotos(input) {
+  const incoming = Array.from(input.files || []);
+  for (const f of incoming) {
+    if (_claimPhotoFiles.length >= 8) { toast('⚠️ Максимум 8 фото / 最多8张照片'); break; }
+    // не дублируем один и тот же файл
+    if (_claimPhotoFiles.some(x => x.name === f.name && x.size === f.size)) continue;
+    _claimPhotoFiles.push(f);
+  }
+  input.value = ''; // чтобы можно было выбрать тот же файл снова после удаления
+  renderClaimPhotoPreviews();
+}
+
+function renderClaimPhotoPreviews() {
   const preview = document.getElementById('claim-photos-preview');
   if (!preview) return;
   preview.innerHTML = '';
-  const files = Array.from(input.files).slice(0, 8);
-  if (input.files.length > 8) toast('⚠️ Максимум 8 фото — лишние не будут отправлены / 最多8张照片');
-  files.forEach(file => {
+  _claimPhotoFiles.forEach((file, idx) => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:relative;display:inline-block';
+    const img = document.createElement('img');
+    img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid var(--border);display:block';
+    const del = document.createElement('button');
+    del.textContent = '×';
+    del.title = 'Убрать фото / 删除';
+    del.style.cssText = 'position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#dc2626;color:#fff;font-size:13px;line-height:1;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.3)';
+    del.onclick = () => { _claimPhotoFiles.splice(idx, 1); renderClaimPhotoPreviews(); };
     const reader = new FileReader();
-    reader.onload = e => {
-      const img = document.createElement('img');
-      img.src = e.target.result;
-      img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid var(--border)';
-      preview.appendChild(img);
-    };
+    reader.onload = e => { img.src = e.target.result; };
     reader.readAsDataURL(file);
+    wrap.appendChild(img); wrap.appendChild(del);
+    preview.appendChild(wrap);
   });
+  if (_claimPhotoFiles.length) {
+    const cnt = document.createElement('div');
+    cnt.style.cssText = 'width:100%;font-size:10px;color:var(--mid);margin-top:2px';
+    cnt.textContent = `${_claimPhotoFiles.length} из 8 фото / 照片`;
+    preview.appendChild(cnt);
+  }
 }
 
 async function submitClaim() {
@@ -9664,7 +9690,7 @@ async function submitClaim() {
 
   // Upload photos
   const photosUrls = [];
-  const files = Array.from(photoInp?.files || []).slice(0, 8);
+  const files = _claimPhotoFiles.slice(0, 8);
   let photoFailCount = 0;
 
   if (files.length) {
@@ -9733,6 +9759,11 @@ async function submitClaim() {
         `Заказ #${orderNum}: ${desc.slice(0,80)}`, '⚠️');
     }
   } catch(e) {}
+
+  _claimPhotoFiles = [];
+  const pv = document.getElementById('claim-photos-preview');
+  if (pv) pv.innerHTML = '';
+  if (photoInp) photoInp.value = '';
 
   toast('✅ Претензия отправлена! Менеджер получил уведомление / 投诉已提交');
   loadMyClaims();
