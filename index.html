@@ -2447,6 +2447,32 @@ function scClean(subs) {
 }
 function scSummary(subs) { return scClean(subs).map(s => `${s.qty}-${s.name}`).join(', '); }
 
+// Какому субклиенту принадлежит коробка boxIdx (0-based)?
+// null = разбивки нет; '' = нераспределённый остаток
+function scBoxName(item, boxIdx) {
+  const subs = scClean(item.subclients);
+  if (!subs.length) return null;
+  let acc = 0;
+  for (const x of subs) { acc += x.qty; if (boxIdx < acc) return x.name; }
+  return '';
+}
+
+// Ячейка "Примечание" в упаковочной таблице склада: разбивка бейджем
+function scWhNoteHTML(item) {
+  const subs = scClean(item.subclients);
+  let out = item.comment ? escHtml(item.comment) : '';
+  if (subs.length) {
+    const dist = subs.reduce((a, x) => a + x.qty, 0);
+    const rest = Math.max(0, (parseInt(item.qty_boxes) || 0) - dist);
+    out += `${out ? '<br>' : ''}<div style="margin-top:2px;background:var(--sage-l);border-radius:5px;padding:2px 6px;display:inline-block;line-height:1.6">👥 ${
+      subs.map(x => `<b>${x.qty}</b>→${escHtml(x.name)}`).join(' · ')
+    }${rest ? ` · <b>${rest}</b>→без метки/无标` : ''}</div>`;
+  } else if (item.client_name) {
+    out += (out ? '<br>' : '') + escHtml(item.client_name);
+  }
+  return out;
+}
+
 function scNamesDatalist() {
   const set = new Set();
   const grab = it => {
@@ -6459,6 +6485,7 @@ function renderLabelsTable(orders) {
       const remarks = [];
       if (packInfo) remarks.push(packInfo);
       if (item.comment) remarks.push(item.comment);
+      if (item.client_name) remarks.push('👥 ' + item.client_name);
       allRows.push({ cn, ru, stemsPerBunch, bunchPerBox, totalStems, qtyBoxes, remarks: remarks.join(' · ') });
     });
   });
@@ -6552,7 +6579,7 @@ function exportLabelsExcel() {
       const bunchPerBox   = parseInt(item.bunches_per_box) || parseInt(flower.boxes_per_box || snap.boxes_per_box) || null;
       const qtyBoxes      = parseInt(item.qty_boxes) || 1;
       const packInfo = flower.pack || snap.pack || '';
-      const remarks  = [packInfo, item.comment].filter(Boolean).join(' / ');
+      const remarks  = [packInfo, item.comment, item.client_name ? '👥 ' + item.client_name : ''].filter(Boolean).join(' / ');
 
       // Use formula for "всего стеблей" = C*D (like the sample file)
       aoa.push([cn, ru, stemsPerBunch, bunchPerBox, null, qtyBoxes, remarks]);
@@ -7546,7 +7573,7 @@ async function loadWarehouseOrders() {
         <td style="text-align:center">${bpb||'—'}</td>
         <td style="text-align:center;font-weight:700;color:var(--sage-d)">${totalStems||'—'}</td>
         <td style="text-align:center;font-size:14px;font-weight:700">${item.qty_boxes||1}</td>
-        <td style="font-size:10px;color:var(--mid)">${item.comment||item.client_name||''}</td>
+        <td style="font-size:10px;color:var(--mid)">${scWhNoteHTML(item)}</td>
       </tr>`;
     }).join('');
 
@@ -7714,7 +7741,7 @@ function renderLabels(order) {
           temp: '+2 / +8 °C', country: 'Китай / China / 中国',
           seller, buyer, prodDate: today,
           batch: labelNum, orderNum: `#${labelNum}`,
-          client, clientName: item.client_name||'', comment: item.comment||'',
+          client, clientName: (scBoxName(item, i) ?? (item.client_name||'')), comment: item.comment||'',
           boxNum: i+1, totalBoxes: qty });
       }
     });
@@ -7732,10 +7759,12 @@ function renderLabels(order) {
       const qty  = parseInt(item.qty_boxes) || 1;
       const wb = isWeightItem((snap.cat_ru || snap.pack) ? snap : f);
       for (let i = 0; i < qty; i++) {
+        const bn = scBoxName(item, i);
         labelsData.push({ ru, cn, bpb, spb, wb,
           boxSize: f.box_size||snap.box_size||'', pack: f.pack||snap.pack||'',
           orderNum: labelNum, client,
-          clientName: item.client_name||client, comment: item.comment||'',
+          clientName: bn === null ? (item.client_name||client) : (bn || client),
+          comment: item.comment||'',
           boxNum: i+1, totalBoxes: qty, seq: seq++ });
       }
     });
