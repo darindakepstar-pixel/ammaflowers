@@ -2435,6 +2435,136 @@ function updateCartField(id, field, val) {
   if (cart[id]) cart[id][field] = val;
 }
 
+// ══════════════════════════════════════════════════════════
+//  СУБКЛИЕНТЫ: разбивка позиции заказа по коробкам
+//  order_items.subclients = [{qty: 2, name: "Фрешлайн"}, ...]
+//  В client_name пишется сводка "2-Фрешлайн, 3-Уфа" для
+//  совместимости с накладными, Excel и складом.
+// ══════════════════════════════════════════════════════════
+function scClean(subs) {
+  return (subs || []).map(s => ({ qty: parseInt(s.qty) || 0, name: String(s.name || '').trim() }))
+                     .filter(s => s.qty > 0 && s.name);
+}
+function scSummary(subs) { return scClean(subs).map(s => `${s.qty}-${s.name}`).join(', '); }
+
+function scNamesDatalist() {
+  const set = new Set();
+  const grab = it => {
+    (it.subclients || []).forEach(x => x.name && set.add(String(x.name).trim()));
+    if (it.client_name && !/^\d+-/.test(it.client_name)) set.add(String(it.client_name).trim());
+  };
+  try { (myOrders || []).forEach(o => (o.order_items || []).forEach(grab)); } catch(e) {}
+  try { (_mgrOrderItems || []).forEach(grab); } catch(e) {}
+  return `<datalist id="sc-names">${[...set].filter(Boolean).sort().map(n =>
+    `<option value="${escHtml(n)}"></option>`).join('')}</datalist>`;
+}
+
+// Общий редактор разбивки (mode: 'cart' | 'mgr')
+function scEditorHTML(mode, key, o) {
+  const qtyTotal = parseInt(mode === 'cart' ? o.qty : o.qty_boxes) || 0;
+  const F = mode === 'cart'
+    ? { u: 'scCartUpd', a: 'scCartAdd', d: 'scCartDel', t: 'scToggleCart' }
+    : { u: 'scMgrUpd',  a: 'scMgrAdd',  d: 'scMgrDel',  t: 'scToggleMgr'  };
+  const subs = o.subclients || [];
+  const tot = scClean(subs).reduce((s, x) => s + x.qty, 0);
+  const cntColor = tot > qtyTotal ? '#dc2626' : (tot === qtyTotal ? 'var(--sage-d)' : 'var(--mid)');
+  return `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+      <b style="font-size:11px;color:var(--sage-d)">👥 Разбивка по субклиентам / 按子客户拆分</b>
+      <span id="sc-cnt-${mode}-${key}" style="font-size:11px;font-weight:600;color:${cntColor}">${tot} из ${qtyTotal} кор. / 箱</span>
+      <span style="flex:1"></span>
+      <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:10px" onclick="${F.t}(${key})">Свернуть / 收起</button>
+    </div>
+    ${subs.map((x, idx) => `
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+        <input class="inp" type="number" min="1" value="${x.qty || ''}" placeholder="Кор."
+          style="width:64px;padding:4px;text-align:center"
+          oninput="${F.u}(${key},${idx},'qty',this.value)">
+        <span style="font-size:10px;color:var(--mid)">кор. →</span>
+        <input class="inp" type="text" value="${escHtml(x.name || '')}" placeholder="Субклиент / 子客户" list="sc-names"
+          style="width:170px;padding:4px"
+          oninput="${F.u}(${key},${idx},'name',this.value)">
+        <button class="btn-icon" onclick="${F.d}(${key},${idx})">×</button>
+      </div>`).join('')}
+    <button class="btn btn-secondary btn-sm" style="padding:3px 10px;font-size:11px;margin-top:2px" onclick="${F.a}(${key})">＋ Добавить ещё / 再加一个</button>
+    ${scNamesDatalist()}`;
+}
+
+function scRefreshCnt(mode, key) {
+  const o = mode === 'cart' ? cart[key] : (typeof _mgrOrderItems !== 'undefined' ? _mgrOrderItems[key] : null);
+  const el = document.getElementById(`sc-cnt-${mode}-${key}`);
+  if (!o || !el) return;
+  const tot = scClean(o.subclients).reduce((s, x) => s + x.qty, 0);
+  const qty = parseInt(mode === 'cart' ? o.qty : o.qty_boxes) || 0;
+  el.textContent = `${tot} из ${qty} кор. / 箱`;
+  el.style.color = tot > qty ? '#dc2626' : (tot === qty ? 'var(--sage-d)' : 'var(--mid)');
+}
+
+// ── корзина клиента ──
+function scToggleCart(id) {
+  id = parseInt(id);
+  const o = cart[id]; if (!o) return;
+  o._scOpen = !o._scOpen;
+  if (o._scOpen && !(o.subclients || []).length)
+    o.subclients = [{ qty: '', name: o.client_name || '' }];
+  renderMyOrder();
+}
+function scCartAdd(id) { id = parseInt(id); const o = cart[id]; if (!o) return; (o.subclients = o.subclients || []).push({ qty: '', name: '' }); renderMyOrder(); }
+function scCartDel(id, idx) { id = parseInt(id); const o = cart[id]; if (!o || !o.subclients) return; o.subclients.splice(idx, 1); renderMyOrder(); }
+function scCartUpd(id, idx, field, val) {
+  id = parseInt(id);
+  const o = cart[id]; if (!o || !o.subclients || !o.subclients[idx]) return;
+  o.subclients[idx][field] = val;
+  scRefreshCnt('cart', id);
+}
+function scCartCellHTML(o) {
+  if (scClean(o.subclients).length)
+    return `<button class="btn btn-secondary btn-sm" style="font-size:9px;padding:3px 6px;max-width:130px;white-space:normal;line-height:1.3;text-align:left" onclick="scToggleCart(${o.flower.id})">👥 ${escHtml(scSummary(o.subclients))}</button>`;
+  return `<div style="display:flex;gap:3px;align-items:center">
+    <input class="inp" type="text" value="${escHtml(o.client_name || '')}" placeholder="Субклиент / 子客户..." list="sc-names"
+      style="width:80px;padding:4px" oninput="updateCartField(${o.flower.id},'client_name',this.value)">
+    <button class="btn-icon" title="Разбить по субклиентам / 按子客户拆分" onclick="scToggleCart(${o.flower.id})" style="font-size:12px">👥</button>
+  </div>`;
+}
+
+// ── менеджерская правка заказа ──
+function scToggleMgr(i) {
+  const it = _mgrOrderItems[i]; if (!it) return;
+  const ex = document.getElementById(`mgr-sc-${i}`);
+  if (ex) {
+    ex.remove();
+    const cell = document.getElementById(`sc-cell-mgr-${i}`);
+    if (cell) cell.innerHTML = scMgrCellHTML(it, i);
+    return;
+  }
+  if (!(it.subclients || []).length)
+    it.subclients = [{ qty: '', name: (it.client_name && !/^\d+-/.test(it.client_name)) ? it.client_name : '' }];
+  const row = document.getElementById(`mgr-row-${i}`);
+  if (!row) return;
+  row.insertAdjacentHTML('afterend',
+    `<tr id="mgr-sc-${i}"><td colspan="99" style="background:var(--sage-l);padding:8px 12px">${scEditorHTML('mgr', i, it)}</td></tr>`);
+}
+function scMgrRedraw(i) {
+  const td = document.querySelector(`#mgr-sc-${i} td`);
+  if (td) td.innerHTML = scEditorHTML('mgr', i, _mgrOrderItems[i]);
+}
+function scMgrAdd(i) { const it = _mgrOrderItems[i]; if (!it) return; (it.subclients = it.subclients || []).push({ qty: '', name: '' }); scMgrRedraw(i); }
+function scMgrDel(i, idx) { const it = _mgrOrderItems[i]; if (!it || !it.subclients) return; it.subclients.splice(idx, 1); scMgrRedraw(i); }
+function scMgrUpd(i, idx, field, val) {
+  const it = _mgrOrderItems[i]; if (!it || !it.subclients || !it.subclients[idx]) return;
+  it.subclients[idx][field] = val;
+  scRefreshCnt('mgr', i);
+}
+function scMgrCellHTML(item, i) {
+  if (scClean(item.subclients).length)
+    return `<button class="btn btn-secondary btn-sm" style="font-size:9px;padding:3px 6px;max-width:130px;white-space:normal;line-height:1.3;text-align:left" onclick="scToggleMgr(${i})">👥 ${escHtml(scSummary(item.subclients))}</button>`;
+  return `<div style="display:flex;gap:3px;align-items:center">
+    <input class="inp" type="text" value="${escHtml(item.client_name || '')}" placeholder="Субклиент..." list="sc-names"
+      style="width:86px;padding:3px 5px;font-size:11px" oninput="mgrUpdateItem(${i},'client_name',this.value)">
+    <button class="btn-icon" title="Разбить по субклиентам / 按子客户拆分" onclick="scToggleMgr(${i})" style="font-size:12px">👥</button>
+  </div>`;
+}
+
 function updateCartUI() {
   const items = Object.values(cart);
   const cnt = items.length;
@@ -2486,6 +2616,7 @@ async function editOrder(orderId) {
       pbox: item.price_per_box,
       client_name: item.client_name || '',
       comment: item.item_comment || '',
+      subclients: (item.subclients || []).map(x => ({...x})),
     };
   });
   currentEditOrderId = orderId;
@@ -2533,12 +2664,12 @@ function renderMyOrder() {
         <td id="cart-un-${o.flower.id}" style="color:var(--mid);font-size:11px">${(o.flower.stems && o.flower.boxes_per_box) ? fmtStems(o.qty * o.flower.boxes_per_box * o.flower.stems, isWeightItem(o.flower)) : '—'}</td>
         <td id="cart-m3-${o.flower.id}" style="color:var(--mid);font-size:11px;white-space:nowrap">${itemBoxM3(o.flower).est?'≈':''}${fmtM3(o.qty * itemBoxM3(o.flower).m3)}</td>
         <td id="cart-sub-${o.flower.id}" style="font-weight:700;color:var(--sage-d)">¥${sub.toFixed(2)}</td>
-        <td><input class="inp" type="text" value="${o.client_name||''}" placeholder="Субклиент / 子客户..."
-              style="width:95px;padding:4px" oninput="updateCartField(${o.flower.id},'client_name',this.value)"></td>
+        <td id="sc-cell-cart-${o.flower.id}">${scCartCellHTML(o)}</td>
         <td><input class="inp" type="text" value="${o.comment||''}" placeholder="Коммент / 备注..."
               style="width:115px;padding:4px" oninput="updateCartField(${o.flower.id},'comment',this.value)"></td>
         <td><button class="btn-icon" onclick="removeFromCart(${o.flower.id})">×</button></td>
       </tr>`;
+      if (o._scOpen) rows += `<tr><td colspan="13" style="background:var(--sage-l);padding:8px 12px">${scEditorHTML('cart', o.flower.id, o)}</td></tr>`;
     });
     const editTitle = currentEditOrderId ? '✏️ Правки / 修改订单' : '🆕 Новый заказ / 新订单';
     editHTML = `
@@ -3081,6 +3212,17 @@ async function submitOrder(existingOrderId = null) {
   const items = Object.values(cart);
   if (!items.length) { toast('Добавьте позиции / 请添加商品'); return; }
 
+  // Разбивка по субклиентам: нельзя распределить больше, чем заказано
+  for (const o of items) {
+    const subs = scClean(o.subclients);
+    if (!subs.length) continue;
+    const tot = subs.reduce((s2, x) => s2 + x.qty, 0);
+    if (tot > (parseInt(o.qty) || 0)) {
+      toast(`⚠️ ${o.flower.ru}: субклиентам распределено ${tot} кор. из ${o.qty} / 子客户分配超过订购箱数`);
+      return;
+    }
+  }
+
   const shipDate  = document.getElementById('order-ship-date')?.value  || null;
   const comment   = document.getElementById('order-comment')?.value    || null;
 
@@ -3119,7 +3261,9 @@ async function submitOrder(existingOrderId = null) {
       price_type: o.priceType, price_per_bunch: o.price,
       bunches_per_box: o.flower.boxes_per_box, price_per_box: o.pbox,
       qty_boxes: o.qty, subtotal: o.pbox * o.qty,
-      client_name: o.client_name || null, item_comment: o.comment || null,
+      subclients: scClean(o.subclients).length ? scClean(o.subclients) : null,
+      client_name: scClean(o.subclients).length ? scSummary(o.subclients) : (o.client_name || null),
+      item_comment: o.comment || null,
     }));
     const { error: updErr } = await sb.from('order_items').insert(itemRows);
     if (updErr) {
@@ -3160,7 +3304,9 @@ async function submitOrder(existingOrderId = null) {
       price_type: o.priceType, price_per_bunch: o.price,
       bunches_per_box: o.flower.boxes_per_box, price_per_box: o.pbox,
       qty_boxes: o.qty, subtotal: o.pbox * o.qty,
-      client_name: o.client_name || null, item_comment: o.comment || null,
+      subclients: scClean(o.subclients).length ? scClean(o.subclients) : null,
+      client_name: scClean(o.subclients).length ? scSummary(o.subclients) : (o.client_name || null),
+      item_comment: o.comment || null,
     }));
     const { error: itErr } = await sb.from('order_items').insert(itemRows);
     if (itErr) {
@@ -3461,12 +3607,7 @@ function mgrRowHTML(item, i, id) {
       <td id="mgr-sub-${i}" style="font-weight:700;color:var(--sage-d)">
         ¥${sub.toFixed(2)}
       </td>
-      <td>
-        <input class="inp" type="text" value="${item.client_name||''}"
-          placeholder="Субклиент..."
-          style="width:100px;padding:3px 5px;font-size:11px"
-          oninput="mgrUpdateItem(${i},'client_name',this.value)">
-      </td>
+      <td id="sc-cell-mgr-${i}">${scMgrCellHTML(item, i)}</td>
       <td>
         <input class="inp" type="text" value="${item.item_comment||''}"
           placeholder="Коммент..."
@@ -3959,6 +4100,17 @@ async function mgrSaveOrderItems(orderId) {
   if (!_mgrOrderItems.length) {
     toast('Нет позиций для сохранения / 没有可保存的项目'); return;
   }
+  // Разбивка по субклиентам не должна превышать количество коробок
+  for (const item of _mgrOrderItems) {
+    const subs = scClean(item.subclients);
+    if (!subs.length) continue;
+    const tot = subs.reduce((s2, x) => s2 + x.qty, 0);
+    const qty = parseInt(item.qty_boxes) || 0;
+    if (tot > qty) {
+      toast(`⚠️ ${item.flower_snapshot?.ru || item.flower?.ru || 'Позиция'}: субклиентам распределено ${tot} кор. из ${qty} / 子客户分配超过箱数`);
+      return;
+    }
+  }
   // Delete all existing items and re-insert
   const { error: delErr } = await sb.from('order_items').delete().eq('order_id', orderId);
   if (delErr) { toast('Ошибка удаления: ' + delErr.message); return; }
@@ -3973,7 +4125,8 @@ async function mgrSaveOrderItems(orderId) {
     price_per_box:   parseFloat(item.price_per_box)  || 0,
     qty_boxes:       parseInt(item.qty_boxes) || 1,
     subtotal:        (parseFloat(item.price_per_box)||0) * (parseInt(item.qty_boxes)||1),
-    client_name:     item.client_name  || null,
+    subclients:      scClean(item.subclients).length ? scClean(item.subclients) : null,
+    client_name:     scClean(item.subclients).length ? scSummary(item.subclients) : (item.client_name || null),
     item_comment:    item.item_comment || null,
   }));
 
