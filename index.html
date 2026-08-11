@@ -55,10 +55,10 @@ btn,button{font-family:var(--font-b);cursor:pointer}
 
 /* ═══ APP SHELL ═══ */
 #screen-app{display:none;flex-direction:column;min-height:100vh}
-.topbar{background:var(--sage-d);padding:0 24px;height:56px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:200;box-shadow:0 2px 12px rgba(0,0,0,.2)}
+.topbar{background:var(--sage-d);padding:0 28px;height:64px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:200;box-shadow:0 2px 20px rgba(0,0,0,.18);border-bottom:1px solid rgba(201,169,110,.35)}
 .topbar-logo{display:flex;flex-direction:column;justify-content:center}
-.topbar .logo-img{height:24px;width:auto;filter:brightness(0) invert(1);display:block}
-.topbar-logo-sub{color:var(--gold);font-size:9px;letter-spacing:3px;display:block;font-family:var(--font-b);font-weight:300;margin-top:3px}
+.topbar .logo-img{height:29px;width:auto;filter:brightness(0) invert(1);opacity:.97;display:block}
+.topbar-logo-sub{color:var(--gold);font-size:9px;letter-spacing:3.5px;display:block;font-family:var(--font-b);font-weight:400;margin-top:5px}
 .topbar-right{display:flex;align-items:center;gap:10px;margin-left:auto}
 .user-pill{background:rgba(255,255,255,.12);color:#fff;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:500}
 .user-pill.mgr{background:var(--gold);color:var(--sage-d);font-weight:700}
@@ -97,6 +97,46 @@ btn,button{font-family:var(--font-b);cursor:pointer}
 
 /* ═══ TABLE ═══ */
 .tbl-wrap{overflow-x:auto;border-radius:var(--r);box-shadow:var(--shadow)}
+
+/* ═══ VIEW TOGGLE (карточки / таблица) ═══ */
+.view-toggle{display:flex;background:var(--sage-l);border-radius:var(--r);padding:3px;gap:2px}
+.view-toggle-btn{background:none;border:none;padding:7px 14px;font-size:12px;font-weight:600;color:var(--sage-d);border-radius:6px;cursor:pointer;transition:background .15s,color .15s;font-family:var(--font-b);white-space:nowrap}
+.view-toggle-btn.active{background:var(--sage-d);color:#fff}
+
+/* ═══ PRODUCT CARDS ═══ */
+.price-cards-grid{display:none;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:20px;margin-bottom:20px}
+.flower-card{background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 10px rgba(44,44,44,.06);border:1px solid var(--border);cursor:pointer;transition:transform .18s ease,box-shadow .18s ease;display:flex;flex-direction:column}
+.flower-card:hover{transform:translateY(-4px);box-shadow:0 14px 32px rgba(44,44,44,.14);border-color:var(--gold)}
+.flower-card.out{opacity:.6}
+.flower-card-img{position:relative;aspect-ratio:1/1;background:var(--sage-l);overflow:hidden}
+.flower-card-img img{width:100%;height:100%;object-fit:cover;display:block}
+.flower-card-img .fimg-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:42px;color:var(--sage)}
+.flower-card-out-badge{position:absolute;top:10px;left:10px;background:rgba(44,44,44,.84);color:#fff;font-size:10px;font-weight:600;padding:4px 10px;border-radius:20px;letter-spacing:.3px}
+.flower-card-body{padding:14px 16px 16px;display:flex;flex-direction:column;gap:3px;flex:1}
+.flower-card-cat{font-size:9.5px;color:var(--sage-m);text-transform:uppercase;letter-spacing:.7px;font-weight:700}
+.flower-card-name{font-family:var(--font-h);font-size:19px;font-weight:600;color:var(--charcoal);line-height:1.2;margin-top:1px}
+.flower-card-name-cn{font-size:12px;color:var(--mid)}
+.flower-card-specs{font-size:11px;color:var(--light);margin-top:3px}
+.flower-card-price{display:flex;align-items:baseline;gap:12px;margin-top:9px;font-family:var(--font-h);font-weight:600;font-size:18px;color:var(--sage-d)}
+.flower-card-price small{font-size:10px;font-weight:400;color:var(--light);font-family:var(--font-b);letter-spacing:.2px}
+.flower-card-cta{margin-top:11px}
+.flower-card-cta select.inp{width:100%;margin-bottom:7px;font-size:12px}
+.flower-card-cta .add-btn,.flower-card-cta .btn{width:100%;text-align:center;padding:9px 10px;font-size:12px}
+
+/* ═══ PRODUCT DETAIL MODAL ═══ */
+.flower-modal{display:flex;gap:22px;flex-wrap:wrap}
+.flower-modal-img{flex:0 0 250px;width:250px;height:250px;border-radius:12px;overflow:hidden;background:var(--sage-l)}
+.flower-modal-img img{width:100%;height:100%;object-fit:cover;display:block}
+.flower-modal-img .fimg-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:52px;color:var(--sage)}
+.flower-modal-body{flex:1;min-width:220px}
+.flower-modal-cat{font-size:11px;color:var(--sage-m);text-transform:uppercase;letter-spacing:.7px;font-weight:700;margin-bottom:3px}
+.flower-modal-title{font-family:var(--font-h);font-size:27px;font-weight:600;color:var(--charcoal);margin-bottom:2px;line-height:1.15}
+.flower-modal-cn{font-size:13px;color:var(--mid);margin-bottom:12px}
+.flower-modal-price{display:flex;gap:18px;font-family:var(--font-h);font-size:21px;font-weight:600;color:var(--sage-d);margin-bottom:14px}
+.flower-modal-price small{font-size:11px;font-weight:400;color:var(--light);font-family:var(--font-b)}
+.flower-modal-specs{display:grid;grid-template-columns:1fr 1fr;gap:9px 18px;font-size:12px;margin-bottom:16px;padding:13px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.flower-modal-specs span{color:var(--light);display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:1px}
+.flower-modal-specs b{color:var(--charcoal);font-weight:600;font-size:13px}
 .cnt.red{background:var(--red)!important;color:#fff!important}
 .wh-tab{background:none;border:none;border-bottom:3px solid transparent;padding:8px 16px;font-size:13px;font-weight:600;color:var(--mid);cursor:pointer;margin-bottom:-2px;border-radius:0;transition:color .15s}
 .wh-tab:hover{color:var(--sage-d)}
@@ -239,6 +279,10 @@ td.L{text-align:left}
   .topbar { padding: 0 12px; height: auto; min-height: 50px; flex-wrap: wrap; gap: 6px; padding-top: 8px; padding-bottom: 8px; }
   .topbar .logo-img { height: 19px; }
   .topbar-logo-sub { font-size: 8px; }
+  .price-cards-grid { grid-template-columns: repeat(auto-fill,minmax(150px,1fr)); gap: 12px; }
+  .flower-card-name { font-size: 15px; }
+  .flower-card-body { padding: 10px 11px 12px; }
+  .flower-modal-img { flex: 0 0 100%; width: 100%; height: 220px; }
   .topbar-date { display: none; }
   .user-pill { font-size: 10px; padding: 3px 8px; }
   .btn-logout { font-size: 10px; padding: 4px 8px; }
@@ -625,7 +669,7 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 
   <div class="notice-bar" id="notice-bar">
-    ⚠ Цены действительны 3 дня · 价格有效期3天 · Мин. заказ для каждого вида — 1 короб
+    ⚠ Цены действительны 3 дня · 价格有效期3天 · Мин. заказ — 1 коробка/вид
   </div>
 
   <!-- PAGE: PRICE LIST -->
@@ -645,6 +689,10 @@ document.addEventListener('DOMContentLoaded', function(){
         </div>
         <input class="inp inp-search" type="text" id="srch" placeholder="🔍 Поиск RU / 中文 / EN...">
         <select class="inp inp-select" id="cat-filter"><option value="">Все категории</option></select>
+        <div class="view-toggle" id="view-toggle">
+          <button class="view-toggle-btn" data-view="cards" onclick="setPriceView('cards')">⬚ Карточки / 网格</button>
+          <button class="view-toggle-btn" data-view="table" onclick="setPriceView('table')">☰ Таблица / 列表</button>
+        </div>
         <button class="btn btn-secondary" id="btn-hide-out" onclick="toggleHide()">👁 Скрыть нет в наличии / 隐藏无货</button>
         <span class="btn btn-secondary mgr-only" onclick="saveAllPrices()" id="btn-save-prices" style="display:none">💾 Сохранить цены / 保存价格</span>
         <span class="btn btn-secondary mgr-only" onclick="openPriceImport()" id="btn-import-prices" style="display:none">📥 Импорт цен / 导入价格</span>
@@ -663,7 +711,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <span class="btn btn-primary mgr-only" onclick="showAddFlowerModal()" id="btn-add-flower" style="display:none">+ Добавить цветок / 添加花材</span>
         <span style="font-size:11px;color:var(--light)" id="price-count"></span>
       </div>
-      <div class="tbl-wrap">
+      <div class="tbl-wrap" id="price-table-wrap">
         <table>
           <thead>
             <tr>
@@ -687,6 +735,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <tbody id="price-tbody"><tr><td colspan="14" style="text-align:center;padding:40px"><div class="spinner" style="margin:0 auto 10px"></div><div style="color:var(--mid);font-size:13px">Загрузка / 加载中...</div></td></tr></tbody>
         </table>
       </div>
+      <div class="price-cards-grid" id="price-cards-grid"></div>
     </div>
     <!-- cart footer for clients -->
     <div class="cart-footer" id="cart-footer" style="display:none">
@@ -1224,6 +1273,12 @@ async function initApp() {
   const isWh  = currentUser.role === 'warehouse';
   const isGuest = currentUser.role === 'guest';
 
+  // Дефолтный вид прайса: карточки для гостя/клиента (нагляднее, особенно на выставке),
+  // таблица для менеджера/склада (плотное редактирование). Если человек уже переключал вид
+  // в этой сессии/браузере — уважаем его выбор через localStorage.
+  const savedView = (() => { try { return localStorage.getItem('amma-price-view'); } catch(e) { return null; } })();
+  priceViewMode = savedView || (isMgr ? 'table' : 'cards');
+
   // Top bar
   const now = new Date();
   document.getElementById('top-date').textContent =
@@ -1249,7 +1304,7 @@ async function initApp() {
     document.getElementById('btn-add-flower').style.display   = 'none';
     document.getElementById('cart-footer').style.display = 'none';
     document.getElementById('notice-bar').innerHTML =
-      '👁 Гостевой просмотр. Цены меняются каждые 3 дня. Чтобы оформить заказ, <a href="#" onclick="event.preventDefault();logout()" style="color:inherit;text-decoration:underline;font-weight:600">войдите в аккаунт</a> / 访客模式：如需下单请登录';
+      '👁 Гостевой просмотр — цены базовые, без учёта персональной наценки. Чтобы оформить заказ, <a href="#" onclick="event.preventDefault();logout()" style="color:inherit;text-decoration:underline;font-weight:600">войдите в аккаунт</a> / 访客模式：如需下单请登录';
   } else if (isMgr) {
     tabs.innerHTML = `
       <div class="nav-tab active" onclick="showPage('price',this)">📋 Прайс / 价格单</div>
@@ -1951,21 +2006,58 @@ function fillCatFilterForCatalog() {
   sel.innerHTML = '<option value="">Все категории</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
 }
 
-function renderPrice() {
+// Текущий режим отображения прайса: 'cards' (карточки) или 'table' (таблица).
+// По умолчанию гостю/клиенту показываем карточки — это нагляднее на выставке,
+// менеджеру — таблицу (плотное редактирование цен/наличия).
+let priceViewMode = 'table';
+
+function setPriceView(mode) {
+  priceViewMode = mode;
+  document.querySelectorAll('.view-toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.view === mode));
+  try { localStorage.setItem('amma-price-view', mode); } catch(e){}
+  renderPrice();
+}
+
+// Общий фильтр по каталогу/поиску/категории/наличию — используется и таблицей, и карточками
+function getFilteredFlowers() {
   const q = document.getElementById('srch').value.toLowerCase().trim();
   const cf = document.getElementById('cat-filter').value;
+  return flowers.filter(f => {
+    if (flowerCatalog(f) !== currentCatalog) return false;
+    if (hiddenOut && !f.in_stock) return false;
+    if (cf && f.cat_ru !== cf) return false;
+    if (q && ![f.ru,f.cn,f.en,f.cat_ru].join(' ').toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+
+function renderPrice() {
+  const tableWrap = document.getElementById('price-table-wrap');
+  const cardsWrap = document.getElementById('price-cards-grid');
+  document.querySelectorAll('.view-toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.view === priceViewMode));
+  if (priceViewMode === 'cards') {
+    tableWrap.style.display = 'none';
+    cardsWrap.style.display = 'grid';
+    renderPriceCards();
+  } else {
+    cardsWrap.style.display = 'none';
+    tableWrap.style.display = 'block';
+    renderPriceTable();
+  }
+  // Search/filter listeners (re-bind is cheap and idempotent)
+  document.getElementById('srch').oninput = renderPrice;
+  document.getElementById('cat-filter').onchange = renderPrice;
+}
+
+function renderPriceTable() {
   const isMgr = currentUser?.role === 'manager';
   const isGuest = currentUser?.role === 'guest';
   const tbody = document.getElementById('price-tbody');
   tbody.innerHTML = '';
+  const list = getFilteredFlowers();
   let vis = 0, lastCat = null, row = 0;
 
-  flowers.forEach(f => {
-    if (flowerCatalog(f) !== currentCatalog) return;
-    if (hiddenOut && !f.in_stock) return;
-    if (cf && f.cat_ru !== cf) return;
-    if (q && ![f.ru,f.cn,f.en,f.cat_ru].join(' ').toLowerCase().includes(q)) return;
-
+  list.forEach(f => {
     if (f.cat_ru !== lastCat) {
       const cr = document.createElement('tr'); cr.className = 'cat-row';
       cr.innerHTML = `<td colspan="10">${f.cat_ru} · ${f.cat_en}</td>`;
@@ -2050,10 +2142,134 @@ function renderPrice() {
   });
 
   document.getElementById('price-count').textContent = `${vis} из ${flowers.length}`;
+}
 
-  // Also add search listener
-  document.getElementById('srch').oninput = renderPrice;
-  document.getElementById('cat-filter').onchange = renderPrice;
+// ══════════════════════════════════════════════════════════
+//  PRODUCT CARDS (карточки товаров — для клиента/гостя/выставки)
+// ══════════════════════════════════════════════════════════
+function renderPriceCards() {
+  const isMgr = currentUser?.role === 'manager';
+  const isGuest = currentUser?.role === 'guest';
+  const grid = document.getElementById('price-cards-grid');
+  const list = getFilteredFlowers();
+
+  document.getElementById('price-count').textContent = `${list.length} из ${flowers.length}`;
+
+  if (!list.length) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:50px 0;color:var(--light);font-size:13px">Ничего не найдено / 未找到</div>`;
+    return;
+  }
+
+  grid.innerHTML = list.map(f => {
+    const inStock = f.in_stock;
+    const inCart = cart[parseInt(f.id)] != null;
+    const pa = f.price_a, pap = f.price_ap;
+    const thumb = f.photo_url || THUMBS[f.en];
+    const imgH = thumb
+      ? `<img src="${thumb}" alt="${f.ru}" loading="lazy">`
+      : `<div class="fimg-ph">🌸</div>`;
+    const clientMarkup = (!isMgr && (currentUser?.show_markup || globalMarkupActive)) ? 1.15 : 1;
+    const dpa  = (pa  * clientMarkup).toFixed(1);
+    const dpap = (pap * clientMarkup).toFixed(1);
+    const dpab = (pa  * f.boxes_per_box * clientMarkup).toFixed(0);
+    const dpapb= (pap * f.boxes_per_box * clientMarkup).toFixed(0);
+
+    const specsLine = [f.pack, f.length].filter(Boolean).join(' · ');
+
+    let cta;
+    if (isMgr) {
+      cta = `<button class="btn btn-secondary btn-sm" style="width:100%" onclick="event.stopPropagation();showEditFlowerModal(${f.id})">✏️ Редактировать / 编辑</button>`;
+    } else if (isGuest) {
+      cta = inStock
+        ? `<button class="btn btn-secondary btn-sm" style="width:100%" onclick="event.stopPropagation();toast('🔒 Войдите в аккаунт, чтобы оформить заказ / 请登录后下单');logout()">🔒 Войти чтобы заказать</button>`
+        : '';
+    } else if (inStock) {
+      cta = `<select class="inp" id="gc-${f.id}" onclick="event.stopPropagation()">
+               <option value="a">Грейд A — ¥${dpab}/кор</option>
+               <option value="ap">Грейд A+ — ¥${dpapb}/кор</option>
+             </select>
+             <button class="add-btn ${inCart?'in-order':''}" style="width:100%" onclick="event.stopPropagation();addToCart(${f.id}, document.getElementById('gc-${f.id}').value)">${inCart?'✓ В заказе/已添加':'+ В заказ/加入订单'}</button>`;
+    } else {
+      cta = '';
+    }
+
+    return `<div class="flower-card ${!inStock?'out':''}" onclick="showFlowerDetailModal(${f.id})">
+      <div class="flower-card-img">
+        ${imgH}
+        ${!inStock ? `<div class="flower-card-out-badge">Нет в наличии / 无货</div>` : ''}
+      </div>
+      <div class="flower-card-body">
+        <div class="flower-card-cat">${f.cat_ru || ''}</div>
+        <div class="flower-card-name">${f.ru}</div>
+        <div class="flower-card-name-cn">${f.cn || ''}</div>
+        ${specsLine ? `<div class="flower-card-specs">${specsLine}</div>` : ''}
+        <div class="flower-card-price">
+          <span>¥${dpa}<small> / A</small></span>
+          <span style="color:var(--sage-m)">¥${dpap}<small> / A+</small></span>
+        </div>
+        ${cta ? `<div class="flower-card-cta">${cta}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Карточка товара — детальный просмотр с фото и полными характеристиками ──
+function showFlowerDetailModal(id) {
+  const f = flowers.find(x => x.id === parseInt(id));
+  if (!f) return;
+  const isMgr = currentUser?.role === 'manager';
+  const isGuest = currentUser?.role === 'guest';
+  const inStock = f.in_stock;
+  const inCart = cart[parseInt(f.id)] != null;
+  const thumb = f.photo_url || THUMBS[f.en];
+  const wgt = isWeightItem(f);
+  const clientMarkup = (!isMgr && (currentUser?.show_markup || globalMarkupActive)) ? 1.15 : 1;
+  const dpa  = (f.price_a  * clientMarkup).toFixed(1);
+  const dpap = (f.price_ap * clientMarkup).toFixed(1);
+  const dpab = (f.price_a  * f.boxes_per_box * clientMarkup).toFixed(0);
+  const dpapb= (f.price_ap * f.boxes_per_box * clientMarkup).toFixed(0);
+
+  let cta;
+  if (isMgr) {
+    cta = `<button class="btn btn-secondary" style="width:100%" onclick="closeModal();showEditFlowerModal(${f.id})">✏️ Редактировать / 编辑</button>`;
+  } else if (isGuest) {
+    cta = inStock
+      ? `<button class="btn btn-secondary" style="width:100%" onclick="closeModal();toast('🔒 Войдите в аккаунт, чтобы оформить заказ / 请登录后下单');logout()">🔒 Войти, чтобы заказать</button>`
+      : `<div style="color:var(--light);font-size:13px">Нет в наличии / 无货</div>`;
+  } else if (inStock) {
+    cta = `<select class="inp" id="fd-grade-${f.id}" style="width:100%;margin-bottom:8px">
+             <option value="a">Грейд A — ¥${dpab}/кор</option>
+             <option value="ap">Грейд A+ — ¥${dpapb}/кор</option>
+           </select>
+           <button class="btn btn-primary" style="width:100%" onclick="addToCart(${f.id}, document.getElementById('fd-grade-${f.id}').value); closeModal()">${inCart?'✓ Добавлено — добавить ещё':'+ В заказ / 加入订单'}</button>`;
+  } else {
+    cta = `<div style="color:var(--light);font-size:13px">Нет в наличии / 无货</div>`;
+  }
+
+  document.getElementById('modal-content').innerHTML = `
+    <div class="flower-modal">
+      <div class="flower-modal-img">${thumb ? `<img src="${thumb}" alt="${f.ru}">` : `<div class="fimg-ph">🌸</div>`}</div>
+      <div class="flower-modal-body">
+        <div class="flower-modal-cat">${f.cat_ru || ''}${f.cat_en ? ' · ' + f.cat_en : ''}</div>
+        <div class="flower-modal-title">${f.ru}</div>
+        <div class="flower-modal-cn">${f.cn || ''}${f.en ? ' · ' + f.en : ''}</div>
+        <div class="flower-modal-price">
+          <span>¥${dpa}<small> / банч A</small></span>
+          <span style="color:var(--sage-m)">¥${dpap}<small> / банч A+</small></span>
+        </div>
+        <div class="flower-modal-specs">
+          ${f.pack ? `<div><span>Упаковка / 规格</span><b>${f.pack}</b></div>` : ''}
+          <div><span>Банчей/кор · 扎/件</span><b>${f.boxes_per_box || '—'}</b></div>
+          ${f.stems ? `<div><span>${wgt?'Вес':'Стеблей'}/банч</span><b>${fmtStems(f.stems, wgt)}</b></div>` : ''}
+          ${f.length ? `<div><span>Длина / 长度</span><b>${f.length}</b></div>` : ''}
+          ${f.flower_weight ? `<div><span>Вес цветка / 花重量</span><b>${f.flower_weight}</b></div>` : ''}
+          ${f.box_size ? `<div><span>Размер кор. / 箱型</span><b>${f.box_size}</b></div>` : ''}
+        </div>
+        ${cta}
+      </div>
+    </div>
+    <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Закрыть / 关闭</button></div>`;
+  openModal();
 }
 
 
@@ -2379,11 +2595,11 @@ async function toggleStock(id) {
 // ══════════════════════════════════════════════════════════
 //  CLIENT: CART
 // ══════════════════════════════════════════════════════════
-function addToCart(id) {
+function addToCart(id, gradeOverride) {
   id = parseInt(id); // normalize to number always
   const f = flowers.find(x => x.id === id); if (!f) return;
   const sel = document.getElementById('gs' + id);
-  const pt = sel ? sel.value : 'a';
+  const pt = gradeOverride || (sel ? sel.value : 'a');
   const price = pt === 'a' ? (f.price_a || 0) : (f.price_ap || 0);
   const pbox = +(price * (f.boxes_per_box || 1)).toFixed(2);
   if (cart[id]) cart[id].qty += 1;
