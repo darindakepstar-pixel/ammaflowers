@@ -625,7 +625,7 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 
   <div class="notice-bar" id="notice-bar">
-    ⚠ Цены действительны 3 дня · 价格有效期3天 · Мин. заказ — 1 коробка/вид
+    ⚠ Цены действительны 3 дня · 价格有效期3天 · Мин. заказ для каждого вида — 1 короб
   </div>
 
   <!-- PAGE: PRICE LIST -->
@@ -1249,7 +1249,7 @@ async function initApp() {
     document.getElementById('btn-add-flower').style.display   = 'none';
     document.getElementById('cart-footer').style.display = 'none';
     document.getElementById('notice-bar').innerHTML =
-      '👁 Гостевой просмотр — цены базовые, без учёта персональной наценки. Чтобы оформить заказ, <a href="#" onclick="event.preventDefault();logout()" style="color:inherit;text-decoration:underline;font-weight:600">войдите в аккаунт</a> / 访客模式：如需下单请登录';
+      '👁 Гостевой просмотр. Цены меняются каждые 3 дня. Чтобы оформить заказ, <a href="#" onclick="event.preventDefault();logout()" style="color:inherit;text-decoration:underline;font-weight:600">войдите в аккаунт</a> / 访客模式：如需下单请登录';
   } else if (isMgr) {
     tabs.innerHTML = `
       <div class="nav-tab active" onclick="showPage('price',this)">📋 Прайс / 价格单</div>
