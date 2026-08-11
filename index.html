@@ -623,7 +623,6 @@ document.addEventListener('DOMContentLoaded', function(){
     <div class="page-inner">
       <div class="page-title">Прайс-лист / 价格单 / Price List</div>
       <div class="page-sub" id="price-updated">Актуальные цены AMMA FLOWERS</div>
-      <div id="price-info-banners"></div>
       <div class="ctrl-bar">
         <div style="display:flex;gap:6px;flex-wrap:wrap;width:100%;margin-bottom:8px" id="catalog-tabs">
           <button class="wh-tab active" data-cat="cut" onclick="switchCatalog('cut',this)">🌸 Срезы / 鲜切</button>
@@ -911,7 +910,6 @@ document.addEventListener('DOMContentLoaded', function(){
   <div class="page" id="page-warehouse">
     <div class="page-inner">
       <div class="page-title">Склад / 仓库 / Warehouse</div>
-      <div id="wh-info-banners"></div>
       <!-- Sub-tabs -->
       <div style="display:flex;gap:6px;margin-bottom:16px;border-bottom:2px solid var(--border);padding-bottom:0;flex-wrap:wrap">
         <button class="wh-tab active" id="whtab-pending" onclick="switchWhTab('pending',this)">📋 Входящие <span class="cnt" id="cnt-wh-pending" style="display:none">0</span></button>
@@ -1045,21 +1043,9 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 
   <!-- PAGE: DASHBOARD (manager) -->
-  <div class="page" id="page-reference">
-    <div class="card">
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-        <button class="btn btn-secondary ref-tab active" id="ref-tab-season" onclick="showRefSection('season',this)">🌸 Сезонность / 花季</button>
-        <button class="btn btn-secondary ref-tab" id="ref-tab-holidays" onclick="showRefSection('holidays',this)">📅 Праздники КНР / 节假日</button>
-        <button class="btn btn-secondary ref-tab" id="ref-tab-packing" onclick="showRefSection('packing',this)">📦 Упаковка / 包装要求</button>
-      </div>
-      <div id="ref-content"></div>
-    </div>
-  </div>
-
   <div class="page" id="page-dashboard">
     <div class="page-inner">
       <div class="page-title">Дашборд / 数据看板 / Dashboard</div>
-      <div id="dash-info-banners"></div>
       <div class="ctrl-bar" style="flex-wrap:wrap;gap:10px;margin-bottom:16px">
         <select class="inp" id="dash-period" onchange="loadDashboard()" style="min-width:160px">
           <option value="7">Последние 7 дней / 最近7天</option>
@@ -1216,8 +1202,6 @@ async function initApp() {
   const isMgr = currentUser.role === 'manager';
   const isWh  = currentUser.role === 'warehouse';
 
-  renderInfoWidget();  // плавающий виджет: сезон дождей + праздники (все роли)
-
   // Top bar
   const now = new Date();
   document.getElementById('top-date').textContent =
@@ -1241,7 +1225,6 @@ async function initApp() {
       <div class="nav-tab" onclick="showPage('clients',this)">👥 Клиенты / 客户</div>
       <div class="nav-tab" onclick="showPage('claims',this)">⚠️ Претензии <span class="cnt" id="cnt-claims" style="display:none">0</span></div>
       <div class="nav-tab" onclick="showPage('dashboard',this)">📊 Дашборд</div>
-      <div class="nav-tab" onclick="showPage('reference',this)">📖 Справка / 参考</div>
       <div class="nav-tab" onclick="showPage('chat',this)">💬 Чат / 聊天 <span class="cnt" id="cnt-chat" style="display:none">0</span></div>
       <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
     `;
@@ -1255,7 +1238,6 @@ async function initApp() {
       <div class="nav-tab active" onclick="showPage('warehouse',this)">🏭 Сборка / 备货 <span class="cnt" id="cnt-wh-orders">0</span></div>
       <div class="nav-tab" onclick="showPage('shipments',this)">🚚 Отгрузки / 车次</div>
       <div class="nav-tab" onclick="showPage('labels',this)">🏷 Этикетки / 标签</div>
-      <div class="nav-tab" onclick="showPage('reference',this)">📖 Справка / 参考</div>
       <div class="nav-tab" onclick="showPage('chat',this)">💬 Чат / 聊天 <span class="cnt" id="cnt-chat" style="display:none">0</span></div>
       <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
     `;
@@ -1270,7 +1252,6 @@ async function initApp() {
       <div class="nav-tab" onclick="showPage('my-waybills',this)">📦 Накладные / 出货单 <span class="cnt" id="cnt-waybills">0</span></div>
       <div class="nav-tab" onclick="showPage('my-invoices',this)">🧾 Счета / 发票</div>
       <div class="nav-tab" onclick="showPage('my-claims',this)">⚠️ Претензии / 投诉</div>
-      <div class="nav-tab" onclick="showPage('reference',this)">📖 Справка / 参考</div>
       <div class="nav-tab" onclick="showPage('chat',this)">💬 Чат / 聊天 <span class="cnt" id="cnt-chat" style="display:none">0</span></div>
       <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
     `;
@@ -1336,217 +1317,6 @@ async function initApp() {
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-// ══════════════════════════════════════════════════════════
-//  СПРАВКА: сезонность, календарь КНР, памятка упаковки
-// ══════════════════════════════════════════════════════════
-const SEASONAL_FLOWERS = {
-  'Круглый год / 全年': ['Роза одноголовая','Роза кустовая','Гвоздика одноголовая','Гвоздика кустовая','Гвоздика Грин Трик','Эвкалипт','Лилия','Гортензия','Эустома','Хризантема кустовая','Хризантема одноголовая','Калла','Гипсофила','Лимониум (каспия)','Статица','Лимониум «незабудка»','Скабиоза','Дидискус','Солидаго','Ренантера','Подсолнух','Пеннисетум','Ромашка (матрикария)','Аспарагус пон-пон','Аспарагус перистый','Мелалеука','Папоротник','Лист гардении','Лист ареки','Лист монстеры','Лист цитруса','Фисташка','Ардизия (красные ягоды)','Синеголовник','Лист кордилины'],
-  'Январь – март / 1–3月': ['Фрезия','Анемон','Ранункулюс','Тюльпан','Химонантус (зимоцвет)'],
-  'Апрель – май / 4–5月': ['Пион травянистый','Пион древовидный','Гелихризум','Сетария','Астильба','Лаванда','Мак'],
-  'Июнь – сентябрь / 6–9月': ['Лотос','Коробочка лотоса','Кувшинка','Гиппеаструм','Талинум (ягодная веточка) 柔丽丝','Калина «снежный шар»'],
-  'Октябрь / 10月': ['Фонтанезия («снежная ива»)','Паслён сосочковый','Калликарпа','Хамелациум','Верба серебристая'],
-  'Ноябрь – декабрь / 11–12月': ['Илекс (красные ягоды)','Гиацинт','Форзиция («золотые ветки») 寸寸金','Ирис'],
-};
-const SEASON_KEYS_BY_MONTH = { 1:'Январь – март / 1–3月', 2:'Январь – март / 1–3月', 3:'Январь – март / 1–3月', 4:'Апрель – май / 4–5月', 5:'Апрель – май / 4–5月', 6:'Июнь – сентябрь / 6–9月', 7:'Июнь – сентябрь / 6–9月', 8:'Июнь – сентябрь / 6–9月', 9:'Июнь – сентябрь / 6–9月', 10:'Октябрь / 10月', 11:'Ноябрь – декабрь / 11–12月', 12:'Ноябрь – декабрь / 11–12月' };
-
-const CN_HOLIDAYS = [
-  { from: '2026-01-01', to: '2026-01-03', name: 'Новогодние каникулы / 元旦' },
-  { from: '2026-02-15', to: '2026-02-23', name: 'Праздник Весны — Китайский Новый год / 春节' },
-  { from: '2026-04-04', to: '2026-04-06', name: 'Цинмин / 清明节' },
-  { from: '2026-05-01', to: '2026-05-05', name: 'Праздник Труда / 劳动节' },
-  { from: '2026-06-19', to: '2026-06-21', name: 'Дуаньу / 端午节' },
-  { from: '2026-09-25', to: '2026-09-27', name: 'Праздник середины осени / 中秋节' },
-  { from: '2026-10-01', to: '2026-10-07', name: 'День образования КНР / 国庆节' },
-];
-const CN_TRANSFER_WORKDAYS = [
-  { date: '2026-01-04', for: 'за новогодние каникулы' },
-  { date: '2026-02-14', for: 'за Праздник Весны' },
-  { date: '2026-02-28', for: 'за Праздник Весны' },
-  { date: '2026-05-09', for: 'за Праздник Труда' },
-  { date: '2026-09-20', for: 'за середину осени' },
-  { date: '2026-10-10', for: 'за День образования КНР' },
-];
-const CN_INFO_DAYS = [
-  { date: '2026-03-03', name: 'Праздник фонарей / 元宵节' },
-  { date: '2026-03-08', name: 'Женский день / 女神节 — пик спроса на цветы' },
-  { date: '2026-05-10', name: 'День матери / 母亲节 — пик спроса' },
-  { date: '2026-05-20', name: '520 — китайский день влюблённых, пик спроса' },
-  { date: '2026-08-19', name: 'Циси / 七夕 — день влюблённых, пик спроса' },
-  { date: '2026-10-18', name: 'Праздник двойной девятки / 重阳节' },
-];
-const PACKING_GENERAL = [
-  '🚫 КАРТОН ИСПОЛЬЗОВАТЬ НЕЛЬЗЯ — все цветы упаковываются в нетканку / 禁止用纸板，全部用无纺布',
-  '💧 Весь цветок должен быть СУХИМ перед упаковкой / 花材必须干燥',
-  '🎨 Все цветы — без жёлтых и оранжевых оттенков / 所有花都不要黄色、橘色系',
-];
-const PACKING_GUIDE = [{"name": "康乃馨单头（红色）Гвоздика одноголовая (красная)", "req": "Длина растения 65-70 см, стебель плотный с целыми зелеными листьями, срез стебля должен быть чистым, бутон должен быть  приоткрыт в диаметре примерно  4 см, бутон должен быть плотным, цвет лепестков насыщенный, без пятен, сухих краев и увядания, лепестки не должны осыпаться. Растения должны быть сухие"}, {"name": "康乃馨单头（混色）Гвоздика одноголовая (микс)", "req": "Длина растения 65-70 см, стебель плотный с целыми зелеными листьями, срез стебля должен быть чистым, бутон должен быть  приоткрыт в диаметре примерно  4 см, бутон должен быть плотным, цвет лепестков насыщенный, без пятен, сухих краев и увядания, лепестки не должны осыпаться. Растения должны быть сухие"}, {"name": "康乃馨单头（粉色）Гвоздика одноголовая (розовая)", "req": "Длина растения 65-70 см, стебель плотный с целыми зелеными листьями, срез стебля должен быть чистым, бутон должен быть  приоткрыт в диаметре примерно  4 см, бутон должен быть плотным, цвет лепестков насыщенный, без пятен, сухих краев и увядания, лепестки не должны осыпаться. Растения должны быть сухие"}, {"name": "康乃馨单头（白色）Гвоздика одноголовая (белая)", "req": "Длина растения 65-70 см, стебель плотный с целыми зелеными листьями, срез стебля должен быть чистым, бутон должен быть  приоткрыт в диаметре примерно  4 см, бутон должен быть плотным, цвет лепестков насыщенный, без пятен, сухих краев и увядания, лепестки не должны осыпаться. Растения должны быть сухие"}, {"name": "康乃馨多头（混色）Гвоздика многоголовая (микс)", "req": "Длина растения 65-70 см, стебель плотный с целыми зелеными листьями, срез стебля должен быть чистым, на ветке должно быть раскрыто 2-3 цветка, а остальные находятся в стадии плотного окрашенного бутона,  цвет лепестков насыщенный, без пятен, сухих краев и увядания, лепестки не должны осыпаться. Растения должны быть сухие"}, {"name": "Матиола Белая, Розовая", "req": "Длина растения 50-60 см, в пучке 10 веток. На растении должно быть 1/3 раскрытых бутонов, нижние цветки должны быть уже распущенными, а верхние - сформированные, но закрытыми окрашенными. Листья зеленые и упругие, не должно быть желтых и вялых. Срез стебля должен быть светлым и свежим."}, {"name": "尤加利多枝大叶 Эвкалипт многолистный крупнолистный", "req": "Длина Эвкалипта 90-95 см , листья должны быть упругие, плотные, без признаков вялости, темных пятен, сухости и желтезны. Вес банча должен быть 1000 гр. Срез растения должен быть свежим, влажным, без слизи. Листья должны быть округлые с сизоватым оттенком. Растения должны быть сухие\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ.\nОдеваем цветок во влажные мешочки (тряпочка + мешочек)"}, {"name": "尤加利混箱：小叶多支，细叶，圆叶，银水滴 Эвкалипт смешанный в коробке: мелколистный многолистный, узколистный, круглолистный, серебряные капли", "req": "Длина Эвкалипта 90-96 см , листья должны быть упругие, плотные, без признаков вялости, темных пятен, сухости и желтезны. Вес банча должен быть 1000 гр. Парвифолия, Гунни, Пополус упаковывать по 500 грамм. Срез растения должен быть свежим, влажным, без слизи.  Растения должны быть сухие\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ.\nОдеваем цветок во влажные мешочки (тряпочка + мешочек)"}, {"name": "玫瑰（单头） Роза одноголовая", "req": "Длина растения 65-70 см, в пачке 10 шт. Бутон должен быть плотным и упругим, высота примерно 4-6 см. Ширина бутона: 3-5 см. Бутон должен иметь форму бокала, не должно быть распущенных, вялых и деформированных лепестков. Листва должна быть насыщенного зеленого цвета, без пятен и не сыпаться. Срез стебля должен быть светлым, без признаков гниения или почернения."}, {"name": "玫瑰（多头） Роза многоголовая", "req": "Длина растения 70 см, в пачке 10 веток. Ширина банча от 30 см. Бутоны должны быть плотными и упругими, бутоны должны быть раскрыты на половину, на веточке должно быть 4-7 цветочков. Зеленые листочки под бутоном должны смотреть вверх или плотно обнимать его. Листья ярко-зеленые и направлены вверх, не должно быть черных пятен и гнили. Срез стебля должен быть светлым и свежим. Кустовую розу надо упаковывать в мягкую тканевую упаковку. В картон не надо!!!"}, {"name": "清香木 Фисташка", "req": "Длина растения 60 см, Вес банча должен быть 1000 гр Листья насыщенного зеленого цвета, плотно держатся на ветке , без темных пятен, сухости и следов грибка. Растения должны быть сухие. Листья не должны торчать из коробки, они так чернеют\nПри легком встряхивании листья не должны осыпаться\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ.\nОдеваем цветок во влажные мешочки (тряпочка + мешочек)"}, {"name": "Гипсофила белая", "req": "Длина растения 70-80 см, в пучке 10 -12 веток. Стебель должен быть ветвистый, без слизи  и темных участков на срезе. Листья не должны быть сухими, желтыми или вялыми.. Раскрытие бутонов на ветке 50-70%, лепестки должны иметь чистый белый цвет без коричневых пятен, цветы не должны осыпаться при легком встряхивании. Гипсофила плотная, поэтому в ней может скапливаться влага, что приведет к плесени. Растение должно быть сухое. При легком встряхивании листья не должны осыпаться\nЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ. Кончики стеблей не должны быть сухими, без гнили."}, {"name": "绿毛球 Зеленые шарики", "req": "Длина растения 65-70 см, в пучке 10 шт. Бутон должен быть плотным, твердым на ощупь, пушистый \"моховой\" шарик не должен распадаться, на лепестках и \"иголочках\" не должно быть коричневых и темных пятен. Стебель прочный, ровный. Листья на стебле зеленые без желтизны и темных точек. Гвоздику надо упаковывать в мягкую тканевую упаковку. В плотный картон не надо!!!"}, {"name": "Эустома", "req": "Длина растения 50-60 см, в пучке около 10 веточек. На ветке должно быть 2-3 распущенных цветка, остальные бутоны должны быть полураскрытыми, на цветке не должно быть пятен и коричневых краев. Стебель должен быть твердым, зеленым и плотным по всей длине. Возле основания бутонов не должно быть перегибов и гнили. Срез стебля должен быть чистым и светлым."}, {"name": "Стрелиция", "req": "Длина растения 70-80 см. Бутоны слегка приоткрыты, лепестки должны начинать показываться, бутоны должны быть без гнили, заломов и черных пятен. Степель овный и плотный, без гнили. Срез стебля свежий,без слизи."}, {"name": "Дельфиниум", "req": "Длина растения 70-80 см, в пачке 5 -10 шт. В колосе должны быть раскрыты нижние цветочки, верхние в стадии бутона. Стебель прямой, плотный и упругий без черных пятен, листья зеленые, без пятен и признаков увядания."}, {"name": "Гипеаструм", "req": "Длина растения 70-80 см.  Бутоны должны быть окрашены, но не раскрытые, твердые, без гнили и заломов. Стебель прямой, упругий, без слизи и гнили."}, {"name": "Аспарагус Умбилатус", "req": "Длина растения 60-70 см, в пачке 10 шт. Ярко-зеленые листья, без гнили. При легком встряхивании листья не должны осыпаться."}, {"name": "Тласпия", "req": "Длина растения 60-70 см, в пачке 25 шт веток.  Стебель должен быть прямым, плотным, упругим, зеленым по всей длине, без слизи, гнили и плесени. Листья должны быть насыщеннго зеленого цвета , без признаков увядания и желтизны. При легком встряхивании цветок не должен сыпаться."}, {"name": "Оксипеталум", "req": "Длина растения 40-50 см, в пучке 10 шт. Цветок должен иметь ровный, свежий стебель, без признаков гниения, упругия листья зеленого цвета, не вялые и без пятен. Бутоны слегка раскрытые, без повреждений и без пятен. Раскрытие цветочков должно быть не более 30-40%."}, {"name": "Рускус", "req": "Длина растения 60-70 см, в пучке 10 веток. Веточки должны быть насыщенно зеленого цвета и пушистые, не должно быть никаких черных пятен.\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ."}, {"name": "水晶草（混色） Лимониум", "req": "Длина растения 60-70 см, Вес банча должен быть 1000 гр. Стебель должен быть плотным, твердым, без изломов и признаков загнивания у основания. Соцветия бутонов должно быть полностью раскрытым, так как после срезки лимониум практически не распускается. Листья растения должны быть зеленые, без гнили. Растение должно быть сухим. При легкой тряске растения, бутоны не должны сыпаться. Пакуется растение в мягкую тканевую упаковку, разные цвета в банче.\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ."}, {"name": "Калла белая", "req": "Длина растения 60-70 см, в пучке 5 шт. Все стебли должны быть одинаковой длины. Цветок должен быть полураспустившимся, не менее 70-80%, на бутоне не должно быть заломов и черных пятен. Стебельплотный и упругий, срез свежий, без слизи и без признаков гниения.\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ. Бутон упаковываем в вату\nОдеваем цветок во влажные мешочки (тряпочка + мешочек)"}, {"name": "Калла розовая", "req": "Длина растения 60-70 см, в пучке 5 шт. Все стебли должны быть одинаковой длины. Цветок должен быть полураспустившимся, не менее 70-80%, на бутоне не должно быть заломов и черных пятен. Стебельплотный и упругий, срез свежий, без слизи и без признаков гниения.\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ. Бутон упаковываем в вату\nОдеваем цветок во влажные мешочки (тряпочка + мешочек)"}, {"name": "Рисовый цветок (озотамнус)", "req": "Длина растения 60-70 см, в пучке 10 веток. Соцветия, похожие на \"воздушный рис\", должны быть плотные, на них не должно бытьгнили и черных пятен. Листва должна быть насыщенной, упругой, без темных пятен, сухости и признаков вредителей. При легкой тряске растение не должно осыпаться.\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ."}, {"name": "红豆 Гиперикум", "req": "Длина растения 50-60 см, в пучке 10 веток. Ягоды должны быть плотными, упругими и блестящими, без мягких вмятен и темных пятен. Листья зеленые, без признаков увядания, желтезны, плесени и гнили. На листьях и стебле не должно быть ржавых пятен. \nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ.\nОдеваем цветок во влажные мешочки (тряпочка + мешочек)"}, {"name": "勿忘我 Статица", "req": "Длина растения 60-70 см,  Вес банча должен быть 1000 гр. Стебель должен быть плотным, твердым, без изломов и признаков загнивания у основания. Соцветия бутонов должно быть полностью раскрытым, так как после срезки статица практически не распускается. Листья растения должны быть зеленые, без гнили. Растение должно быть сухим. При легкой тряске растения, бутоны не должны сыпаться. Пакуется растение в мягкую тканевую упаковку.\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ."}, {"name": "昆明芍药（珊瑚） Пион из Куньмина (сорт \"Коралл\", сорт Сара Бернар, сорт Корал Сансет и белые)", "req": "Длина растения 45-65 см, в пачке 5 шт. Диаметр бутона 3-5 см. Бутон должен быть плотныи, упругим, в стадии полуроспуска. Крайние лепестки должны слегка отойти от основного бутона, не должны быть закрытые бутоны. Стебель должен быть прямой, крепким и плотным, без темных пятен. Листья зеленые, упругие, не вялые и без пятен. Срез должен быть светлым и свежим."}, {"name": "Хризантема", "req": "Длина стебля 60-70 см. Стебель должен быть прямым и крепким, чтобы держать цветок . Листья должны быть здоровыми, зелеными, без признаков увядания .Количество цветков на ветке от 5 до 7. Срез стебля свежий, не сухой и без гнили Листья должны крепко держаться на стебле"}];
-
-// Сезон дождей в Куньмине: показываем напоминание 15.05 – 30.09
-function isRainSeason(d = new Date()) {
-  const m = d.getMonth() + 1, day = d.getDate();
-  if (m > 5 && m < 9) return true;
-  if (m === 5 && day >= 15) return true;
-  if (m === 9) return true;
-  return false;
-}
-
-function nextCnHoliday(d = new Date()) {
-  const today = d.toISOString().slice(0, 10);
-  for (const h of CN_HOLIDAYS) {
-    if (h.to >= today) {
-      const days = Math.ceil((new Date(h.from) - d) / 86400000);
-      return { ...h, days: Math.max(0, days), ongoing: h.from <= today };
-    }
-  }
-  return null;
-}
-
-function fmtD(iso) { const [y,m,dd] = iso.split('-'); return `${dd}.${m}`; }
-
-// Виджеты-баннеры (glass-стиль): видят все роли
-function _infoWidgetHTML(w) {
-  return `<div style="background:${w.grad};border-left:4px solid ${w.accent || 'var(--gold)'};border-radius:14px;padding:11px 14px;margin-bottom:8px;color:#fff;box-shadow:0 6px 18px rgba(42,63,36,.25)">
-    <div style="display:flex;align-items:center;gap:11px">
-      <div style="width:40px;height:40px;min-width:40px;border-radius:11px;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font-size:20px">${w.icon}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:13px;line-height:1.25">${w.title}</div>
-        <div style="font-size:10.5px;opacity:.75;margin-top:1px">${w.sub}</div>
-      </div>
-      <div style="text-align:right">
-        <div style="font-weight:800;font-size:15px;white-space:nowrap;color:var(--gold)">${w.metric}</div>
-        <div style="font-size:10px;opacity:.75;white-space:nowrap">${w.metricSub}</div>
-      </div>
-    </div>
-    <div style="margin-top:10px">
-      <div style="height:4px;border-radius:2px;background:rgba(255,255,255,.18);overflow:hidden">
-        <div style="height:100%;width:${Math.min(100, Math.max(2, w.pct))}%;background:var(--gold);border-radius:2px"></div>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9.5px;opacity:.8">
-        ${w.stages.map(x => `<span>${x}</span>`).join('')}
-      </div>
-    </div>
-  </div>`;
-}
-
-function infoBannersHTML() {
-  let html = '';
-  const now = new Date();
-
-  // 🌧 Сезон дождей: 15.05 – 30.09, прогресс по сезону
-  if (isRainSeason(now)) {
-    const start = new Date(now.getFullYear(), 4, 15);   // 15 мая
-    const end   = new Date(now.getFullYear(), 8, 30);   // 30 сентября
-    const pct   = (now - start) / (end - start) * 100;
-    const daysLeft = Math.max(0, Math.ceil((end - now) / 86400000));
-    const mon = now.getMonth() + 1;
-    const phase = (mon >= 6 && mon <= 8) ? 'Пик / 高峰' : (mon === 5 ? 'Начало' : 'Спад');
-    html += _infoWidgetHTML({
-      grad: 'linear-gradient(135deg,var(--sage-d) 0%,#1a2e16 100%)', accent: '#8FBADB',
-      icon: '🌧',
-      title: 'Сезон дождей в Куньмине / 雨季',
-      sub: 'Сушим цветок перед упаковкой — влага в коробке = плесень / 包装前必须干燥',
-      metric: phase,
-      metricSub: `до конца ${daysLeft} дн.`,
-      pct,
-      stages: ['Май', 'Июнь', 'Июль–Авг', 'Сентябрь'],
-    });
-  }
-
-  // 🎉 Ближайшие госвыходные КНР: за 14 дней и во время
-  const h = nextCnHoliday(now);
-  if (h && (h.ongoing || h.days <= 14)) {
-    html += _infoWidgetHTML({
-      grad: 'linear-gradient(135deg,var(--sage-d) 0%,#1a2e16 100%)', accent: 'var(--gold)',
-      icon: '🎉',
-      title: h.name,
-      sub: h.ongoing
-        ? 'Госвыходные: фермы, поставщики и логистика могут не работать'
-        : 'Фермы и логистика встанут — планируйте заказ заранее / 节前请提前下单',
-      metric: h.ongoing ? `до ${fmtD(h.to)}` : `${h.days} дн.`,
-      metricSub: `${fmtD(h.from)} – ${fmtD(h.to)}`,
-      pct: h.ongoing ? 100 : (14 - h.days) / 14 * 100,
-      stages: ['Заказ', 'Сборка', 'Отгрузка', 'Праздник'],
-    });
-  }
-  return html;
-}
-
-function showRefSection(sec, btn) {
-  document.querySelectorAll('.ref-tab').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  const box = document.getElementById('ref-content');
-  if (!box) return;
-
-  if (sec === 'season') {
-    const nowKey = SEASON_KEYS_BY_MONTH[new Date().getMonth() + 1];
-    box.innerHTML = Object.entries(SEASONAL_FLOWERS).map(([season, list]) => {
-      const isNow = season === nowKey;
-      const isYear = season.startsWith('Круглый');
-      return `<div style="margin-bottom:14px;border:1px solid ${isNow ? 'var(--sage-d)' : 'var(--border)'};border-radius:10px;padding:12px;${isNow ? 'background:var(--sage-l)' : ''}">
-        <b style="font-size:13px">${isYear ? '🌿' : '🌸'} ${season}${isNow ? ' <span style="color:var(--sage-d)">← сейчас в сезоне</span>' : ''}</b>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
-          ${list.map(f => `<span style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:3px 10px;font-size:11.5px">${f}</span>`).join('')}
-        </div></div>`;
-    }).join('');
-  }
-
-  if (sec === 'holidays') {
-    const today = new Date().toISOString().slice(0, 10);
-    box.innerHTML = `
-      ${infoBannersHTML()}
-      <b style="font-size:13px">🇨🇳 Официальные выходные КНР — 2026</b>
-      <table style="width:100%;margin-top:8px;font-size:12px"><thead><tr>
-        <th style="text-align:left">Даты</th><th style="text-align:left">Праздник</th><th>Дней</th></tr></thead><tbody>
-        ${CN_HOLIDAYS.map(h => {
-          const days = Math.round((new Date(h.to) - new Date(h.from)) / 86400000) + 1;
-          const past = h.to < today;
-          return `<tr style="${past ? 'opacity:.45' : ''}"><td style="white-space:nowrap"><b>${fmtD(h.from)} – ${fmtD(h.to)}</b></td><td>${h.name}</td><td style="text-align:center">${days}</td></tr>`;
-        }).join('')}
-      </tbody></table>
-      <b style="font-size:13px;display:block;margin-top:16px">⚠️ Перенесённые РАБОЧИЕ дни (суббота/воскресенье — все работают!)</b>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
-        ${CN_TRANSFER_WORKDAYS.map(t => `<span style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:4px 10px;font-size:11.5px"><b>${fmtD(t.date)}</b> — ${t.for}</span>`).join('')}
-      </div>
-      <b style="font-size:13px;display:block;margin-top:16px">💐 Даты-события (рабочие дни)</b>
-      <table style="width:100%;margin-top:8px;font-size:12px"><tbody>
-        ${CN_INFO_DAYS.map(t => `<tr style="${t.date < today ? 'opacity:.45' : ''}"><td style="white-space:nowrap;width:70px"><b>${fmtD(t.date)}</b></td><td>${t.name}</td></tr>`).join('')}
-      </tbody></table>`;
-  }
-
-  if (sec === 'packing') {
-    box.innerHTML = `
-      <div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;padding:12px;margin-bottom:14px">
-        <b style="font-size:13px">Общие правила для ВСЕХ культур:</b>
-        ${PACKING_GENERAL.map(r => `<div style="font-size:12.5px;margin-top:6px;font-weight:600">${r}</div>`).join('')}
-      </div>
-      <input class="inp" type="text" placeholder="🔍 Поиск культуры / 搜索..." style="width:100%;padding:8px;margin-bottom:10px"
-        oninput="filterPackingGuide(this.value)">
-      <div id="packing-list">${packingListHTML(PACKING_GUIDE)}</div>`;
-  }
-}
-
-function packingListHTML(list) {
-  if (!list.length) return '<div style="color:var(--mid);font-size:12px;padding:10px">Ничего не найдено / 未找到</div>';
-  return list.map((it, i) => `
-    <details style="border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fff">
-      <summary style="padding:9px 12px;cursor:pointer;font-size:12.5px;font-weight:600">${escHtml(it.name)}</summary>
-      <div style="padding:4px 14px 12px;font-size:12px;line-height:1.55;white-space:pre-line;color:#374151">${escHtml(it.req)}</div>
-    </details>`).join('');
-}
-
-function filterPackingGuide(q) {
-  q = q.trim().toLowerCase();
-  const list = q ? PACKING_GUIDE.filter(it => it.name.toLowerCase().includes(q) || it.req.toLowerCase().includes(q)) : PACKING_GUIDE;
-  const el = document.getElementById('packing-list');
-  if (el) el.innerHTML = packingListHTML(list);
-}
-
-function renderReference() {
-  const activeBtn = document.querySelector('.ref-tab.active') || document.getElementById('ref-tab-season');
-  const sec = activeBtn.id.replace('ref-tab', '').replace('-', '');
-  showRefSection(activeBtn.id === 'ref-tab-holidays' ? 'holidays' : activeBtn.id === 'ref-tab-packing' ? 'packing' : 'season', activeBtn);
-}
-
 function showPage(name, tabEl) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
@@ -1572,7 +1342,6 @@ function showPage(name, tabEl) {
   }
   if (name === 'dashboard') loadDashboard();
   if (name === 'claims') loadClaims();
-  if (name === 'reference') renderReference();
   if (name === 'my-claims') loadMyClaims();
 }
 
@@ -1720,63 +1489,6 @@ function _ringSVG(pct, size, stroke) {
     <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#a7d7a7" stroke-width="${stroke}"
       stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - pct/100)}"/>
   </svg>`;
-}
-
-// ── Плавающий инфо-виджет: сезон дождей + праздники, перетаскиваемый ──
-let _iwDrag = null;
-function renderInfoWidget() {
-  let el = document.getElementById('info-widget');
-  const inner = infoBannersHTML();
-  if (!inner) { if (el) el.remove(); return; }
-  const collapsed = localStorage.getItem('amma-iw-min') === '1';
-
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'info-widget';
-    el.style.cssText = 'position:fixed;z-index:890;cursor:grab;user-select:none;touch-action:none;width:310px;max-width:92vw';
-    let pos = null;
-    try { pos = JSON.parse(localStorage.getItem('amma-iw-pos') || 'null'); } catch(e) {}
-    if (pos && pos.x != null) {
-      el.style.left = Math.min(Math.max(0, pos.x), innerWidth - 60) + 'px';
-      el.style.top  = Math.min(Math.max(0, pos.y), innerHeight - 60) + 'px';
-    } else { el.style.bottom = '16px'; el.style.right = '14px'; }
-    el.addEventListener('pointerdown', e => {
-      const r = el.getBoundingClientRect();
-      _iwDrag = { dx: e.clientX - r.left, dy: e.clientY - r.top, sx: e.clientX, sy: e.clientY, moved: false };
-      el.setPointerCapture(e.pointerId);
-      el.style.cursor = 'grabbing';
-    });
-    el.addEventListener('pointermove', e => {
-      if (!_iwDrag) return;
-      if (Math.abs(e.clientX - _iwDrag.sx) + Math.abs(e.clientY - _iwDrag.sy) > 6) _iwDrag.moved = true;
-      if (!_iwDrag.moved) return;
-      el.style.right = 'auto'; el.style.bottom = 'auto';
-      el.style.left = Math.min(Math.max(4, e.clientX - _iwDrag.dx), innerWidth - el.offsetWidth - 4) + 'px';
-      el.style.top  = Math.min(Math.max(4, e.clientY - _iwDrag.dy), innerHeight - el.offsetHeight - 4) + 'px';
-    });
-    el.addEventListener('pointerup', e => {
-      el.style.cursor = 'grab';
-      if (_iwDrag?.moved) {
-        localStorage.setItem('amma-iw-pos', JSON.stringify({ x: parseFloat(el.style.left), y: parseFloat(el.style.top) }));
-      } else {
-        // клик без переноса = свернуть/развернуть
-        localStorage.setItem('amma-iw-min', localStorage.getItem('amma-iw-min') === '1' ? '0' : '1');
-        renderInfoWidget();
-      }
-      _iwDrag = null;
-    });
-    document.body.appendChild(el);
-  }
-
-  if (collapsed) {
-    el.style.width = 'auto';
-    const h = nextCnHoliday();
-    const icon = (h && (h.ongoing || h.days <= 14)) ? '🎉' : '🌧';
-    el.innerHTML = `<div title="Развернуть / 展开" style="width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,var(--sage-d),#1a2e16);border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 6px 18px rgba(42,63,36,.3)">${icon}</div>`;
-  } else {
-    el.style.width = '310px';
-    el.innerHTML = inner + `<div style="text-align:center;font-size:9px;color:var(--mid);margin-top:-4px">перетащи меня · клик = свернуть / 点击收起</div>`;
-  }
 }
 
 let _dwDrag = null;
@@ -2723,162 +2435,6 @@ function updateCartField(id, field, val) {
   if (cart[id]) cart[id][field] = val;
 }
 
-// ══════════════════════════════════════════════════════════
-//  СУБКЛИЕНТЫ: разбивка позиции заказа по коробкам
-//  order_items.subclients = [{qty: 2, name: "Фрешлайн"}, ...]
-//  В client_name пишется сводка "2-Фрешлайн, 3-Уфа" для
-//  совместимости с накладными, Excel и складом.
-// ══════════════════════════════════════════════════════════
-function scClean(subs) {
-  return (subs || []).map(s => ({ qty: parseInt(s.qty) || 0, name: String(s.name || '').trim() }))
-                     .filter(s => s.qty > 0 && s.name);
-}
-function scSummary(subs) { return scClean(subs).map(s => `${s.qty}-${s.name}`).join(', '); }
-
-// Какому субклиенту принадлежит коробка boxIdx (0-based)?
-// null = разбивки нет; '' = нераспределённый остаток
-function scBoxName(item, boxIdx) {
-  const subs = scClean(item.subclients);
-  if (!subs.length) return null;
-  let acc = 0;
-  for (const x of subs) { acc += x.qty; if (boxIdx < acc) return x.name; }
-  return '';
-}
-
-// Ячейка "Примечание" в упаковочной таблице склада: разбивка бейджем
-function scWhNoteHTML(item) {
-  const subs = scClean(item.subclients);
-  let out = item.comment ? escHtml(item.comment) : '';
-  if (subs.length) {
-    const dist = subs.reduce((a, x) => a + x.qty, 0);
-    const rest = Math.max(0, (parseInt(item.qty_boxes) || 0) - dist);
-    out += `${out ? '<br>' : ''}<div style="margin-top:2px;background:var(--sage-l);border-radius:5px;padding:2px 6px;display:inline-block;line-height:1.6">👥 ${
-      subs.map(x => `<b>${x.qty}</b>→${escHtml(x.name)}`).join(' · ')
-    }${rest ? ` · <b>${rest}</b>→без метки/无标` : ''}</div>`;
-  } else if (item.client_name) {
-    out += (out ? '<br>' : '') + escHtml(item.client_name);
-  }
-  return out;
-}
-
-function scNamesDatalist() {
-  const set = new Set();
-  const grab = it => {
-    (it.subclients || []).forEach(x => x.name && set.add(String(x.name).trim()));
-    if (it.client_name && !/^\d+-/.test(it.client_name)) set.add(String(it.client_name).trim());
-  };
-  try { (myOrders || []).forEach(o => (o.order_items || []).forEach(grab)); } catch(e) {}
-  try { (_mgrOrderItems || []).forEach(grab); } catch(e) {}
-  return `<datalist id="sc-names">${[...set].filter(Boolean).sort().map(n =>
-    `<option value="${escHtml(n)}"></option>`).join('')}</datalist>`;
-}
-
-// Общий редактор разбивки (mode: 'cart' | 'mgr')
-function scEditorHTML(mode, key, o) {
-  const qtyTotal = parseInt(mode === 'cart' ? o.qty : o.qty_boxes) || 0;
-  const F = mode === 'cart'
-    ? { u: 'scCartUpd', a: 'scCartAdd', d: 'scCartDel', t: 'scToggleCart' }
-    : { u: 'scMgrUpd',  a: 'scMgrAdd',  d: 'scMgrDel',  t: 'scToggleMgr'  };
-  const subs = o.subclients || [];
-  const tot = scClean(subs).reduce((s, x) => s + x.qty, 0);
-  const cntColor = tot > qtyTotal ? '#dc2626' : (tot === qtyTotal ? 'var(--sage-d)' : 'var(--mid)');
-  return `
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-      <b style="font-size:11px;color:var(--sage-d)">👥 Разбивка по субклиентам / 按子客户拆分</b>
-      <span id="sc-cnt-${mode}-${key}" style="font-size:11px;font-weight:600;color:${cntColor}">${tot} из ${qtyTotal} кор. / 箱</span>
-      <span style="flex:1"></span>
-      <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:10px" onclick="${F.t}(${key})">Свернуть / 收起</button>
-    </div>
-    ${subs.map((x, idx) => `
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
-        <input class="inp" type="number" min="1" value="${x.qty || ''}" placeholder="Кор."
-          style="width:64px;padding:4px;text-align:center"
-          oninput="${F.u}(${key},${idx},'qty',this.value)">
-        <span style="font-size:10px;color:var(--mid)">кор. →</span>
-        <input class="inp" type="text" value="${escHtml(x.name || '')}" placeholder="Субклиент / 子客户" list="sc-names"
-          style="width:170px;padding:4px"
-          oninput="${F.u}(${key},${idx},'name',this.value)">
-        <button class="btn-icon" onclick="${F.d}(${key},${idx})">×</button>
-      </div>`).join('')}
-    <button class="btn btn-secondary btn-sm" style="padding:3px 10px;font-size:11px;margin-top:2px" onclick="${F.a}(${key})">＋ Добавить ещё / 再加一个</button>
-    ${scNamesDatalist()}`;
-}
-
-function scRefreshCnt(mode, key) {
-  const o = mode === 'cart' ? cart[key] : (typeof _mgrOrderItems !== 'undefined' ? _mgrOrderItems[key] : null);
-  const el = document.getElementById(`sc-cnt-${mode}-${key}`);
-  if (!o || !el) return;
-  const tot = scClean(o.subclients).reduce((s, x) => s + x.qty, 0);
-  const qty = parseInt(mode === 'cart' ? o.qty : o.qty_boxes) || 0;
-  el.textContent = `${tot} из ${qty} кор. / 箱`;
-  el.style.color = tot > qty ? '#dc2626' : (tot === qty ? 'var(--sage-d)' : 'var(--mid)');
-}
-
-// ── корзина клиента ──
-function scToggleCart(id) {
-  id = parseInt(id);
-  const o = cart[id]; if (!o) return;
-  o._scOpen = !o._scOpen;
-  if (o._scOpen && !(o.subclients || []).length)
-    o.subclients = [{ qty: '', name: o.client_name || '' }];
-  renderMyOrder();
-}
-function scCartAdd(id) { id = parseInt(id); const o = cart[id]; if (!o) return; (o.subclients = o.subclients || []).push({ qty: '', name: '' }); renderMyOrder(); }
-function scCartDel(id, idx) { id = parseInt(id); const o = cart[id]; if (!o || !o.subclients) return; o.subclients.splice(idx, 1); renderMyOrder(); }
-function scCartUpd(id, idx, field, val) {
-  id = parseInt(id);
-  const o = cart[id]; if (!o || !o.subclients || !o.subclients[idx]) return;
-  o.subclients[idx][field] = val;
-  scRefreshCnt('cart', id);
-}
-function scCartCellHTML(o) {
-  if (scClean(o.subclients).length)
-    return `<button class="btn btn-secondary btn-sm" style="font-size:9px;padding:3px 6px;max-width:130px;white-space:normal;line-height:1.3;text-align:left" onclick="scToggleCart(${o.flower.id})">👥 ${escHtml(scSummary(o.subclients))}</button>`;
-  return `<div style="display:flex;gap:3px;align-items:center">
-    <input class="inp" type="text" value="${escHtml(o.client_name || '')}" placeholder="Субклиент / 子客户..." list="sc-names"
-      style="width:80px;padding:4px" oninput="updateCartField(${o.flower.id},'client_name',this.value)">
-    <button class="btn-icon" title="Разбить по субклиентам / 按子客户拆分" onclick="scToggleCart(${o.flower.id})" style="font-size:12px">👥</button>
-  </div>`;
-}
-
-// ── менеджерская правка заказа ──
-function scToggleMgr(i) {
-  const it = _mgrOrderItems[i]; if (!it) return;
-  const ex = document.getElementById(`mgr-sc-${i}`);
-  if (ex) {
-    ex.remove();
-    const cell = document.getElementById(`sc-cell-mgr-${i}`);
-    if (cell) cell.innerHTML = scMgrCellHTML(it, i);
-    return;
-  }
-  if (!(it.subclients || []).length)
-    it.subclients = [{ qty: '', name: (it.client_name && !/^\d+-/.test(it.client_name)) ? it.client_name : '' }];
-  const row = document.getElementById(`mgr-row-${i}`);
-  if (!row) return;
-  row.insertAdjacentHTML('afterend',
-    `<tr id="mgr-sc-${i}"><td colspan="99" style="background:var(--sage-l);padding:8px 12px">${scEditorHTML('mgr', i, it)}</td></tr>`);
-}
-function scMgrRedraw(i) {
-  const td = document.querySelector(`#mgr-sc-${i} td`);
-  if (td) td.innerHTML = scEditorHTML('mgr', i, _mgrOrderItems[i]);
-}
-function scMgrAdd(i) { const it = _mgrOrderItems[i]; if (!it) return; (it.subclients = it.subclients || []).push({ qty: '', name: '' }); scMgrRedraw(i); }
-function scMgrDel(i, idx) { const it = _mgrOrderItems[i]; if (!it || !it.subclients) return; it.subclients.splice(idx, 1); scMgrRedraw(i); }
-function scMgrUpd(i, idx, field, val) {
-  const it = _mgrOrderItems[i]; if (!it || !it.subclients || !it.subclients[idx]) return;
-  it.subclients[idx][field] = val;
-  scRefreshCnt('mgr', i);
-}
-function scMgrCellHTML(item, i) {
-  if (scClean(item.subclients).length)
-    return `<button class="btn btn-secondary btn-sm" style="font-size:9px;padding:3px 6px;max-width:130px;white-space:normal;line-height:1.3;text-align:left" onclick="scToggleMgr(${i})">👥 ${escHtml(scSummary(item.subclients))}</button>`;
-  return `<div style="display:flex;gap:3px;align-items:center">
-    <input class="inp" type="text" value="${escHtml(item.client_name || '')}" placeholder="Субклиент..." list="sc-names"
-      style="width:86px;padding:3px 5px;font-size:11px" oninput="mgrUpdateItem(${i},'client_name',this.value)">
-    <button class="btn-icon" title="Разбить по субклиентам / 按子客户拆分" onclick="scToggleMgr(${i})" style="font-size:12px">👥</button>
-  </div>`;
-}
-
 function updateCartUI() {
   const items = Object.values(cart);
   const cnt = items.length;
@@ -2908,7 +2464,6 @@ async function loadMyOrders() {
   `).eq('client_id', currentUser.id).order('created_at', {ascending: false});
   myOrders = data || [];
   renderDeadlineWidget();
-  renderInfoWidget();
 }
 
 async function editOrder(orderId) {
@@ -2931,7 +2486,6 @@ async function editOrder(orderId) {
       pbox: item.price_per_box,
       client_name: item.client_name || '',
       comment: item.item_comment || '',
-      subclients: (item.subclients || []).map(x => ({...x})),
     };
   });
   currentEditOrderId = orderId;
@@ -2939,6 +2493,13 @@ async function editOrder(orderId) {
   renderMyOrder();
   document.getElementById('my-order-content').scrollIntoView({behavior:'smooth'});
   toast('✏️ Редактирование / 编辑: ' + order.order_number);
+}
+
+// Клиент отметил, что прочитал уведомление об изменении состава заказа менеджером
+function dismissMgrChangeNote(orderId, changeAt) {
+  localStorage.setItem(`amma-change-seen-${orderId}`, changeAt);
+  const el = document.getElementById(`mgr-change-${orderId}`);
+  if (el) el.remove();
 }
 
 function cancelEdit() {
@@ -2979,12 +2540,12 @@ function renderMyOrder() {
         <td id="cart-un-${o.flower.id}" style="color:var(--mid);font-size:11px">${(o.flower.stems && o.flower.boxes_per_box) ? fmtStems(o.qty * o.flower.boxes_per_box * o.flower.stems, isWeightItem(o.flower)) : '—'}</td>
         <td id="cart-m3-${o.flower.id}" style="color:var(--mid);font-size:11px;white-space:nowrap">${itemBoxM3(o.flower).est?'≈':''}${fmtM3(o.qty * itemBoxM3(o.flower).m3)}</td>
         <td id="cart-sub-${o.flower.id}" style="font-weight:700;color:var(--sage-d)">¥${sub.toFixed(2)}</td>
-        <td id="sc-cell-cart-${o.flower.id}">${scCartCellHTML(o)}</td>
+        <td><input class="inp" type="text" value="${o.client_name||''}" placeholder="Субклиент / 子客户..."
+              style="width:95px;padding:4px" oninput="updateCartField(${o.flower.id},'client_name',this.value)"></td>
         <td><input class="inp" type="text" value="${o.comment||''}" placeholder="Коммент / 备注..."
               style="width:115px;padding:4px" oninput="updateCartField(${o.flower.id},'comment',this.value)"></td>
         <td><button class="btn-icon" onclick="removeFromCart(${o.flower.id})">×</button></td>
       </tr>`;
-      if (o._scOpen) rows += `<tr><td colspan="13" style="background:var(--sage-l);padding:8px 12px">${scEditorHTML('cart', o.flower.id, o)}</td></tr>`;
     });
     const editTitle = currentEditOrderId ? '✏️ Правки / 修改订单' : '🆕 Новый заказ / 新订单';
     editHTML = `
@@ -3106,6 +2667,18 @@ function renderMyOrder() {
            <div style="font-size:12px;margin-top:3px">${o.revision_comment}</div>
          </div>` : '';
 
+    // Менеджер поменял состав заказа (добавил/убрал позицию, кол-во, цену) —
+    // показываем клиенту, что конкретно изменилось, пока он не нажмёт «Понятно».
+    const changeSeenKey = `amma-change-seen-${o.id}`;
+    const changeSeen = o.mgr_change_at && localStorage.getItem(changeSeenKey) === o.mgr_change_at;
+    const mgrChangeBanner = (o.mgr_change_note && !changeSeen)
+      ? `<div id="mgr-change-${o.id}" style="margin-top:8px;padding:8px 10px;background:#eff6ff;border-radius:6px;border-left:3px solid #3b82f6">
+           <b style="font-size:10px;color:#1d4ed8">📝 Менеджер изменил состав заказа / 经理修改了订单内容:</b>
+           <div style="font-size:12px;margin-top:3px;line-height:1.5">${escHtml(o.mgr_change_note).replace(/; /g,'<br>')}</div>
+           <button class="btn btn-secondary btn-sm" style="margin-top:6px;font-size:10px;padding:2px 8px"
+             onclick="event.stopPropagation();dismissMgrChangeNote('${o.id}','${o.mgr_change_at}')">✓ Понятно / 知道了</button>
+         </div>` : '';
+
     // Full items table (hidden by default) — полная информация как в форме заказа
     let dBoxes = 0, dBunches = 0, dStems = 0, dGrams = 0, dM3 = 0, dEst = false, dTotal = 0;
     const itemRows = (o.order_items||[]).map((item, idx) => {
@@ -3203,6 +2776,8 @@ function renderMyOrder() {
               const w = it.flower_snapshot?.wh_orig || {};
               return it.wh_confirmed_at && ((w.bpb && parseInt(w.bpb)!==parseInt(it.bunches_per_box)) || (w.spb && it.flower_snapshot?.stems && parseInt(w.spb)!==parseInt(it.flower_snapshot.stems)));
             }) ? `<span class="badge" style="background:#fff7ed;color:#92400e">📦 Пакинг скорректирован</span>` : ''}
+            ${(o.mgr_change_note && localStorage.getItem(`amma-change-seen-${o.id}`) !== o.mgr_change_at)
+              ? `<span class="badge" style="background:#eff6ff;color:#1d4ed8">📝 Состав изменён</span>` : ''}
           </div>
           <div style="font-size:11px;color:var(--mid);margin-bottom:6px">
             📅 ${o.date_order}${o.date_ship?' → 🚚 '+o.date_ship:''}
@@ -3211,6 +2786,7 @@ function renderMyOrder() {
           <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">${itemsPreview}</div>
           ${buildStatusBar(o.status)}
           ${revComment}
+          ${mgrChangeBanner}
         </div>
         <div style="text-align:right;min-width:100px">
           <div style="font-size:17px;font-weight:700;color:var(--sage-d);font-family:var(--font-h)">¥${total.toFixed(2)}</div>
@@ -3527,17 +3103,6 @@ async function submitOrder(existingOrderId = null) {
   const items = Object.values(cart);
   if (!items.length) { toast('Добавьте позиции / 请添加商品'); return; }
 
-  // Разбивка по субклиентам: нельзя распределить больше, чем заказано
-  for (const o of items) {
-    const subs = scClean(o.subclients);
-    if (!subs.length) continue;
-    const tot = subs.reduce((s2, x) => s2 + x.qty, 0);
-    if (tot > (parseInt(o.qty) || 0)) {
-      toast(`⚠️ ${o.flower.ru}: субклиентам распределено ${tot} кор. из ${o.qty} / 子客户分配超过订购箱数`);
-      return;
-    }
-  }
-
   const shipDate  = document.getElementById('order-ship-date')?.value  || null;
   const comment   = document.getElementById('order-comment')?.value    || null;
 
@@ -3576,9 +3141,7 @@ async function submitOrder(existingOrderId = null) {
       price_type: o.priceType, price_per_bunch: o.price,
       bunches_per_box: o.flower.boxes_per_box, price_per_box: o.pbox,
       qty_boxes: o.qty, subtotal: o.pbox * o.qty,
-      subclients: scClean(o.subclients).length ? scClean(o.subclients) : null,
-      client_name: scClean(o.subclients).length ? scSummary(o.subclients) : (o.client_name || null),
-      item_comment: o.comment || null,
+      client_name: o.client_name || null, item_comment: o.comment || null,
     }));
     const { error: updErr } = await sb.from('order_items').insert(itemRows);
     if (updErr) {
@@ -3619,9 +3182,7 @@ async function submitOrder(existingOrderId = null) {
       price_type: o.priceType, price_per_bunch: o.price,
       bunches_per_box: o.flower.boxes_per_box, price_per_box: o.pbox,
       qty_boxes: o.qty, subtotal: o.pbox * o.qty,
-      subclients: scClean(o.subclients).length ? scClean(o.subclients) : null,
-      client_name: scClean(o.subclients).length ? scSummary(o.subclients) : (o.client_name || null),
-      item_comment: o.comment || null,
+      client_name: o.client_name || null, item_comment: o.comment || null,
     }));
     const { error: itErr } = await sb.from('order_items').insert(itemRows);
     if (itErr) {
@@ -3843,6 +3404,13 @@ async function openOrder(id) {
   window._mgrOrigPrices = (order.order_items || []).map(i => ({
     fid: i.flower_id, ru: i.flower?.ru || i.flower_snapshot?.ru || '—',
     price: parseFloat(i.price_per_bunch) || 0 }));
+  // Полный слепок исходного состава заказа — чтобы при сохранении посчитать,
+  // что именно менеджер поменял (добавил/убрал/изменил количество), и показать это клиенту.
+  window._mgrOrigItemsSnapshot = (order.order_items || []).map(i => ({
+    fid: i.flower_id, ru: i.flower?.ru || i.flower_snapshot?.ru || '—',
+    qty: parseInt(i.qty_boxes) || 0,
+    price: parseFloat(i.price_per_bunch) || 0,
+  }));
 
   const client = order.client?.company_name || order.client?.login;
   document.getElementById('order-detail-title').textContent = order.order_number;
@@ -3922,7 +3490,12 @@ function mgrRowHTML(item, i, id) {
       <td id="mgr-sub-${i}" style="font-weight:700;color:var(--sage-d)">
         ¥${sub.toFixed(2)}
       </td>
-      <td id="sc-cell-mgr-${i}">${scMgrCellHTML(item, i)}</td>
+      <td>
+        <input class="inp" type="text" value="${item.client_name||''}"
+          placeholder="Субклиент..."
+          style="width:100px;padding:3px 5px;font-size:11px"
+          oninput="mgrUpdateItem(${i},'client_name',this.value)">
+      </td>
       <td>
         <input class="inp" type="text" value="${item.item_comment||''}"
           placeholder="Коммент..."
@@ -3943,6 +3516,14 @@ function renderOrderDetail(order) {
   const clientEditedBanner = order.client_edited_at
     ? `<div style="margin-bottom:14px;padding:10px 14px;background:#fffbeb;border-radius:8px;border-left:4px solid #f59e0b;font-size:12px">
         ✏️ <b>Клиент изменил этот заказ</b> ${new Date(order.client_edited_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} / 客户已修改此订单
+       </div>`
+    : '';
+
+  const mgrChangeBanner = order.mgr_change_note
+    ? `<div style="margin-bottom:14px;padding:10px 14px;background:#f0f9ff;border-radius:8px;border-left:4px solid #3b82f6;font-size:12px">
+        <b style="color:#1d4ed8">📝 Последнее изменение состава</b>
+        <span style="color:var(--mid)">(${order.mgr_change_at ? new Date(order.mgr_change_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : ''}, видно клиенту / 客户可见)</span>
+        <div style="margin-top:4px">${escHtml(order.mgr_change_note).replace(/; /g,'<br>')}</div>
        </div>`
     : '';
 
@@ -3997,6 +3578,7 @@ function renderOrderDetail(order) {
 
   document.getElementById('order-detail-content').innerHTML = `
     ${clientEditedBanner}
+    ${mgrChangeBanner}
     ${packChangeBanner}
     <div class="card" style="margin-bottom:14px;padding:10px 16px">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px">
@@ -4078,6 +3660,9 @@ function renderOrderDetail(order) {
       </div>
       <button class="btn btn-primary btn-sm" onclick="mgrSaveOrderItems('${id}')">
         💾 Сохранить изменения / 保存修改
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="mgrOpenAddItemPicker('${id}')">
+        ➕ Добавить позицию / 添加商品
       </button>
       <button class="btn btn-secondary btn-sm" onclick="mgrRefreshPrices()" title="Подтянуть актуальные цены из прайс-листа">
         🔄 Обновить цены из прайса / 更新价格
@@ -4330,6 +3915,89 @@ ${_mgrOrderItems[i]?.flower?.ru || _mgrOrderItems[i]?.flower_snapshot?.ru || ''}
   toast('Позиция убрана. Не забудь 💾 Сохранить / 已移除，请保存');
 }
 
+// ── Добавление позиции в заказ менеджером (позиции не было / замена при закупе) ──
+function mgrOpenAddItemPicker(orderId) {
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">➕ Добавить позицию в заказ / 添加商品</div>
+    <input class="inp" id="mgr-add-search" placeholder="Поиск по названию RU/CN/EN..."
+      style="width:100%;padding:7px 10px;font-size:13px;margin-bottom:10px" autofocus
+      oninput="mgrRenderAddItemResults(this.value)">
+    <div id="mgr-add-results" style="max-height:340px;overflow-y:auto"></div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Закрыть / 关闭</button>
+    </div>`;
+  openModal();
+  mgrRenderAddItemResults('');
+  setTimeout(() => document.getElementById('mgr-add-search')?.focus(), 50);
+}
+
+function mgrRenderAddItemResults(q) {
+  const box = document.getElementById('mgr-add-results');
+  if (!box) return;
+  const term = (q || '').trim().toLowerCase();
+  let list = flowers;
+  if (term) {
+    list = flowers.filter(f =>
+      (f.ru||'').toLowerCase().includes(term) ||
+      (f.cn||'').includes(term) ||
+      (f.en||'').toLowerCase().includes(term));
+  }
+  list = list.slice(0, 60);
+  if (!list.length) {
+    box.innerHTML = `<div style="padding:14px;color:var(--light);font-size:12px;text-align:center">Ничего не найдено / 未找到</div>`;
+    return;
+  }
+  box.innerHTML = list.map(f => {
+    const thumb = f.photo_url || THUMBS[f.en] || '';
+    const imgH = thumb
+      ? `<img src="${thumb}" style="width:34px;height:34px;object-fit:cover;border-radius:5px;flex-shrink:0">`
+      : `<div style="width:34px;height:34px;background:var(--sage-l);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">🌸</div>`;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid var(--border);cursor:pointer"
+        onclick="mgrAddItemFromPicker(${f.id},'${orderIdForPicker()}')">
+      ${imgH}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600">${escHtml(f.ru||'')}</div>
+        <div style="font-size:10px;color:var(--mid)">${escHtml(f.cn||'')} · ¥${(f.price_a||0).toFixed(1)}/банч</div>
+      </div>
+      <button class="btn btn-primary btn-sm" style="padding:3px 10px">+ Добавить</button>
+    </div>`;
+  }).join('');
+}
+
+// Текущий редактируемый заказ (для колбэка из пикера)
+function orderIdForPicker() { return window._mgrOrderMeta?.id || currentOrderId || ''; }
+
+function mgrAddItemFromPicker(flowerId, orderId) {
+  flowerId = parseInt(flowerId);
+  const f = flowers.find(x => x.id === flowerId);
+  if (!f) return;
+  const existing = _mgrOrderItems.find(it => (it.flower_id || it.flower?.id) === flowerId);
+  if (existing) {
+    existing.qty_boxes = (parseInt(existing.qty_boxes) || 0) + 1;
+  } else {
+    const pbox = +((f.price_a || 0) * (f.boxes_per_box || 1)).toFixed(2);
+    _mgrOrderItems.push({
+      flower_id: f.id,
+      flower: f,
+      flower_snapshot: { ...f, mgr_added: true },
+      price_type: 'a',
+      price_per_bunch: f.price_a || 0,
+      bunches_per_box: f.boxes_per_box || 0,
+      price_per_box: pbox,
+      qty_boxes: 1,
+      subtotal: pbox,
+      client_name: '',
+      item_comment: '',
+      _mgrAdded: true,
+    });
+  }
+  closeModal();
+  const tbody = document.getElementById('mgr-order-tbody');
+  if (tbody) tbody.innerHTML = _mgrOrderItems.map((item, idx) => mgrRowHTML(item, idx, orderId)).join('');
+  mgrRecalcFooter();
+  toast(`➕ ${f.ru} добавлена в заказ. Не забудь 💾 Сохранить / 已添加，请保存`);
+}
+
 async function confirmPackingChanges(orderId) {
   const items = _mgrOrderItems.filter(it =>
     (it.wh_fact_boxes != null || it.wh_fact_bpb != null || it.wh_fact_spb != null) && !it.wh_confirmed_at
@@ -4415,17 +4083,6 @@ async function mgrSaveOrderItems(orderId) {
   if (!_mgrOrderItems.length) {
     toast('Нет позиций для сохранения / 没有可保存的项目'); return;
   }
-  // Разбивка по субклиентам не должна превышать количество коробок
-  for (const item of _mgrOrderItems) {
-    const subs = scClean(item.subclients);
-    if (!subs.length) continue;
-    const tot = subs.reduce((s2, x) => s2 + x.qty, 0);
-    const qty = parseInt(item.qty_boxes) || 0;
-    if (tot > qty) {
-      toast(`⚠️ ${item.flower_snapshot?.ru || item.flower?.ru || 'Позиция'}: субклиентам распределено ${tot} кор. из ${qty} / 子客户分配超过箱数`);
-      return;
-    }
-  }
   // Delete all existing items and re-insert
   const { error: delErr } = await sb.from('order_items').delete().eq('order_id', orderId);
   if (delErr) { toast('Ошибка удаления: ' + delErr.message); return; }
@@ -4440,21 +4097,26 @@ async function mgrSaveOrderItems(orderId) {
     price_per_box:   parseFloat(item.price_per_box)  || 0,
     qty_boxes:       parseInt(item.qty_boxes) || 1,
     subtotal:        (parseFloat(item.price_per_box)||0) * (parseInt(item.qty_boxes)||1),
-    subclients:      scClean(item.subclients).length ? scClean(item.subclients) : null,
-    client_name:     scClean(item.subclients).length ? scSummary(item.subclients) : (item.client_name || null),
+    client_name:     item.client_name  || null,
     item_comment:    item.item_comment || null,
   }));
 
   const { error: insErr } = await sb.from('order_items').insert(newItems);
   if (insErr) { toast('Ошибка сохранения: ' + insErr.message); return; }
 
+  // ── Считаем, что именно поменялось в составе, чтобы показать клиенту ──
+  const changeLines = mgrBuildChangeDiff();
+
+  const updatePayload = { updated_at: new Date().toISOString() };
+  if (changeLines.length) {
+    updatePayload.mgr_change_note = changeLines.join('; ');
+    updatePayload.mgr_change_at = new Date().toISOString();
+  }
   // Update timestamp only — do NOT force status change.
   // The manager is editing directly (not requesting client revision),
   // so the order keeps whatever status it already had (confirmed/invoiced/etc).
   // Status changes go through the explicit status selector instead.
-  await sb.from('orders').update({
-    updated_at: new Date().toISOString(),
-  }).eq('id', orderId);
+  await sb.from('orders').update(updatePayload).eq('id', orderId);
 
   // Let the client know their order was updated by the manager
   try {
@@ -4462,28 +4124,65 @@ async function mgrSaveOrderItems(orderId) {
     if (orderInfo?.client_id) {
       await sendNotification(orderInfo.client_id,
         `✏️ Менеджер обновил заказ ${orderInfo.order_number} / 经理已更新订单`,
-        'Проверьте изменённые позиции в своём заказе / 请查看订单中已修改的内容', '✏️');
+        changeLines.length
+          ? changeLines.join('; ')
+          : 'Проверьте изменённые позиции в своём заказе / 请查看订单中已修改的内容', '✏️');
     }
   } catch(e) {}
 
-  // Log activity (incl. per-item price changes)
+  // Log activity (incl. per-item price changes and composition changes)
   try {
-    const priceChanges = [];
-    (_mgrOrderItems || []).forEach(item => {
-      const orig = (window._mgrOrigPrices || []).find(p => p.fid === (item.flower_id || item.flower?.id));
-      const np = parseFloat(item.price_per_bunch) || 0;
-      if (orig && Math.abs(orig.price - np) > 0.005)
-        priceChanges.push(`${orig.ru}: ¥${orig.price} → ¥${np}`);
-    });
     await logActivity(
-      priceChanges.length ? 'price_change' : 'order_edit', 'order', orderId,
+      changeLines.length ? 'order_edit' : 'order_edit', 'order', orderId,
       window._mgrOrderMeta?.number || '',
-      priceChanges.length ? priceChanges.join('; ') : 'Позиции заказа изменены');
+      changeLines.length ? changeLines.join('; ') : 'Позиции заказа изменены');
   } catch(e) {}
 
   toast('✅ Заказ обновлён / 订单已更新 — клиент увидит изменения');
   // Reload to reflect saved state
   openOrder(orderId);
+}
+
+// ── Сравнивает исходный состав заказа (на момент открытия) с текущим,
+//    и формирует человекочитаемый список изменений: добавлено/удалено/кол-во/цена.
+function mgrBuildChangeDiff() {
+  const orig = window._mgrOrigItemsSnapshot || [];
+  const now  = (_mgrOrderItems || []).map(item => ({
+    fid: item.flower_id || item.flower?.id,
+    ru:  item.flower?.ru || item.flower_snapshot?.ru || '—',
+    qty: parseInt(item.qty_boxes) || 0,
+    price: parseFloat(item.price_per_bunch) || 0,
+  }));
+
+  const lines = [];
+
+  // Добавленные позиции (есть сейчас, не было в исходном составе)
+  now.forEach(n => {
+    if (!orig.some(o => o.fid === n.fid)) {
+      lines.push(`➕ Добавлено: ${n.ru} ×${n.qty} кор.`);
+    }
+  });
+
+  // Удалённые позиции (были, сейчас нет)
+  orig.forEach(o => {
+    if (!now.some(n => n.fid === o.fid)) {
+      lines.push(`➖ Убрано: ${o.ru}`);
+    }
+  });
+
+  // Изменение количества и цены по позициям, которые остались
+  orig.forEach(o => {
+    const n = now.find(x => x.fid === o.fid);
+    if (!n) return;
+    if (n.qty !== o.qty) {
+      lines.push(`🔄 ${o.ru}: кол-во ${o.qty} → ${n.qty} кор.`);
+    }
+    if (Math.abs(n.price - o.price) > 0.005) {
+      lines.push(`💰 ${o.ru}: цена ¥${o.price} → ¥${n.price}/банч`);
+    }
+  });
+
+  return lines;
 }
 
 async function updateOrderField(id, field, val) {
@@ -6774,7 +6473,6 @@ function renderLabelsTable(orders) {
       const remarks = [];
       if (packInfo) remarks.push(packInfo);
       if (item.comment) remarks.push(item.comment);
-      if (item.client_name) remarks.push('👥 ' + item.client_name);
       allRows.push({ cn, ru, stemsPerBunch, bunchPerBox, totalStems, qtyBoxes, remarks: remarks.join(' · ') });
     });
   });
@@ -6868,7 +6566,7 @@ function exportLabelsExcel() {
       const bunchPerBox   = parseInt(item.bunches_per_box) || parseInt(flower.boxes_per_box || snap.boxes_per_box) || null;
       const qtyBoxes      = parseInt(item.qty_boxes) || 1;
       const packInfo = flower.pack || snap.pack || '';
-      const remarks  = [packInfo, item.comment, item.client_name ? '👥 ' + item.client_name : ''].filter(Boolean).join(' / ');
+      const remarks  = [packInfo, item.comment].filter(Boolean).join(' / ');
 
       // Use formula for "всего стеблей" = C*D (like the sample file)
       aoa.push([cn, ru, stemsPerBunch, bunchPerBox, null, qtyBoxes, remarks]);
@@ -7862,7 +7560,7 @@ async function loadWarehouseOrders() {
         <td style="text-align:center">${bpb||'—'}</td>
         <td style="text-align:center;font-weight:700;color:var(--sage-d)">${totalStems||'—'}</td>
         <td style="text-align:center;font-size:14px;font-weight:700">${item.qty_boxes||1}</td>
-        <td style="font-size:10px;color:var(--mid)">${scWhNoteHTML(item)}</td>
+        <td style="font-size:10px;color:var(--mid)">${item.comment||item.client_name||''}</td>
       </tr>`;
     }).join('');
 
@@ -8030,7 +7728,7 @@ function renderLabels(order) {
           temp: '+2 / +8 °C', country: 'Китай / China / 中国',
           seller, buyer, prodDate: today,
           batch: labelNum, orderNum: `#${labelNum}`,
-          client, clientName: (scBoxName(item, i) ?? (item.client_name||'')), comment: item.comment||'',
+          client, clientName: item.client_name||'', comment: item.comment||'',
           boxNum: i+1, totalBoxes: qty });
       }
     });
@@ -8048,12 +7746,10 @@ function renderLabels(order) {
       const qty  = parseInt(item.qty_boxes) || 1;
       const wb = isWeightItem((snap.cat_ru || snap.pack) ? snap : f);
       for (let i = 0; i < qty; i++) {
-        const bn = scBoxName(item, i);
         labelsData.push({ ru, cn, bpb, spb, wb,
           boxSize: f.box_size||snap.box_size||'', pack: f.pack||snap.pack||'',
           orderNum: labelNum, client,
-          clientName: bn === null ? (item.client_name||client) : (bn || client),
-          comment: item.comment||'',
+          clientName: item.client_name||client, comment: item.comment||'',
           boxNum: i+1, totalBoxes: qty, seq: seq++ });
       }
     });
@@ -9897,48 +9593,19 @@ function exportClaimPDF() {
   toast('📄 PDF открыт для печати / PDF已打开');
 }
 
-// Фото претензии копятся в массиве: можно добавлять по одной,
-// повторный выбор в <input type="file"> не затирает предыдущие
-let _claimPhotoFiles = [];
-
 function previewClaimPhotos(input) {
-  const incoming = Array.from(input.files || []);
-  for (const f of incoming) {
-    if (_claimPhotoFiles.length >= 8) { toast('⚠️ Максимум 8 фото / 最多8张照片'); break; }
-    // не дублируем один и тот же файл
-    if (_claimPhotoFiles.some(x => x.name === f.name && x.size === f.size)) continue;
-    _claimPhotoFiles.push(f);
-  }
-  input.value = ''; // чтобы можно было выбрать тот же файл снова после удаления
-  renderClaimPhotoPreviews();
-}
-
-function renderClaimPhotoPreviews() {
-  const preview = document.getElementById('claim-photos-preview');
-  if (!preview) return;
   preview.innerHTML = '';
-  _claimPhotoFiles.forEach((file, idx) => {
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:relative;display:inline-block';
-    const img = document.createElement('img');
-    img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid var(--border);display:block';
-    const del = document.createElement('button');
-    del.textContent = '×';
-    del.title = 'Убрать фото / 删除';
-    del.style.cssText = 'position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#dc2626;color:#fff;font-size:13px;line-height:1;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.3)';
-    del.onclick = () => { _claimPhotoFiles.splice(idx, 1); renderClaimPhotoPreviews(); };
+  const files = Array.from(input.files).slice(0, 5);
+  files.forEach(file => {
     const reader = new FileReader();
-    reader.onload = e => { img.src = e.target.result; };
+    reader.onload = e => {
+      const img = document.createElement('img');
+      img.src = e.target.result;
+      img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid var(--border)';
+      preview.appendChild(img);
+    };
     reader.readAsDataURL(file);
-    wrap.appendChild(img); wrap.appendChild(del);
-    preview.appendChild(wrap);
   });
-  if (_claimPhotoFiles.length) {
-    const cnt = document.createElement('div');
-    cnt.style.cssText = 'width:100%;font-size:10px;color:var(--mid);margin-top:2px';
-    cnt.textContent = `${_claimPhotoFiles.length} из 8 фото / 照片`;
-    preview.appendChild(cnt);
-  }
 }
 
 async function submitClaim() {
@@ -9979,7 +9646,7 @@ async function submitClaim() {
 
   // Upload photos
   const photosUrls = [];
-  const files = _claimPhotoFiles.slice(0, 8);
+  const files = Array.from(photoInp?.files || []).slice(0, 5);
   let photoFailCount = 0;
 
   if (files.length) {
@@ -10048,11 +9715,6 @@ async function submitClaim() {
         `Заказ #${orderNum}: ${desc.slice(0,80)}`, '⚠️');
     }
   } catch(e) {}
-
-  _claimPhotoFiles = [];
-  const pv = document.getElementById('claim-photos-preview');
-  if (pv) pv.innerHTML = '';
-  if (photoInp) photoInp.value = '';
 
   toast('✅ Претензия отправлена! Менеджер получил уведомление / 投诉已提交');
   loadMyClaims();
@@ -11587,27 +11249,12 @@ async function exportPriceExcel() {
   toast(`✅ Скачан прайс «${CATALOG_FILE_LABELS[currentCatalog]}» с фото / 已下载`);
 }
 
-async function exportPricePDF() {
-  const list = flowers.filter(f => flowerCatalog(f) === currentCatalog && (!hiddenOut || f.in_stock));
-  if (!list.length) { toast('В этой вкладке нет позиций / 该目录暂无数据'); return; }
-
+function exportPricePDF() {
+  if (!flowers.length) { toast('Нет данных / 没有数据'); return; }
+  // Build HTML table, open in new window for printing as PDF
   const isMgr = currentUser?.role === 'manager';
   const markup = (!isMgr && (currentUser?.show_markup || globalMarkupActive)) ? 1.15 : 1;
   const today = new Date().toLocaleDateString('ru-RU');
-
-  // Сначала тянем миниатюры фото (base64), чтобы PDF открывался с картинками без интернета
-  toast('⏳ Готовлю PDF с фото... / 生成中');
-  const photoTasks = list.filter(f => f.photo_url);
-  const thumbs = {}; // flower.id -> dataURL
-  const CONC = 6;
-  for (let i = 0; i < photoTasks.length; i += CONC) {
-    await Promise.all(photoTasks.slice(i, i + CONC).map(async f => {
-      const th = await _thumbForExcel(f.photo_url, 96);
-      if (th) thumbs[f.id] = th.base64;
-    }));
-    const done = Math.min(i + CONC, photoTasks.length);
-    if (done % 30 < CONC) toast(`⏳ Фото: ${done}/${photoTasks.length}...`);
-  }
 
   let html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>AMMA FLOWERS Price List</title>
@@ -11617,19 +11264,15 @@ async function exportPricePDF() {
   p{margin:0 0 8px;font-size:9px;color:#666}
   table{border-collapse:collapse;width:100%;font-size:8px}
   th{background:#2d6a4f;color:#fff;padding:4px 5px;text-align:left;border:1px solid #ccc;white-space:nowrap}
-  td{padding:3px 5px;border:1px solid #ddd;white-space:nowrap;vertical-align:middle}
-  td.ph{width:52px;text-align:center;padding:2px}
-  td.ph img{max-width:48px;max-height:48px;display:block;margin:0 auto;border-radius:3px}
+  td{padding:3px 5px;border:1px solid #ddd;white-space:nowrap}
   .cat{background:#d8f3dc;font-weight:700;font-size:8px}
   tr:nth-child(even) td{background:#f9f9f9}
-  tr{page-break-inside:avoid}
   @media print{@page{size:A3 landscape;margin:8mm}}
 </style></head><body>
-<h2>AMMA FLOWERS — Price List / 价格单 · ${CATALOG_TITLES[currentCatalog] || ''}</h2>
+<h2>AMMA FLOWERS — Price List / 价格单</h2>
 <p>Дата / 日期: ${today}</p>
 <table>
 <thead><tr>
-<th>Фото 图片</th>
 <th>Product Name</th><th>名称</th><th>规格</th>
 <th>A ¥/扎</th><th>A+ ¥/扎</th>
 <th>A ¥/件</th><th>A+ ¥/件</th>
@@ -11638,25 +11281,23 @@ async function exportPricePDF() {
 </tr></thead><tbody>`;
 
   let lastCat = null;
-  list.forEach(f => {
+  flowers.forEach(f => {
+    if (flowerCatalog(f) !== currentCatalog) return;
+    if (!f.in_stock && hiddenOut) return;
     if (f.cat_ru !== lastCat) {
-      html += `<tr><td colspan="15" class="cat">${f.cat_ru||''} · ${f.cat_en||''}</td></tr>`;
+      html += `<tr><td colspan="14" class="cat">${f.cat_ru||''} · ${f.cat_en||''}</td></tr>`;
       lastCat = f.cat_ru;
     }
-    const wgt = isWeightItem(f);
     const pa  = (f.price_a  * markup).toFixed(1);
     const pap = (f.price_ap * markup).toFixed(1);
     const pab  = (f.price_a  * (f.boxes_per_box||1) * markup).toFixed(0);
     const papb = (f.price_ap * (f.boxes_per_box||1) * markup).toFixed(0);
-    const perBunch = f.stems ? fmtStems(f.stems, wgt) : '';
-    const perBox = (f.stems && f.boxes_per_box) ? fmtStems(f.stems * f.boxes_per_box, wgt) : '';
-    const img = thumbs[f.id] ? `<img src="${thumbs[f.id]}">` : '';
+    const stemsPerBox = (f.stems && f.boxes_per_box) ? (f.stems * f.boxes_per_box) : '';
     html += `<tr>
-<td class="ph">${img}</td>
 <td>${f.ru||''}</td><td>${f.cn||''}</td><td>${f.pack||''}</td>
 <td>¥${pa}</td><td>¥${pap}</td>
 <td>¥${pab}</td><td>¥${papb}</td>
-<td>${f.boxes_per_box||''}</td><td>${perBunch}</td><td>${perBox}</td>
+<td>${f.boxes_per_box||''}</td><td>${f.stems||''}</td><td>${stemsPerBox}</td>
 <td>${f.length||''}</td><td>${f.order_qty||''}</td><td>${f.flower_weight||''}</td><td>${f.box_size||''}</td>
 </tr>`;
   });
@@ -11667,8 +11308,7 @@ async function exportPricePDF() {
   if (!w) { toast('⚠️ Разрешите всплывающие окна / 请允许弹出窗口'); return; }
   w.document.write(html);
   w.document.close();
-  toast('✅ PDF готов — выбери «Сохранить как PDF» / 已生成');
-  setTimeout(() => { w.print(); }, 600);
+  setTimeout(() => { w.print(); }, 400);
 }
 
 </script>
