@@ -136,9 +136,10 @@ html[data-theme="dark"] .price-hero{
 .inp:focus{outline:none;border-color:var(--sage)}
 .inp-search{flex:1;min-width:180px}
 .inp-select{min-width:150px}
-.btn{padding:9px 18px;border-radius:12px;font-size:12px;font-weight:600;border:1.5px solid;cursor:pointer;white-space:nowrap;transition:all .15s;font-family:var(--font-b)}
+.btn{padding:9px 18px;border-radius:999px;font-size:12px;font-weight:600;border:1.5px solid;cursor:pointer;white-space:nowrap;transition:all .15s;font-family:var(--font-b)}
 .btn-primary{background:var(--sage-d);color:#fff;border-color:var(--sage-d)}.btn-primary:hover{background:var(--sage)}
 .btn-secondary{background:var(--sage-l);color:var(--sage-d);border-color:var(--sage)}.btn-secondary.on{background:var(--sage);color:#fff}
+.ref-tab.active{background:var(--sage-d);color:#fff;border-color:var(--sage-d)}
 .btn-gold{background:var(--gold);color:var(--sage-d);border-color:var(--gold)}.btn-gold:hover{background:#dbbf85}
 .btn-danger{background:var(--red-l);color:var(--red);border-color:#C48A8A}.btn-danger:hover{background:var(--red);color:#fff}
 .btn-sm{padding:5px 10px;font-size:11px}
@@ -518,7 +519,7 @@ html[data-theme="light"] .notice-bar{color:#7a5f2a}
 .btn-theme:hover{border-color:var(--gold);transform:scale(1.06)}
 
 /* ── Кнопки ── */
-.btn{border-radius:10px}
+.btn{border-radius:999px}
 .btn-primary{background:linear-gradient(150deg,#4E9B6F,#2F6B4C);border-color:rgba(255,255,255,.14);color:#fff;
   box-shadow:0 4px 14px rgba(47,107,76,.35), inset 0 1px 0 rgba(255,255,255,.18)}
 .btn-primary:hover{background:linear-gradient(150deg,#58AC7C,#377A57);filter:brightness(1.05)}
@@ -1187,6 +1188,18 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
   </div>
 
+  <!-- PAGE: REFERENCE (справочник — все роли) -->
+  <div class="page" id="page-reference">
+    <div class="card">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        <button class="btn btn-secondary ref-tab active" id="ref-tab-season" onclick="showRefSection('season',this)">🌸 Сезонность / 花季</button>
+        <button class="btn btn-secondary ref-tab" id="ref-tab-holidays" onclick="showRefSection('holidays',this)">📅 Праздники КНР / 节假日</button>
+        <button class="btn btn-secondary ref-tab" id="ref-tab-packing" onclick="showRefSection('packing',this)">📦 Упаковка / 包装要求</button>
+      </div>
+      <div id="ref-content"></div>
+    </div>
+  </div>
+
   <!-- PAGE: DASHBOARD (manager) -->
   <div class="page" id="page-dashboard">
     <div class="page-inner">
@@ -1359,6 +1372,8 @@ async function initApp() {
   const isWh  = currentUser.role === 'warehouse';
   const isGuest = currentUser.role === 'guest';
 
+  renderInfoWidget();  // плавающий виджет: сезон дождей + праздники (все роли, включая гостя)
+
   // Дефолтный вид прайса: карточки для гостя/клиента (нагляднее, особенно на выставке),
   // таблица для менеджера/склада (плотное редактирование). Если человек уже переключал вид
   // в этой сессии/браузере — уважаем его выбор через localStorage.
@@ -1402,6 +1417,7 @@ async function initApp() {
       <div class="nav-tab" onclick="showPage('clients',this)">👥 Клиенты / 客户</div>
       <div class="nav-tab" onclick="showPage('claims',this)">⚠️ Претензии <span class="cnt" id="cnt-claims" style="display:none">0</span></div>
       <div class="nav-tab" onclick="showPage('dashboard',this)">📊 Дашборд</div>
+      <div class="nav-tab" onclick="showPage('reference',this)">📖 Справка / 参考</div>
       <div class="nav-tab" onclick="showPage('chat',this)">💬 Чат / 聊天 <span class="cnt" id="cnt-chat" style="display:none">0</span></div>
       <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
     `;
@@ -1416,6 +1432,7 @@ async function initApp() {
       <div class="nav-tab active" onclick="showPage('warehouse',this)">🏭 Сборка / 备货 <span class="cnt" id="cnt-wh-orders">0</span></div>
       <div class="nav-tab" onclick="showPage('shipments',this)">🚚 Отгрузки / 车次</div>
       <div class="nav-tab" onclick="showPage('labels',this)">🏷 Этикетки / 标签</div>
+      <div class="nav-tab" onclick="showPage('reference',this)">📖 Справка / 参考</div>
       <div class="nav-tab" onclick="showPage('chat',this)">💬 Чат / 聊天 <span class="cnt" id="cnt-chat" style="display:none">0</span></div>
       <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
     `;
@@ -1431,6 +1448,7 @@ async function initApp() {
       <div class="nav-tab" onclick="showPage('my-waybills',this)">Накладные / 出货单 <span class="cnt" id="cnt-waybills">0</span></div>
       <div class="nav-tab" onclick="showPage('my-invoices',this)">Счета / 发票</div>
       <div class="nav-tab" onclick="showPage('my-claims',this)">Претензии / 投诉</div>
+      <div class="nav-tab" onclick="showPage('reference',this)">Справочник / 参考</div>
       <div class="nav-tab" onclick="showPage('chat',this)">Чат / 聊天 <span class="cnt" id="cnt-chat" style="display:none">0</span></div>
       <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
     `;
@@ -1515,6 +1533,7 @@ function showPage(name, tabEl) {
   if (name === 'my-invoices') loadMyInvoices();
   if (name === 'warehouse') loadWarehouseOrders();
   if (name === 'notifications') loadNotifications();
+  if (name === 'reference') renderReference();
   if (name === 'chat') {
     initChat();
     const el = document.getElementById('cnt-chat');
@@ -1669,6 +1688,273 @@ function _ringSVG(pct, size, stroke) {
     <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#a7d7a7" stroke-width="${stroke}"
       stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - pct/100)}"/>
   </svg>`;
+}
+
+// ══════════════════════════════════════════════════════════
+//  СПРАВКА: сезонность, календарь КНР, памятка упаковки
+// ══════════════════════════════════════════════════════════
+const SEASONAL_FLOWERS = {
+  'Круглый год / 全年': ['Роза одноголовая','Роза кустовая','Гвоздика одноголовая','Гвоздика кустовая','Гвоздика Грин Трик','Эвкалипт','Лилия','Гортензия','Эустома','Хризантема кустовая','Хризантема одноголовая','Калла','Гипсофила','Лимониум (каспия)','Статица','Лимониум «незабудка»','Скабиоза','Дидискус','Солидаго','Ренантера','Подсолнух','Пеннисетум','Ромашка (матрикария)','Аспарагус пон-пон','Аспарагус перистый','Мелалеука','Папоротник','Лист гардении','Лист ареки','Лист монстеры','Лист цитруса','Фисташка','Ардизия (красные ягоды)','Синеголовник','Лист кордилины'],
+  'Январь – март / 1–3月': ['Фрезия','Анемон','Ранункулюс','Тюльпан','Химонантус (зимоцвет)'],
+  'Апрель – май / 4–5月': ['Пион травянистый','Пион древовидный','Гелихризум','Сетария','Астильба','Лаванда','Мак'],
+  'Июнь – сентябрь / 6–9月': ['Лотос','Коробочка лотоса','Кувшинка','Гиппеаструм','Талинум (ягодная веточка) 柔丽丝','Калина «снежный шар»'],
+  'Октябрь / 10月': ['Фонтанезия («снежная ива»)','Паслён сосочковый','Калликарпа','Хамелациум','Верба серебристая'],
+  'Ноябрь – декабрь / 11–12月': ['Илекс (красные ягоды)','Гиацинт','Форзиция («золотые ветки») 寸寸金','Ирис'],
+};
+const SEASON_KEYS_BY_MONTH = { 1:'Январь – март / 1–3月', 2:'Январь – март / 1–3月', 3:'Январь – март / 1–3月', 4:'Апрель – май / 4–5月', 5:'Апрель – май / 4–5月', 6:'Июнь – сентябрь / 6–9月', 7:'Июнь – сентябрь / 6–9月', 8:'Июнь – сентябрь / 6–9月', 9:'Июнь – сентябрь / 6–9月', 10:'Октябрь / 10月', 11:'Ноябрь – декабрь / 11–12月', 12:'Ноябрь – декабрь / 11–12月' };
+
+const CN_HOLIDAYS = [
+  { from: '2026-01-01', to: '2026-01-03', name: 'Новогодние каникулы / 元旦' },
+  { from: '2026-02-15', to: '2026-02-23', name: 'Праздник Весны — Китайский Новый год / 春节' },
+  { from: '2026-04-04', to: '2026-04-06', name: 'Цинмин / 清明节' },
+  { from: '2026-05-01', to: '2026-05-05', name: 'Праздник Труда / 劳动节' },
+  { from: '2026-06-19', to: '2026-06-21', name: 'Дуаньу / 端午节' },
+  { from: '2026-09-25', to: '2026-09-27', name: 'Праздник середины осени / 中秋节' },
+  { from: '2026-10-01', to: '2026-10-07', name: 'День образования КНР / 国庆节' },
+];
+const CN_TRANSFER_WORKDAYS = [
+  { date: '2026-01-04', for: 'за новогодние каникулы' },
+  { date: '2026-02-14', for: 'за Праздник Весны' },
+  { date: '2026-02-28', for: 'за Праздник Весны' },
+  { date: '2026-05-09', for: 'за Праздник Труда' },
+  { date: '2026-09-20', for: 'за середину осени' },
+  { date: '2026-10-10', for: 'за День образования КНР' },
+];
+const CN_INFO_DAYS = [
+  { date: '2026-03-03', name: 'Праздник фонарей / 元宵节' },
+  { date: '2026-03-08', name: 'Женский день / 女神节 — пик спроса на цветы' },
+  { date: '2026-05-10', name: 'День матери / 母亲节 — пик спроса' },
+  { date: '2026-05-20', name: '520 — китайский день влюблённых, пик спроса' },
+  { date: '2026-08-19', name: 'Циси / 七夕 — день влюблённых, пик спроса' },
+  { date: '2026-10-18', name: 'Праздник двойной девятки / 重阳节' },
+];
+const PACKING_GENERAL = [
+  '🚫 КАРТОН ИСПОЛЬЗОВАТЬ НЕЛЬЗЯ — все цветы упаковываются в нетканку / 禁止用纸板，全部用无纺布',
+  '💧 Весь цветок должен быть СУХИМ перед упаковкой / 花材必须干燥',
+  '🎨 Все цветы — без жёлтых и оранжевых оттенков / 所有花都不要黄色、橘色系',
+];
+const PACKING_GUIDE = [{"name": "康乃馨单头（红色）Гвоздика одноголовая (красная)", "req": "Длина растения 65-70 см, стебель плотный с целыми зелеными листьями, срез стебля должен быть чистым, бутон должен быть  приоткрыт в диаметре примерно  4 см, бутон должен быть плотным, цвет лепестков насыщенный, без пятен, сухих краев и увядания, лепестки не должны осыпаться. Растения должны быть сухие"}, {"name": "康乃馨单头（混色）Гвоздика одноголовая (микс)", "req": "Длина растения 65-70 см, стебель плотный с целыми зелеными листьями, срез стебля должен быть чистым, бутон должен быть  приоткрыт в диаметре примерно  4 см, бутон должен быть плотным, цвет лепестков насыщенный, без пятен, сухих краев и увядания, лепестки не должны осыпаться. Растения должны быть сухие"}, {"name": "康乃馨单头（粉色）Гвоздика одноголовая (розовая)", "req": "Длина растения 65-70 см, стебель плотный с целыми зелеными листьями, срез стебля должен быть чистым, бутон должен быть  приоткрыт в диаметре примерно  4 см, бутон должен быть плотным, цвет лепестков насыщенный, без пятен, сухих краев и увядания, лепестки не должны осыпаться. Растения должны быть сухие"}, {"name": "康乃馨单头（白色）Гвоздика одноголовая (белая)", "req": "Длина растения 65-70 см, стебель плотный с целыми зелеными листьями, срез стебля должен быть чистым, бутон должен быть  приоткрыт в диаметре примерно  4 см, бутон должен быть плотным, цвет лепестков насыщенный, без пятен, сухих краев и увядания, лепестки не должны осыпаться. Растения должны быть сухие"}, {"name": "康乃馨多头（混色）Гвоздика многоголовая (микс)", "req": "Длина растения 65-70 см, стебель плотный с целыми зелеными листьями, срез стебля должен быть чистым, на ветке должно быть раскрыто 2-3 цветка, а остальные находятся в стадии плотного окрашенного бутона,  цвет лепестков насыщенный, без пятен, сухих краев и увядания, лепестки не должны осыпаться. Растения должны быть сухие"}, {"name": "Матиола Белая, Розовая", "req": "Длина растения 50-60 см, в пучке 10 веток. На растении должно быть 1/3 раскрытых бутонов, нижние цветки должны быть уже распущенными, а верхние - сформированные, но закрытыми окрашенными. Листья зеленые и упругие, не должно быть желтых и вялых. Срез стебля должен быть светлым и свежим."}, {"name": "尤加利多枝大叶 Эвкалипт многолистный крупнолистный", "req": "Длина Эвкалипта 90-95 см , листья должны быть упругие, плотные, без признаков вялости, темных пятен, сухости и желтезны. Вес банча должен быть 1000 гр. Срез растения должен быть свежим, влажным, без слизи. Листья должны быть округлые с сизоватым оттенком. Растения должны быть сухие\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ.\nОдеваем цветок во влажные мешочки (тряпочка + мешочек)"}, {"name": "尤加利混箱：小叶多支，细叶，圆叶，银水滴 Эвкалипт смешанный в коробке: мелколистный многолистный, узколистный, круглолистный, серебряные капли", "req": "Длина Эвкалипта 90-96 см , листья должны быть упругие, плотные, без признаков вялости, темных пятен, сухости и желтезны. Вес банча должен быть 1000 гр. Парвифолия, Гунни, Пополус упаковывать по 500 грамм. Срез растения должен быть свежим, влажным, без слизи.  Растения должны быть сухие\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ.\nОдеваем цветок во влажные мешочки (тряпочка + мешочек)"}, {"name": "玫瑰（单头） Роза одноголовая", "req": "Длина растения 65-70 см, в пачке 10 шт. Бутон должен быть плотным и упругим, высота примерно 4-6 см. Ширина бутона: 3-5 см. Бутон должен иметь форму бокала, не должно быть распущенных, вялых и деформированных лепестков. Листва должна быть насыщенного зеленого цвета, без пятен и не сыпаться. Срез стебля должен быть светлым, без признаков гниения или почернения."}, {"name": "玫瑰（多头） Роза многоголовая", "req": "Длина растения 70 см, в пачке 10 веток. Ширина банча от 30 см. Бутоны должны быть плотными и упругими, бутоны должны быть раскрыты на половину, на веточке должно быть 4-7 цветочков. Зеленые листочки под бутоном должны смотреть вверх или плотно обнимать его. Листья ярко-зеленые и направлены вверх, не должно быть черных пятен и гнили. Срез стебля должен быть светлым и свежим. Кустовую розу надо упаковывать в мягкую тканевую упаковку. В картон не надо!!!"}, {"name": "清香木 Фисташка", "req": "Длина растения 60 см, Вес банча должен быть 1000 гр Листья насыщенного зеленого цвета, плотно держатся на ветке , без темных пятен, сухости и следов грибка. Растения должны быть сухие. Листья не должны торчать из коробки, они так чернеют\nПри легком встряхивании листья не должны осыпаться\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ.\nОдеваем цветок во влажные мешочки (тряпочка + мешочек)"}, {"name": "Гипсофила белая", "req": "Длина растения 70-80 см, в пучке 10 -12 веток. Стебель должен быть ветвистый, без слизи  и темных участков на срезе. Листья не должны быть сухими, желтыми или вялыми.. Раскрытие бутонов на ветке 50-70%, лепестки должны иметь чистый белый цвет без коричневых пятен, цветы не должны осыпаться при легком встряхивании. Гипсофила плотная, поэтому в ней может скапливаться влага, что приведет к плесени. Растение должно быть сухое. При легком встряхивании листья не должны осыпаться\nЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ. Кончики стеблей не должны быть сухими, без гнили."}, {"name": "绿毛球 Зеленые шарики", "req": "Длина растения 65-70 см, в пучке 10 шт. Бутон должен быть плотным, твердым на ощупь, пушистый \"моховой\" шарик не должен распадаться, на лепестках и \"иголочках\" не должно быть коричневых и темных пятен. Стебель прочный, ровный. Листья на стебле зеленые без желтизны и темных точек. Гвоздику надо упаковывать в мягкую тканевую упаковку. В плотный картон не надо!!!"}, {"name": "Эустома", "req": "Длина растения 50-60 см, в пучке около 10 веточек. На ветке должно быть 2-3 распущенных цветка, остальные бутоны должны быть полураскрытыми, на цветке не должно быть пятен и коричневых краев. Стебель должен быть твердым, зеленым и плотным по всей длине. Возле основания бутонов не должно быть перегибов и гнили. Срез стебля должен быть чистым и светлым."}, {"name": "Стрелиция", "req": "Длина растения 70-80 см. Бутоны слегка приоткрыты, лепестки должны начинать показываться, бутоны должны быть без гнили, заломов и черных пятен. Степель овный и плотный, без гнили. Срез стебля свежий,без слизи."}, {"name": "Дельфиниум", "req": "Длина растения 70-80 см, в пачке 5 -10 шт. В колосе должны быть раскрыты нижние цветочки, верхние в стадии бутона. Стебель прямой, плотный и упругий без черных пятен, листья зеленые, без пятен и признаков увядания."}, {"name": "Гипеаструм", "req": "Длина растения 70-80 см.  Бутоны должны быть окрашены, но не раскрытые, твердые, без гнили и заломов. Стебель прямой, упругий, без слизи и гнили."}, {"name": "Аспарагус Умбилатус", "req": "Длина растения 60-70 см, в пачке 10 шт. Ярко-зеленые листья, без гнили. При легком встряхивании листья не должны осыпаться."}, {"name": "Тласпия", "req": "Длина растения 60-70 см, в пачке 25 шт веток.  Стебель должен быть прямым, плотным, упругим, зеленым по всей длине, без слизи, гнили и плесени. Листья должны быть насыщеннго зеленого цвета , без признаков увядания и желтизны. При легком встряхивании цветок не должен сыпаться."}, {"name": "Оксипеталум", "req": "Длина растения 40-50 см, в пучке 10 шт. Цветок должен иметь ровный, свежий стебель, без признаков гниения, упругия листья зеленого цвета, не вялые и без пятен. Бутоны слегка раскрытые, без повреждений и без пятен. Раскрытие цветочков должно быть не более 30-40%."}, {"name": "Рускус", "req": "Длина растения 60-70 см, в пучке 10 веток. Веточки должны быть насыщенно зеленого цвета и пушистые, не должно быть никаких черных пятен.\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ."}, {"name": "水晶草（混色） Лимониум", "req": "Длина растения 60-70 см, Вес банча должен быть 1000 гр. Стебель должен быть плотным, твердым, без изломов и признаков загнивания у основания. Соцветия бутонов должно быть полностью раскрытым, так как после срезки лимониум практически не распускается. Листья растения должны быть зеленые, без гнили. Растение должно быть сухим. При легкой тряске растения, бутоны не должны сыпаться. Пакуется растение в мягкую тканевую упаковку, разные цвета в банче.\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ."}, {"name": "Калла белая", "req": "Длина растения 60-70 см, в пучке 5 шт. Все стебли должны быть одинаковой длины. Цветок должен быть полураспустившимся, не менее 70-80%, на бутоне не должно быть заломов и черных пятен. Стебельплотный и упругий, срез свежий, без слизи и без признаков гниения.\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ. Бутон упаковываем в вату\nОдеваем цветок во влажные мешочки (тряпочка + мешочек)"}, {"name": "Калла розовая", "req": "Длина растения 60-70 см, в пучке 5 шт. Все стебли должны быть одинаковой длины. Цветок должен быть полураспустившимся, не менее 70-80%, на бутоне не должно быть заломов и черных пятен. Стебельплотный и упругий, срез свежий, без слизи и без признаков гниения.\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ. Бутон упаковываем в вату\nОдеваем цветок во влажные мешочки (тряпочка + мешочек)"}, {"name": "Рисовый цветок (озотамнус)", "req": "Длина растения 60-70 см, в пучке 10 веток. Соцветия, похожие на \"воздушный рис\", должны быть плотные, на них не должно бытьгнили и черных пятен. Листва должна быть насыщенной, упругой, без темных пятен, сухости и признаков вредителей. При легкой тряске растение не должно осыпаться.\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ."}, {"name": "红豆 Гиперикум", "req": "Длина растения 50-60 см, в пучке 10 веток. Ягоды должны быть плотными, упругими и блестящими, без мягких вмятен и темных пятен. Листья зеленые, без признаков увядания, желтезны, плесени и гнили. На листьях и стебле не должно быть ржавых пятен. \nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ.\nОдеваем цветок во влажные мешочки (тряпочка + мешочек)"}, {"name": "勿忘我 Статица", "req": "Длина растения 60-70 см,  Вес банча должен быть 1000 гр. Стебель должен быть плотным, твердым, без изломов и признаков загнивания у основания. Соцветия бутонов должно быть полностью раскрытым, так как после срезки статица практически не распускается. Листья растения должны быть зеленые, без гнили. Растение должно быть сухим. При легкой тряске растения, бутоны не должны сыпаться. Пакуется растение в мягкую тканевую упаковку.\nВЕСЬ ЦВЕТОК ДОЛЖЕН БЫТЬ СУХОЙ."}, {"name": "昆明芍药（珊瑚） Пион из Куньмина (сорт \"Коралл\", сорт Сара Бернар, сорт Корал Сансет и белые)", "req": "Длина растения 45-65 см, в пачке 5 шт. Диаметр бутона 3-5 см. Бутон должен быть плотныи, упругим, в стадии полуроспуска. Крайние лепестки должны слегка отойти от основного бутона, не должны быть закрытые бутоны. Стебель должен быть прямой, крепким и плотным, без темных пятен. Листья зеленые, упругие, не вялые и без пятен. Срез должен быть светлым и свежим."}, {"name": "Хризантема", "req": "Длина стебля 60-70 см. Стебель должен быть прямым и крепким, чтобы держать цветок . Листья должны быть здоровыми, зелеными, без признаков увядания .Количество цветков на ветке от 5 до 7. Срез стебля свежий, не сухой и без гнили Листья должны крепко держаться на стебле"}];
+
+// Сезон дождей в Куньмине: показываем напоминание 15.05 – 30.09
+function isRainSeason(d = new Date()) {
+  const m = d.getMonth() + 1, day = d.getDate();
+  if (m > 5 && m < 9) return true;
+  if (m === 5 && day >= 15) return true;
+  if (m === 9) return true;
+  return false;
+}
+
+function nextCnHoliday(d = new Date()) {
+  const today = d.toISOString().slice(0, 10);
+  for (const h of CN_HOLIDAYS) {
+    if (h.to >= today) {
+      const days = Math.ceil((new Date(h.from) - d) / 86400000);
+      return { ...h, days: Math.max(0, days), ongoing: h.from <= today };
+    }
+  }
+  return null;
+}
+
+function fmtD(iso) { const [y,m,dd] = iso.split('-'); return `${dd}.${m}`; }
+
+// Виджеты-баннеры (glass-стиль): видят все роли
+function _infoWidgetHTML(w) {
+  return `<div style="background:${w.grad};border-left:4px solid ${w.accent || 'var(--gold)'};border-radius:14px;padding:11px 14px;margin-bottom:8px;color:#fff;box-shadow:0 6px 18px rgba(42,63,36,.25)">
+    <div style="display:flex;align-items:center;gap:11px">
+      <div style="width:40px;height:40px;min-width:40px;border-radius:11px;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font-size:20px">${w.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:13px;line-height:1.25">${w.title}</div>
+        <div style="font-size:10.5px;opacity:.75;margin-top:1px">${w.sub}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-weight:800;font-size:15px;white-space:nowrap;color:var(--gold)">${w.metric}</div>
+        <div style="font-size:10px;opacity:.75;white-space:nowrap">${w.metricSub}</div>
+      </div>
+    </div>
+    <div style="margin-top:10px">
+      <div style="height:4px;border-radius:2px;background:rgba(255,255,255,.18);overflow:hidden">
+        <div style="height:100%;width:${Math.min(100, Math.max(2, w.pct))}%;background:var(--gold);border-radius:2px"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9.5px;opacity:.8">
+        ${w.stages.map(x => `<span>${x}</span>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+function infoBannersHTML() {
+  let html = '';
+  const now = new Date();
+
+  // 🌧 Сезон дождей: 15.05 – 30.09, прогресс по сезону
+  if (isRainSeason(now)) {
+    const start = new Date(now.getFullYear(), 4, 15);   // 15 мая
+    const end   = new Date(now.getFullYear(), 8, 30);   // 30 сентября
+    const pct   = (now - start) / (end - start) * 100;
+    const daysLeft = Math.max(0, Math.ceil((end - now) / 86400000));
+    const mon = now.getMonth() + 1;
+    const phase = (mon >= 6 && mon <= 8) ? 'Пик / 高峰' : (mon === 5 ? 'Начало' : 'Спад');
+    html += _infoWidgetHTML({
+      grad: 'linear-gradient(135deg,var(--sage-d) 0%,#1a2e16 100%)', accent: '#8FBADB',
+      icon: '🌧',
+      title: 'Сезон дождей в Куньмине / 雨季',
+      sub: 'Сушим цветок перед упаковкой — влага в коробке = плесень / 包装前必须干燥',
+      metric: phase,
+      metricSub: `до конца ${daysLeft} дн.`,
+      pct,
+      stages: ['Май', 'Июнь', 'Июль–Авг', 'Сентябрь'],
+    });
+  }
+
+  // 🎉 Ближайшие госвыходные КНР: за 14 дней и во время
+  const h = nextCnHoliday(now);
+  if (h && (h.ongoing || h.days <= 14)) {
+    html += _infoWidgetHTML({
+      grad: 'linear-gradient(135deg,var(--sage-d) 0%,#1a2e16 100%)', accent: 'var(--gold)',
+      icon: '🎉',
+      title: h.name,
+      sub: h.ongoing
+        ? 'Госвыходные: фермы, поставщики и логистика могут не работать'
+        : 'Фермы и логистика встанут — планируйте заказ заранее / 节前请提前下单',
+      metric: h.ongoing ? `до ${fmtD(h.to)}` : `${h.days} дн.`,
+      metricSub: `${fmtD(h.from)} – ${fmtD(h.to)}`,
+      pct: h.ongoing ? 100 : (14 - h.days) / 14 * 100,
+      stages: ['Заказ', 'Сборка', 'Отгрузка', 'Праздник'],
+    });
+  }
+  return html;
+}
+
+function showRefSection(sec, btn) {
+  document.querySelectorAll('.ref-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const box = document.getElementById('ref-content');
+  if (!box) return;
+
+  if (sec === 'season') {
+    const nowKey = SEASON_KEYS_BY_MONTH[new Date().getMonth() + 1];
+    box.innerHTML = Object.entries(SEASONAL_FLOWERS).map(([season, list]) => {
+      const isNow = season === nowKey;
+      const isYear = season.startsWith('Круглый');
+      return `<div style="margin-bottom:14px;border:1px solid ${isNow ? 'var(--sage-d)' : 'var(--border)'};border-radius:10px;padding:12px;${isNow ? 'background:var(--sage-l)' : ''}">
+        <b style="font-size:13px">${isYear ? '🌿' : '🌸'} ${season}${isNow ? ' <span style="color:var(--sage-d)">← сейчас в сезоне</span>' : ''}</b>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+          ${list.map(f => `<span style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:3px 10px;font-size:11.5px">${f}</span>`).join('')}
+        </div></div>`;
+    }).join('');
+  }
+
+  if (sec === 'holidays') {
+    const today = new Date().toISOString().slice(0, 10);
+    box.innerHTML = `
+      ${infoBannersHTML()}
+      <b style="font-size:13px">🇨🇳 Официальные выходные КНР — 2026</b>
+      <table style="width:100%;margin-top:8px;font-size:12px"><thead><tr>
+        <th style="text-align:left">Даты</th><th style="text-align:left">Праздник</th><th>Дней</th></tr></thead><tbody>
+        ${CN_HOLIDAYS.map(h => {
+          const days = Math.round((new Date(h.to) - new Date(h.from)) / 86400000) + 1;
+          const past = h.to < today;
+          return `<tr style="${past ? 'opacity:.45' : ''}"><td style="white-space:nowrap"><b>${fmtD(h.from)} – ${fmtD(h.to)}</b></td><td>${h.name}</td><td style="text-align:center">${days}</td></tr>`;
+        }).join('')}
+      </tbody></table>
+      <b style="font-size:13px;display:block;margin-top:16px">⚠️ Перенесённые РАБОЧИЕ дни (суббота/воскресенье — все работают!)</b>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+        ${CN_TRANSFER_WORKDAYS.map(t => `<span style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:4px 10px;font-size:11.5px"><b>${fmtD(t.date)}</b> — ${t.for}</span>`).join('')}
+      </div>
+      <b style="font-size:13px;display:block;margin-top:16px">💐 Даты-события (рабочие дни)</b>
+      <table style="width:100%;margin-top:8px;font-size:12px"><tbody>
+        ${CN_INFO_DAYS.map(t => `<tr style="${t.date < today ? 'opacity:.45' : ''}"><td style="white-space:nowrap;width:70px"><b>${fmtD(t.date)}</b></td><td>${t.name}</td></tr>`).join('')}
+      </tbody></table>`;
+  }
+
+  if (sec === 'packing') {
+    box.innerHTML = `
+      <div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;padding:12px;margin-bottom:14px">
+        <b style="font-size:13px">Общие правила для ВСЕХ культур:</b>
+        ${PACKING_GENERAL.map(r => `<div style="font-size:12.5px;margin-top:6px;font-weight:600">${r}</div>`).join('')}
+      </div>
+      <input class="inp" type="text" placeholder="🔍 Поиск культуры / 搜索..." style="width:100%;padding:8px;margin-bottom:10px"
+        oninput="filterPackingGuide(this.value)">
+      <div id="packing-list">${packingListHTML(PACKING_GUIDE)}</div>`;
+  }
+}
+
+function packingListHTML(list) {
+  if (!list.length) return '<div style="color:var(--mid);font-size:12px;padding:10px">Ничего не найдено / 未找到</div>';
+  return list.map((it, i) => `
+    <details style="border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fff">
+      <summary style="padding:9px 12px;cursor:pointer;font-size:12.5px;font-weight:600">${escHtml(it.name)}</summary>
+      <div style="padding:4px 14px 12px;font-size:12px;line-height:1.55;white-space:pre-line;color:#374151">${escHtml(it.req)}</div>
+    </details>`).join('');
+}
+
+function filterPackingGuide(q) {
+  q = q.trim().toLowerCase();
+  const list = q ? PACKING_GUIDE.filter(it => it.name.toLowerCase().includes(q) || it.req.toLowerCase().includes(q)) : PACKING_GUIDE;
+  const el = document.getElementById('packing-list');
+  if (el) el.innerHTML = packingListHTML(list);
+}
+
+function renderReference() {
+  const activeBtn = document.querySelector('.ref-tab.active') || document.getElementById('ref-tab-season');
+  const sec = activeBtn.id.replace('ref-tab', '').replace('-', '');
+  showRefSection(activeBtn.id === 'ref-tab-holidays' ? 'holidays' : activeBtn.id === 'ref-tab-packing' ? 'packing' : 'season', activeBtn);
+}
+
+let _iwDrag = null;
+function renderInfoWidget() {
+  let el = document.getElementById('info-widget');
+  const inner = infoBannersHTML();
+  if (!inner) { if (el) el.remove(); return; }
+  const collapsed = localStorage.getItem('amma-iw-min') === '1';
+
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'info-widget';
+    el.style.cssText = 'position:fixed;z-index:890;cursor:grab;user-select:none;touch-action:none;width:310px;max-width:92vw';
+    let pos = null;
+    try { pos = JSON.parse(localStorage.getItem('amma-iw-pos') || 'null'); } catch(e) {}
+    if (pos && pos.x != null) {
+      el.style.left = Math.min(Math.max(0, pos.x), innerWidth - 60) + 'px';
+      el.style.top  = Math.min(Math.max(0, pos.y), innerHeight - 60) + 'px';
+    } else { el.style.bottom = '16px'; el.style.right = '14px'; }
+    el.addEventListener('pointerdown', e => {
+      const r = el.getBoundingClientRect();
+      _iwDrag = { dx: e.clientX - r.left, dy: e.clientY - r.top, sx: e.clientX, sy: e.clientY, moved: false };
+      el.setPointerCapture(e.pointerId);
+      el.style.cursor = 'grabbing';
+    });
+    el.addEventListener('pointermove', e => {
+      if (!_iwDrag) return;
+      if (Math.abs(e.clientX - _iwDrag.sx) + Math.abs(e.clientY - _iwDrag.sy) > 6) _iwDrag.moved = true;
+      if (!_iwDrag.moved) return;
+      el.style.right = 'auto'; el.style.bottom = 'auto';
+      el.style.left = Math.min(Math.max(4, e.clientX - _iwDrag.dx), innerWidth - el.offsetWidth - 4) + 'px';
+      el.style.top  = Math.min(Math.max(4, e.clientY - _iwDrag.dy), innerHeight - el.offsetHeight - 4) + 'px';
+    });
+    el.addEventListener('pointerup', e => {
+      el.style.cursor = 'grab';
+      if (_iwDrag?.moved) {
+        localStorage.setItem('amma-iw-pos', JSON.stringify({ x: parseFloat(el.style.left), y: parseFloat(el.style.top) }));
+      } else {
+        // клик без переноса = свернуть/развернуть
+        localStorage.setItem('amma-iw-min', localStorage.getItem('amma-iw-min') === '1' ? '0' : '1');
+        renderInfoWidget();
+      }
+      _iwDrag = null;
+    });
+    document.body.appendChild(el);
+  }
+
+  if (collapsed) {
+    el.style.width = 'auto';
+    const h = nextCnHoliday();
+    const icon = (h && (h.ongoing || h.days <= 14)) ? '🎉' : '🌧';
+    el.innerHTML = `<div title="Развернуть / 展开" style="width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,var(--sage-d),#1a2e16);border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 6px 18px rgba(42,63,36,.3)">${icon}</div>`;
+  } else {
+    el.style.width = '310px';
+    el.innerHTML = inner + `<div style="text-align:center;font-size:9px;color:var(--mid);margin-top:-4px">перетащи меня · клик = свернуть / 点击收起</div>`;
+  }
 }
 
 let _dwDrag = null;
