@@ -7,7 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 :root{
   --bg:#FAFAF8;--white:#fff;
   --sage:#3D5C36;--sage-d:#2A3F24;--sage-l:#E8EFE6;--sage-m:#6B8F62;
@@ -16,7 +16,7 @@
   --red:#8B3A3A;--red-l:#FFEBEE;
   --blue:#1A56A0;--blue-l:#E8F0FC;
   --font-h:'Cormorant Garamond',Georgia,serif;
-  --font-b:'Inter',sans-serif;
+  --font-b:'Plus Jakarta Sans',sans-serif;
   --r:8px;--shadow:0 2px 16px rgba(0,0,0,.08);
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -73,12 +73,14 @@ btn,button{font-family:var(--font-b);cursor:pointer}
 .form-group label{display:block;font-size:11px;font-weight:600;color:var(--mid);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
 .form-group input{width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:var(--r);font-size:14px;font-family:var(--font-b);transition:border .2s}
 .form-group input:focus{outline:none;border-color:var(--sage)}
-.btn-login{width:100%;padding:13px;background:var(--sage-d);color:#fff;border:none;border-radius:var(--r);font-size:14px;font-weight:600;letter-spacing:.5px;transition:background .2s}
+.btn-login{width:100%;padding:14px;background:var(--sage-d);color:#fff;border:none;border-radius:999px;font-size:14px;font-weight:600;letter-spacing:.3px;transition:transform .15s,background .2s}
+.btn-login:active{transform:scale(.98)}
 .btn-login:hover{background:var(--sage)}
 .login-err{color:var(--red);font-size:12px;text-align:center;margin-top:10px;display:none}
 .guest-divider{display:flex;align-items:center;gap:10px;margin:18px 0 14px;color:var(--light);font-size:11px}
 .guest-divider::before,.guest-divider::after{content:'';flex:1;height:1px;background:var(--border)}
-.btn-guest{width:100%;padding:12px;background:#fff;color:var(--sage-d);border:1.5px solid var(--sage);border-radius:var(--r);font-size:13px;font-weight:600;letter-spacing:.3px;transition:background .2s,color .2s}
+.btn-guest{width:100%;padding:12px;background:#fff;color:var(--sage-d);border:1.5px solid var(--sage);border-radius:999px;font-size:13px;font-weight:600;letter-spacing:.2px;transition:transform .15s,background .2s,color .2s}
+.btn-guest:active{transform:scale(.98)}
 .btn-guest:hover{background:var(--sage-l)}
 .login-footer{margin-top:20px;color:var(--light);font-size:11px;text-align:center;line-height:1.8}
 
@@ -109,25 +111,24 @@ btn,button{font-family:var(--font-b);cursor:pointer}
 .page-sub{font-size:12px;color:var(--mid);margin-bottom:20px}
 
 /* ═══ PRICE HERO BANNER (клиент/гость) ═══ */
-.price-hero{position:relative;overflow:hidden;border-radius:22px;margin-bottom:26px;
-  min-height:260px;display:flex;align-items:center;
+.price-hero{position:relative;overflow:hidden;margin:-20px -24px 22px;
+  min-height:270px;display:flex;align-items:center;
+  padding-left:24px;
   background:
-    radial-gradient(650px 380px at 78% 30%, var(--sage-l), transparent 65%),
-    linear-gradient(120deg,#F7F8F4 0%,#EDF1E8 100%);
-  border:1px solid var(--border)}
-.price-hero-text{position:relative;z-index:2;max-width:430px;padding:38px 40px}
+    radial-gradient(750px 420px at 80% 15%, var(--sage-l), transparent 62%),
+    linear-gradient(180deg,#F7F8F4 0%,#EEF2E9 60%,var(--bg) 100%)}
+.price-hero-text{position:relative;z-index:2;max-width:430px;padding:52px 16px 40px}
 .price-hero-eyebrow{font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--sage-m);font-weight:700;margin-bottom:12px}
 .price-hero-text h2{font-family:var(--font-h);font-weight:600;color:var(--sage-d);font-size:clamp(24px,3vw,34px);line-height:1.14;margin-bottom:12px}
 .price-hero-text h2 em{font-style:italic;color:var(--sage-m)}
 .price-hero-text p{font-size:13px;color:var(--mid);line-height:1.65;max-width:340px}
-.price-hero-img{position:absolute;right:-6px;bottom:-16px;width:330px;height:auto;z-index:1;
-  transition:filter .2s ease-out,transform .2s ease-out,opacity .2s ease-out;
-  filter:blur(0px);pointer-events:none;user-select:none}
+.price-hero-img{position:absolute;right:2%;bottom:-16px;width:320px;height:auto;z-index:1;
+  transition:filter .1s linear;
+  filter:blur(0px);pointer-events:none;user-select:none;will-change:transform,filter}
 html[data-theme="dark"] .price-hero{
   background:
-    radial-gradient(650px 380px at 78% 30%, rgba(78,155,111,.16), transparent 65%),
-    linear-gradient(120deg,#12211A 0%,#0E1712 100%);
-  border-color:var(--glass-brd)}
+    radial-gradient(750px 420px at 80% 15%, rgba(78,155,111,.16), transparent 62%),
+    linear-gradient(180deg,#12211A 0%,#0E1712 60%,var(--bg) 100%)}
 
 /* ═══ CONTROLS BAR ═══ */
 .ctrl-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
@@ -135,7 +136,7 @@ html[data-theme="dark"] .price-hero{
 .inp:focus{outline:none;border-color:var(--sage)}
 .inp-search{flex:1;min-width:180px}
 .inp-select{min-width:150px}
-.btn{padding:8px 16px;border-radius:var(--r);font-size:12px;font-weight:600;border:1.5px solid;cursor:pointer;white-space:nowrap;transition:all .15s;font-family:var(--font-b)}
+.btn{padding:9px 18px;border-radius:12px;font-size:12px;font-weight:600;border:1.5px solid;cursor:pointer;white-space:nowrap;transition:all .15s;font-family:var(--font-b)}
 .btn-primary{background:var(--sage-d);color:#fff;border-color:var(--sage-d)}.btn-primary:hover{background:var(--sage)}
 .btn-secondary{background:var(--sage-l);color:var(--sage-d);border-color:var(--sage)}.btn-secondary.on{background:var(--sage);color:#fff}
 .btn-gold{background:var(--gold);color:var(--sage-d);border-color:var(--gold)}.btn-gold:hover{background:#dbbf85}
@@ -237,7 +238,8 @@ td.L{text-align:left}
 
 /* add to order */
 .grade-sel{padding:4px 6px;border:1.5px solid var(--border);border-radius:5px;font-size:11px;background:#fff}
-.add-btn{background:var(--sage-d);color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .15s}
+.add-btn{background:var(--sage-d);color:#fff;border:none;border-radius:999px;padding:6px 14px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:transform .15s,background .15s}
+.add-btn:active{transform:scale(.96)}
 .add-btn:hover{background:var(--sage)}
 .add-btn.in-order{background:var(--gold);color:var(--sage-d)}
 
@@ -409,7 +411,7 @@ td.L{text-align:left}
   .login-hero .lead { margin-left: auto; margin-right: auto; margin-bottom: 0; font-size: 13px; }
   .login-badges { display: none; }
 
-  .price-hero { min-height: 0; border-radius: 16px; margin-bottom: 18px; }
+  .price-hero { min-height: 0; margin: -8px -12px 16px; border-radius: 0; }
   .price-hero-text { padding: 22px 20px; max-width: 100%; }
   .price-hero-text h2 { font-size: 21px; }
   .price-hero-text p { max-width: 220px; font-size: 12px; }
@@ -2101,16 +2103,24 @@ function initPriceHeroScrollEffect() {
   const img = document.getElementById('price-hero-img');
   if (!banner || !img) return;
   _priceHeroScrollBound = true;
-  const onScroll = () => {
+  let ticking = false;
+  const apply = () => {
+    ticking = false;
     const rect = banner.getBoundingClientRect();
+    // Как далеко баннер скрылся за верх экрана (0 — ещё виден целиком сверху)
     const scrolledPast = Math.max(0, -rect.top);
-    const progress = Math.min(1, scrolledPast / 220);
-    img.style.filter = `blur(${(progress * 10).toFixed(1)}px)`;
-    img.style.opacity = String((1 - progress * 0.4).toFixed(2));
-    img.style.transform = `translateY(${(progress * 16).toFixed(0)}px) scale(${(1 + progress * 0.05).toFixed(3)})`;
+    const progress = Math.min(1, scrolledPast / 300);
+    // Параллакс: картинка «отстаёт» от прокрутки страницы, а не едет с ней 1:1
+    const parallaxY = scrolledPast * 0.35;
+    img.style.filter = `blur(${(progress * 12).toFixed(1)}px)`;
+    img.style.opacity = String((1 - progress * 0.45).toFixed(2));
+    img.style.transform = `translateY(${parallaxY.toFixed(0)}px) scale(${(1 + progress * 0.06).toFixed(3)})`;
+  };
+  const onScroll = () => {
+    if (!ticking) { requestAnimationFrame(apply); ticking = true; }
   };
   window.addEventListener('scroll', onScroll, { passive: true });
-  onScroll();
+  apply();
 }
 
 // Текущий режим отображения прайса: 'cards' (карточки) или 'table' (таблица).
