@@ -3433,7 +3433,7 @@ function renderMyOrder() {
       const wgt = isWeightItem(snap) || itemWeightBased(item);
       const uR = wgt ? 'г' : 'ст';
       const mixLine = (snap.mix && snap.mix.length)
-        ? `<div style="font-size:10px;color:var(--sage-d)">🧺 ${snap.mix.map(c=>escHtml(c.ru)+' ×'+c.bunches).join(' · ')}</div>`
+        ? `<div style="font-size:10px;color:var(--sage-d)">🧺 ${snap.mix.map(c=>escHtml(c.ru)+(c.cn?' '+escHtml(c.cn):'')+' ×'+c.bunches).join(' · ')}</div>`
         : '';
       const customLine = snap.custom && !(parseFloat(item.price_per_box) > 0)
         ? `<div style="font-size:10px;font-weight:700;color:#92400e">❓ Цена согласуется менеджером / 价格待确认</div>`
@@ -4246,7 +4246,7 @@ function mgrRowHTML(item, i, id) {
     const specialBadge = snap.custom
       ? `<div style="font-size:9px;font-weight:700;color:#92400e;background:#fff7ed;border-radius:4px;padding:2px 6px;margin-top:3px;display:inline-block">❓ ВНЕ ПРАЙСА — проверьте наличие и установите цену / 询价商品</div>`
       : (snap.mix && snap.mix.length)
-        ? `<div style="font-size:9px;color:var(--sage-d);background:var(--sage-l);border-radius:4px;padding:2px 6px;margin-top:3px;display:inline-block">🧺 Состав короба: ${snap.mix.map(c=>escHtml(c.ru)+' ×'+c.bunches).join(' · ')}</div>`
+        ? `<div style="font-size:9px;color:var(--sage-d);background:var(--sage-l);border-radius:4px;padding:2px 6px;margin-top:3px;display:inline-block">🧺 Состав короба: ${snap.mix.map(c=>escHtml(c.ru)+(c.cn?' '+escHtml(c.cn):'')+' ×'+c.bunches).join(' · ')}</div>`
         : '';
     return `
     <tr class="${i%2?'stripe':''}" id="mgr-row-${i}" ${whPending?'style="background:#fff7ed"':''}>
@@ -8053,7 +8053,7 @@ async function loadWhPending() {
       const qty = parseInt(item.qty_boxes) || 1;
       const wgt = isWeightItem(item.flower_snapshot || {}) || itemWeightBased(item);
       const snapMix = (item.flower_snapshot?.mix && item.flower_snapshot.mix.length)
-        ? `<div style="font-size:10px;color:var(--sage-d);margin:2px 0">🧺 ${item.flower_snapshot.mix.map(c=>escHtml(c.ru)+' ×'+c.bunches).join(' · ')}</div>`
+        ? `<div style="font-size:10px;color:var(--sage-d);margin:2px 0">🧺 ${item.flower_snapshot.mix.map(c=>escHtml(c.ru)+(c.cn?' <b>'+escHtml(c.cn)+'</b>':'')+' ×'+c.bunches).join(' · ')}</div>`
         : '';
       window._whPendItems = window._whPendItems || {};
       window._whPendItems[item.id] = item;
