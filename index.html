@@ -787,12 +787,22 @@ document.addEventListener('DOMContentLoaded', function(){
           <button class="btn btn-secondary btn-sm" id="btn-photo-migrate" style="padding:3px 9px;font-size:11px" onclick="migratePhotosToStorage()" title="Перенести base64-фото из таблицы в Supabase Storage — разгружает прайс">📤 Фото → Storage</button>
         </span>
         <span class="btn btn-primary mgr-only" onclick="showAddFlowerModal()" id="btn-add-flower" style="display:none">+ Добавить цветок / 添加花材</span>
+        <span class="btn btn-secondary mgr-only" onclick="showCategoryManagerModal()" id="btn-manage-cats" style="display:none">🗂 Категории / 分类管理</span>
         <span style="font-size:11px;color:var(--light)" id="price-count"></span>
+      </div>
+      <div id="bulk-cat-bar" style="display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:300;
+          background:var(--sage-d);color:#fff;padding:10px 14px;border-radius:999px;box-shadow:0 10px 30px rgba(0,0,0,.25);
+          align-items:center;gap:10px;font-size:12px">
+        <span>Выбрано: <b id="bulk-cat-count">0</b></span>
+        <select class="inp" id="bulk-cat-select" style="padding:6px 10px;font-size:12px"></select>
+        <button class="btn btn-primary btn-sm" onclick="applyBulkCategoryMove()">Переместить / 移动</button>
+        <button class="btn-icon" style="background:transparent;border-color:rgba(255,255,255,.4);color:#fff" onclick="clearBulkSelection()">✕</button>
       </div>
       <div class="tbl-wrap" id="price-table-wrap">
         <table>
           <thead>
             <tr>
+              <th style="width:26px;display:none" id="bulk-col-th" class="mgr-only"></th>
               <th style="width:32px">№</th>
               <th style="width:60px">Фото<br><small style="opacity:.75;font-weight:400">图片/Photo</small></th>
               <th style="width:105px">Наличие<br><small style="opacity:.75;font-weight:400">库存/Stock</small></th>
@@ -1416,6 +1426,7 @@ async function initApp() {
     document.getElementById('btn-import-prices').style.display = 'inline-flex';
     document.getElementById('markup-controls').style.display = 'flex';
     document.getElementById('btn-add-flower').style.display = 'inline-flex';
+    document.getElementById('btn-manage-cats').style.display = 'inline-flex';
     loadClients();
   } else if (isWh) {
     tabs.innerHTML = `
@@ -2200,6 +2211,241 @@ async function migratePhotosToStorage() {
 // ══════════════════════════════════════════════════════════
 //  FLOWERS / PRICE LIST
 // ══════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+//  ПОРЯДОК КАТЕГОРИЙ ПРАЙСА (управляемый список, не просто текст на цветке)
+// ══════════════════════════════════════════════════════════
+let categoryOrder = []; // [{id, catalog, name_ru, name_en, sort_order}]
+
+async function loadCategoryOrder() {
+  const { data, error } = await sb.from('category_order').select('*').order('sort_order');
+  if (error) { categoryOrder = []; return; } // таблицы может ещё не быть — не ломаем прайс
+  categoryOrder = data || [];
+}
+
+// Сортирует глобальный flowers[] так, чтобы товары шли по заданному порядку категорий
+// (внутри каталога), а не как попало по id из базы. Категории, для которых порядок
+// не задан явно, уходят в конец списком по алфавиту — ничего не «теряется».
+function sortFlowersByCategoryOrder() {
+  const orderMap = {}; // `${catalog}::${name_ru}` -> sort_order
+  categoryOrder.forEach(c => { orderMap[`${c.catalog}::${c.name_ru}`] = c.sort_order; });
+  const rank = f => {
+    const key = `${flowerCatalog(f)}::${f.cat_ru || ''}`;
+    return orderMap.hasOwnProperty(key) ? orderMap[key] : 100000; // неизвестные категории — в конец
+  };
+  flowers.sort((a, b) => {
+    const rc = rank(a) - rank(b);
+    if (rc !== 0) return rc;
+    const cc = (a.cat_ru || '').localeCompare(b.cat_ru || '', 'ru');
+    if (cc !== 0) return cc;
+    return (a.ru || '').localeCompare(b.ru || '', 'ru');
+  });
+}
+
+// Полный список категорий каталога: и те, что уже используются на товарах,
+// и те, что заведены заранее в category_order, но пока пустые.
+function getCategoriesForCatalog(catalog) {
+  const used = [...new Set(flowers.filter(f => flowerCatalog(f) === catalog).map(f => f.cat_ru).filter(Boolean))];
+  const defined = categoryOrder.filter(c => c.catalog === catalog).map(c => c.name_ru);
+  const all = [...new Set([...defined, ...used])];
+  const orderMap = {};
+  categoryOrder.forEach(c => { if (c.catalog === catalog) orderMap[c.name_ru] = c.sort_order; });
+  all.sort((a, b) => {
+    const ra = orderMap.hasOwnProperty(a) ? orderMap[a] : 100000;
+    const rb = orderMap.hasOwnProperty(b) ? orderMap[b] : 100000;
+    if (ra !== rb) return ra - rb;
+    return a.localeCompare(b, 'ru');
+  });
+  return all;
+}
+
+// ── Менеджер категорий: переименование, порядок, добавление «пустых» категорий,
+//    массовое перемещение товаров между категориями ──
+function showCategoryManagerModal() {
+  const catalog = currentCatalog;
+  renderCategoryManagerBody(catalog);
+  openModal();
+}
+
+function renderCategoryManagerBody(catalog) {
+  const names = getCategoriesForCatalog(catalog);
+  const counts = {};
+  flowers.filter(f => flowerCatalog(f) === catalog).forEach(f => {
+    counts[f.cat_ru] = (counts[f.cat_ru] || 0) + 1;
+  });
+
+  const rows = names.map((name, idx) => {
+    const cnt = counts[name] || 0;
+    const defRow = categoryOrder.find(c => c.catalog === catalog && c.name_ru === name);
+    const nameEn = defRow?.name_en || (flowers.find(f => f.cat_ru === name)?.cat_en) || '';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border)">
+      <div style="display:flex;flex-direction:column;gap:1px">
+        <button class="btn-icon" style="padding:1px 6px;font-size:10px" ${idx===0?'disabled':''} onclick="moveCategoryOrder('${catalog}',${idx},-1)">▲</button>
+        <button class="btn-icon" style="padding:1px 6px;font-size:10px" ${idx===names.length-1?'disabled':''} onclick="moveCategoryOrder('${catalog}',${idx},1)">▼</button>
+      </div>
+      <div style="flex:1;min-width:0">
+        <input class="inp" style="width:100%;font-weight:600" value="${escHtml(name)}" id="cat-name-${idx}">
+        <input class="inp" style="width:100%;margin-top:3px;font-size:11px;color:var(--mid)" value="${escHtml(nameEn)}" id="cat-name-en-${idx}" placeholder="Название EN / 英文名称">
+      </div>
+      <span class="badge" style="background:var(--sage-l);color:var(--sage-d);white-space:nowrap">${cnt} тов.</span>
+      <button class="btn btn-secondary btn-sm" onclick="renameCategory('${catalog}','${escJs(name)}',${idx})">💾</button>
+      <button class="btn-icon" style="color:var(--red)" ${cnt>0?'disabled title="Сначала перенесите товары из категории"':''}
+        onclick="deleteCategory('${catalog}','${escJs(name)}')">🗑</button>
+    </div>`;
+  }).join('') || `<div style="padding:16px;color:var(--light);font-size:12px;text-align:center">Пока нет категорий / 暂无分类</div>`;
+
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">🗂 Категории — ${CATALOG_TITLES[catalog] || catalog} / 分类管理</div>
+    <div style="font-size:12px;color:var(--mid);margin-bottom:10px">
+      Стрелками меняется порядок показа в прайсе. Можно завести категорию заранее, даже без товаров.<br>
+      用箭头调整价格单中显示顺序，也可以提前创建空分类。
+    </div>
+    <div id="cat-mgr-list" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;margin-bottom:12px">
+      ${rows}
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Новая категория RU</label><input class="inp" id="cat-new-ru" placeholder="🌵 Суккуленты..."></div>
+      <div class="field"><label>Новая категория EN</label><input class="inp" id="cat-new-en" placeholder="Succulents..."></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:10px">
+      <button class="btn btn-secondary" onclick="addNewCategory('${catalog}')">+ Добавить категорию / 添加分类</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Закрыть / 关闭</button>
+    </div>`;
+}
+
+function escJs(s) { return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+
+async function addNewCategory(catalog) {
+  const ru = document.getElementById('cat-new-ru')?.value.trim();
+  const en = document.getElementById('cat-new-en')?.value.trim() || '';
+  if (!ru) { toast('Впишите название категории / 请填写分类名称'); return; }
+  const existing = getCategoriesForCatalog(catalog);
+  if (existing.includes(ru)) { toast('Такая категория уже есть / 该分类已存在'); return; }
+  const maxOrder = Math.max(0, ...categoryOrder.filter(c => c.catalog === catalog).map(c => c.sort_order));
+  const { error } = await sb.from('category_order').insert({ catalog, name_ru: ru, name_en: en, sort_order: maxOrder + 1 });
+  if (error) { toast('❌ Ошибка: ' + error.message + ' (выполнена ли миграция update_category_order.sql?)'); return; }
+  await loadCategoryOrder();
+  renderCategoryManagerBody(catalog);
+  toast('✅ Категория добавлена / 已添加分类');
+}
+
+async function moveCategoryOrder(catalog, idx, dir) {
+  const names = getCategoriesForCatalog(catalog);
+  const otherIdx = idx + dir;
+  if (otherIdx < 0 || otherIdx >= names.length) return;
+  const a = names[idx], b = names[otherIdx];
+
+  // Гарантируем, что у обеих категорий есть строка в category_order (могли быть только «текстом на товаре»)
+  async function ensureRow(name) {
+    let row = categoryOrder.find(c => c.catalog === catalog && c.name_ru === name);
+    if (!row) {
+      const maxOrder = Math.max(0, ...categoryOrder.filter(c => c.catalog === catalog).map(c => c.sort_order));
+      const en = flowers.find(f => f.cat_ru === name)?.cat_en || '';
+      const { data, error } = await sb.from('category_order').insert({ catalog, name_ru: name, name_en: en, sort_order: maxOrder + 1 }).select().single();
+      if (error || !data) { toast('❌ Таблица category_order не найдена — выполните миграцию update_category_order.sql'); return null; }
+      row = data;
+      categoryOrder.push(row);
+    }
+    return row;
+  }
+  const rowA = await ensureRow(a), rowB = await ensureRow(b);
+  if (!rowA || !rowB) return;
+  const soA = rowA.sort_order, soB = rowB.sort_order;
+  await sb.from('category_order').update({ sort_order: soB }).eq('id', rowA.id);
+  await sb.from('category_order').update({ sort_order: soA }).eq('id', rowB.id);
+  await loadCategoryOrder();
+  sortFlowersByCategoryOrder();
+  renderCategoryManagerBody(catalog);
+  renderPrice();
+}
+
+async function renameCategory(catalog, oldName, idx) {
+  const newName = document.getElementById(`cat-name-${idx}`)?.value.trim();
+  const newEn = document.getElementById(`cat-name-en-${idx}`)?.value.trim() || '';
+  if (!newName) { toast('Название не может быть пустым / 名称不能为空'); return; }
+
+  if (newName !== oldName) {
+    // Переименование задевает и сами товары (cat_ru — просто текст на flowers), и запись в category_order
+    const { error } = await sb.from('flowers').update({ cat_ru: newName, cat_en: newEn || undefined })
+      .eq('cat_ru', oldName);
+    if (error) { toast('❌ ' + error.message); return; }
+  } else {
+    await sb.from('flowers').update({ cat_en: newEn }).eq('cat_ru', oldName);
+  }
+
+  const row = categoryOrder.find(c => c.catalog === catalog && c.name_ru === oldName);
+  if (row) {
+    await sb.from('category_order').update({ name_ru: newName, name_en: newEn }).eq('id', row.id);
+  } else {
+    const maxOrder = Math.max(0, ...categoryOrder.filter(c => c.catalog === catalog).map(c => c.sort_order));
+    await sb.from('category_order').insert({ catalog, name_ru: newName, name_en: newEn, sort_order: maxOrder + 1 });
+  }
+
+  flowers.forEach(f => { if (f.cat_ru === oldName) { f.cat_ru = newName; if (newEn) f.cat_en = newEn; } });
+  await loadCategoryOrder();
+  sortFlowersByCategoryOrder();
+  renderCategoryManagerBody(catalog);
+  fillCatFilterForCatalog();
+  renderPrice();
+  toast('✅ Сохранено / 已保存');
+}
+
+async function deleteCategory(catalog, name) {
+  const cnt = flowers.filter(f => flowerCatalog(f) === catalog && f.cat_ru === name).length;
+  if (cnt > 0) { toast('В категории есть товары — сначала перенесите их / 该分类下还有商品'); return; }
+  const row = categoryOrder.find(c => c.catalog === catalog && c.name_ru === name);
+  if (row) await sb.from('category_order').delete().eq('id', row.id);
+  await loadCategoryOrder();
+  renderCategoryManagerBody(catalog);
+  fillCatFilterForCatalog();
+  toast('🗑 Категория удалена / 已删除分类');
+}
+
+// ── Массовое перемещение выбранных товаров в другую категорию ──
+let _bulkSelectedFlowerIds = new Set();
+
+function toggleBulkSelect(id, checked) {
+  id = parseInt(id);
+  if (checked) _bulkSelectedFlowerIds.add(id); else _bulkSelectedFlowerIds.delete(id);
+  updateBulkBar();
+}
+
+function clearBulkSelection() {
+  _bulkSelectedFlowerIds.clear();
+  document.querySelectorAll('.bulk-sel-cb').forEach(cb => cb.checked = false);
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulk-cat-bar');
+  if (!bar) return;
+  const n = _bulkSelectedFlowerIds.size;
+  if (!n) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  document.getElementById('bulk-cat-count').textContent = n;
+  const sel = document.getElementById('bulk-cat-select');
+  if (sel) {
+    const cats = getCategoriesForCatalog(currentCatalog);
+    sel.innerHTML = cats.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
+  }
+}
+
+async function applyBulkCategoryMove() {
+  const target = document.getElementById('bulk-cat-select')?.value;
+  if (!target) { toast('Выберите категорию / 请选择分类'); return; }
+  const ids = [..._bulkSelectedFlowerIds];
+  if (!ids.length) return;
+  const targetEn = categoryOrder.find(c => c.catalog === currentCatalog && c.name_ru === target)?.name_en
+    || flowers.find(f => f.cat_ru === target)?.cat_en || '';
+  const { error } = await sb.from('flowers').update({ cat_ru: target, cat_en: targetEn || undefined }).in('id', ids);
+  if (error) { toast('❌ ' + error.message); return; }
+  flowers.forEach(f => { if (ids.includes(f.id)) { f.cat_ru = target; if (targetEn) f.cat_en = targetEn; } });
+  sortFlowersByCategoryOrder();
+  clearBulkSelection();
+  fillCatFilterForCatalog();
+  renderPrice();
+  toast(`✅ Перемещено ${ids.length} поз. в «${target}» / 已移动`);
+}
+
 async function loadFlowers() {
   // Порционная загрузка: base64-фото делают таблицу тяжёлой,
   // один запрос select=* на всю таблицу падает с 500 (timeout/размер ответа)
@@ -2227,11 +2473,15 @@ async function loadFlowers() {
     if (data.length < CHUNK) break;
     from += CHUNK;
   }
+
+  await loadCategoryOrder();
+  sortFlowersByCategoryOrder();
+
   document.getElementById('price-updated').textContent =
     `Актуальные цены AMMA FLOWERS · Обновлено: ${localStorage.getItem('ammaPriceUpdated') || '—'}`;
 
   // Fill category filter (только текущий каталог)
-  const cats = [...new Set(flowers.filter(f => flowerCatalog(f) === currentCatalog).map(f => f.cat_ru))];
+  const cats = getCategoriesForCatalog(currentCatalog);
   const sel = document.getElementById('cat-filter');
   sel.innerHTML = '<option value="">Все категории / 所有类别</option>';
   cats.forEach(c => {
@@ -2356,6 +2606,7 @@ let currentCatalog = 'cut';   // 🌸 cut | 🪴 potted | 📦 supplies
 function flowerCatalog(f) { return f?.catalog || 'cut'; }
 function switchCatalog(cat, btn) {
   currentCatalog = cat;
+  clearBulkSelection();
   document.querySelectorAll('#catalog-tabs .wh-tab').forEach(b => b.classList.toggle('active', b === btn));
   const note = document.getElementById('catalog-dev-note');
   if (note) note.style.display = cat === 'cut' ? 'none' : 'block';
@@ -2365,7 +2616,7 @@ function switchCatalog(cat, btn) {
 function fillCatFilterForCatalog() {
   const sel = document.getElementById('cat-filter');
   if (!sel) return;
-  const cats = [...new Set(flowers.filter(f => flowerCatalog(f) === currentCatalog).map(f => f.cat_ru).filter(Boolean))];
+  const cats = getCategoriesForCatalog(currentCatalog);
   sel.innerHTML = '<option value="">Все категории</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
 }
 
@@ -2488,6 +2739,8 @@ function renderPriceTable() {
   const isGuest = currentUser?.role === 'guest';
   const tbody = document.getElementById('price-tbody');
   tbody.innerHTML = '';
+  const bulkColTh = document.getElementById('bulk-col-th');
+  if (bulkColTh) bulkColTh.style.display = isMgr ? 'table-cell' : 'none';
   const list = getFilteredFlowers();
   let vis = 0, lastCat = null, row = 0;
 
@@ -2556,7 +2809,11 @@ function renderPriceTable() {
     const tr = document.createElement('tr');
     if (even) tr.classList.add('stripe');
     if (!inStock) tr.classList.add('out');
+    const bulkCell = isMgr
+      ? `<td style="text-align:center"><input type="checkbox" class="bulk-sel-cb" ${_bulkSelectedFlowerIds.has(f.id)?'checked':''} onchange="toggleBulkSelect(${f.id},this.checked)"></td>`
+      : '';
     tr.innerHTML = `
+      ${bulkCell}
       <td style="color:var(--light);font-size:10px">${f.id}</td>
       <td>${imgH}</td>
       <td class="sc">${stockCell}</td>
@@ -2714,7 +2971,7 @@ function showFlowerDetailModal(id) {
 //  MANAGER: ADD NEW FLOWER TO PRICE LIST
 // ══════════════════════════════════════════════════════════
 function showAddFlowerModal() {
-  const cats = [...new Set(flowers.map(f => f.cat_ru))];
+  const cats = getCategoriesForCatalog(currentCatalog);
   const catOptions = cats.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('modal-content').innerHTML = `
     <div class="modal-title">+ Новый цветок / 添加新花材</div>
@@ -2874,7 +3131,7 @@ async function addNewFlower() {
 function showEditFlowerModal(flowerId) {
   const f = flowers.find(x => x.id === flowerId);
   if (!f) return;
-  const cats = [...new Set(flowers.map(fl => fl.cat_ru))];
+  const cats = getCategoriesForCatalog(flowerCatalog(f));
   const catOptions = cats.map(c => `<option value="${c}" ${c===f.cat_ru?'selected':''}>${c}</option>`).join('');
   document.getElementById('modal-content').innerHTML = `
     <div class="modal-title">✏️ Редактировать: ${f.ru}</div>
