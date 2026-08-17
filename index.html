@@ -4001,6 +4001,64 @@ async function translateToRu(text) {
   } catch (e) { return ''; }
 }
 
+// ── Геокодирование и расчёт расстояния «точка трекера → пункт назначения» ──
+// Геокодер: Nominatim (OpenStreetMap), бесплатный, без ключа. Для расстояния сначала
+// пробуем реальный автомобильный маршрут через OSRM (бесплатный демо-сервер), если он
+// недоступен — считаем по прямой (по дуге большого круга) и честно так и подписываем.
+let _geoCache = {};
+
+async function geocode(query) {
+  if (!query) return null;
+  if (_geoCache[query] !== undefined) return _geoCache[query];
+  try {
+    const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`, {
+      headers: { 'Accept-Language': 'ru' },
+    });
+    const data = await resp.json();
+    const point = data?.[0] ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) } : null;
+    _geoCache[query] = point;
+    return point;
+  } catch (e) { _geoCache[query] = null; return null; }
+}
+
+function haversineKm(a, b) {
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLon = (b.lon - a.lon) * Math.PI / 180;
+  const s = Math.sin(dLat/2)**2 + Math.cos(a.lat*Math.PI/180) * Math.cos(b.lat*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1-s));
+}
+
+async function routeKm(a, b) {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=false`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    const meters = data?.routes?.[0]?.distance;
+    if (typeof meters === 'number') return meters / 1000;
+    return null;
+  } catch (e) { return null; }
+}
+
+// Из строки маршрута отгрузки («Куньмин → Алматы → Москва») достаёт конечный пункт
+function extractDestination(direction) {
+  if (!direction) return '';
+  const parts = direction.split(/→|->|-{1,2}>/).map(s => s.trim()).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : direction.trim();
+}
+
+// Считает расстояние от текущей локации (текст адреса) до конечного пункта отгрузки.
+// Возвращает {km, method: 'route'|'straight', destName} или null, если не удалось геокодировать.
+async function calcRemainingKm(fromText, direction) {
+  const destName = extractDestination(direction);
+  if (!fromText || !destName) return null;
+  const [from, to] = await Promise.all([geocode(fromText), geocode(destName)]);
+  if (!from || !to) return null;
+  const route = await routeKm(from, to);
+  if (route != null) return { km: route, method: 'route', destName };
+  return { km: haversineKm(from, to), method: 'straight', destName };
+}
+
 async function _doTranslateField(srcId, cnId) {
   const srcEl = document.getElementById(srcId);
   const cnEl = document.getElementById(cnId);
@@ -11773,8 +11831,9 @@ async function renderTracking() {
           ? `${escHtml(meta.locationRu)}<div style="color:var(--light);font-size:9px">${escHtml(meta.location||'')}</div>`
           : escHtml(meta.location || meta.digestRu || meta.digest || '');
         const destLabel = meta.destNameRu || meta.destName || '';
+        const methodNote = meta.distMethod === 'route' ? ' (по дорогам)' : meta.distMethod === 'straight' ? ' (по прямой)' : '';
         const distCell = (meta.distBorder || meta.distDest)
-          ? `${escHtml(meta.distBorder||'')}${meta.distDest?' · осталось до '+escHtml(destLabel)+': '+escHtml(meta.distDest):''}`
+          ? `${escHtml(meta.distBorder||'')}${meta.distDest?' · осталось до '+escHtml(destLabel)+': '+escHtml(meta.distDest)+methodNote:''}`
           : (meta.mileageTotal ? `Пройдено: ${escHtml(meta.mileageTotal)}` : '');
         return `<tr>
           <td style="font-size:10px;text-align:center;white-space:nowrap">${dt}</td>
@@ -12041,6 +12100,7 @@ function renderGpsPreview(parsed) {
         : (r.distBorder ? escHtml(r.distBorder) : '');
       const mileageLine = r.mileageTotal
         ? `Пройдено (общий пробег): ${escHtml(r.mileageTotal)}` : '';
+      const humidityLine = r.humidity ? `Влажность: ${escHtml(r.humidity)}` : '';
       const extraLine = r.extra
         ? `❓ Поле «${escHtml(r.extra)}» — назначение неизвестно` : '';
       const subLine = (r.tractor || r.trailer)
@@ -12051,11 +12111,12 @@ function renderGpsPreview(parsed) {
           <b style="font-size:12px">🚚 ${escHtml(label)}</b>
           <span style="font-size:11px;color:var(--mid)"> · ${metaLine}</span>
           ${remainLine ? `<div style="font-size:10.5px;color:var(--sage-d);margin-top:1px">📍 ${remainLine}</div>` : ''}
-          ${mileageLine ? `<div style="font-size:10px;color:var(--mid)">${mileageLine}${r.humidity ? ' · Влажность: ' + escHtml(r.humidity) : ''}</div>` : ''}
+          <div id="gps-dist-${i}" style="font-size:10.5px;color:var(--sage-d)"></div>
+          ${mileageLine || humidityLine ? `<div style="font-size:10px;color:var(--mid)">${[mileageLine, humidityLine].filter(Boolean).join(' · ')}</div>` : ''}
           ${extraLine ? `<div style="font-size:9.5px;color:var(--light)">${extraLine}</div>` : ''}
           <div style="font-size:10px;color:var(--light)">${subLine}</div>
         </div>
-        <select class="inp" id="gps-map-${i}" style="width:220px;font-size:11px">
+        <select class="inp" id="gps-map-${i}" style="width:220px;font-size:11px" onchange="onGpsShipmentSelected(${i})">
           <option value="">— не сохранять / 不保存 —</option>
           ${shpOptions}
         </select>
@@ -12070,8 +12131,34 @@ function renderGpsPreview(parsed) {
     const sel = document.getElementById(`gps-map-${i}`);
     if (sel && savedMap[r.truckNo] && [...sel.options].some(o => o.value === savedMap[r.truckNo])) {
       sel.value = savedMap[r.truckNo];
+      onGpsShipmentSelected(i); // сразу считаем расстояние, раз отгрузка уже угадана
     }
   });
+}
+
+// При выборе/смене отгрузки для строки — автоматически считаем расстояние
+// от текущей точки трекера до конечного пункта маршрута этой отгрузки.
+async function onGpsShipmentSelected(i) {
+  const r = (window._gpsParsed || [])[i];
+  const sel = document.getElementById(`gps-map-${i}`);
+  const box = document.getElementById(`gps-dist-${i}`);
+  if (!r || !sel || !box) return;
+  const shipmentId = sel.value ? parseInt(sel.value) : null;
+  if (!shipmentId) { box.textContent = ''; r.calcDist = null; return; }
+  const shp = (shipmentsData || []).find(s => s.id === shipmentId);
+  if (!shp?.direction) { box.textContent = ''; r.calcDist = null; return; }
+  if (!r.location) { box.innerHTML = '<span style="color:var(--light)">Нет локации для расчёта расстояния / 无位置数据</span>'; r.calcDist = null; return; }
+
+  box.innerHTML = '⏳ Считаем расстояние по карте... / 计算中...';
+  const res = await calcRemainingKm(r.location, shp.direction);
+  if (!res) {
+    box.innerHTML = '<span style="color:var(--light)">Не удалось определить координаты для расчёта / 无法计算距离</span>';
+    r.calcDist = null;
+    return;
+  }
+  r.calcDist = res;
+  const methodNote = res.method === 'route' ? 'по дорогам' : 'по прямой, ≈';
+  box.innerHTML = `📍 Осталось до ${escHtml(res.destName)}: <b>${res.km.toFixed(0)} км</b> <span style="color:var(--light);font-weight:400">(${methodNote})</span>`;
 }
 
 async function saveGpsReport() {
@@ -12087,9 +12174,15 @@ async function saveGpsReport() {
     if (!shipmentId) { skipped++; continue; }
 
     savedMap[r.truckNo] = String(shipmentId);
+    // Если расстояние посчиталось автоматически (по карте, от текущей точки до пункта
+    // назначения этой отгрузки) — оно точнее и актуальнее того, что могло быть в тексте отчёта
+    const distDest = r.calcDist ? `${r.calcDist.km.toFixed(0)} км` : r.distDest;
+    const destName = r.calcDist ? r.calcDist.destName : r.destName;
+    const distMethod = r.calcDist ? r.calcDist.method : null;
     const meta = {
       location: r.location, locationRu: r.locationRu, humidity: r.humidity, distBorder: r.distBorder,
-      distDest: r.distDest, destName: r.destName, destNameRu: r.destNameRu, eta: r.eta,
+      distDest, destName, destNameRu: r.calcDist ? '' : r.destNameRu, distMethod,
+      distDestOriginal: r.distDest || null, eta: r.eta,
       mileageWindow: r.mileageWindow, mileageValue: r.mileageValue,
       tractor: r.tractor, trailer: r.trailer, truckNo: r.truckNo, refs: r.refs,
       digest: r.digest, digestRu: r.digestRu, expiry: r.expiry,
