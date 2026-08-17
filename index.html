@@ -11820,7 +11820,7 @@ async function delTrackRow(id) {
 // Разбирает блок текста вида «🚚 21号车 (709, 708) – 鲜切花 (出发日期：08.11) ...»
 // на массив объектов по каждой машине. Формат жёстко завязан на конкретный
 // личный кабинет трекинга — если поставщик поменяет формат отчёта, потребуется поправить регулярки.
-function parseGpsReport(text) {
+function parseDispatcherFormat(text) {
   const blocks = text.split(/(?=🚚)/).map(b => b.trim()).filter(Boolean);
   return blocks.map(block => {
     const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
@@ -11834,7 +11834,7 @@ function parseGpsReport(text) {
       departDate: hm ? hm[4] : '',
       tractor: '', trailer: '', location: '', temp: '', humidity: '',
       distBorder: '', distDest: '', destName: '', reportTime: '',
-      mileageWindow: '', mileageValue: '', eta: '',
+      mileageWindow: '', mileageValue: '', eta: '', digest: '', expiry: '',
     };
     lines.slice(1).forEach(line => {
       let m;
@@ -11853,13 +11853,69 @@ function parseGpsReport(text) {
   }).filter(r => r.truckNo); // отбрасываем мусор, где не распознался заголовок
 }
 
+// Разбирает кусок, скопированный прямо из таблицы «最新数据» на сайте трекинга —
+// без вёрстки, просто плоский текст ячеек подряд. Пример:
+//   鲜花708 2026-08-17 09:22:07
+//   2026-10-09 07:16:26
+//   例行上报
+//   2.9°C
+// Строка «метка + дата-время» начинает новую запись; дальше по паттерну строки
+// раскладываются на срок обслуживания / текст сводки / температуру.
+function parseTableFormat(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const startRe = /^(.+?)\s+(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}(?::\d{2})?)$/;
+  const dateOnlyRe = /^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}(?::\d{2})?$/;
+  const tempRe = /-?[\d.]+\s*[°℃]/;
+
+  const records = [];
+  let cur = null;
+  lines.forEach(line => {
+    const sm = line.match(startRe);
+    if (sm && !dateOnlyRe.test(line)) {
+      if (cur) records.push(cur);
+      cur = {
+        raw: line, truckNo: sm[1], refs: [], cargo: '', departDate: '',
+        tractor: '', trailer: '', location: '', temp: '', humidity: '',
+        distBorder: '', distDest: '', destName: '', reportTime: sm[2],
+        mileageWindow: '', mileageValue: '', eta: '', digest: '', expiry: '',
+      };
+      return;
+    }
+    if (!cur) return; // мусор до первой распознанной записи — пропускаем
+    if (dateOnlyRe.test(line)) { cur.expiry = line; return; }
+    if (tempRe.test(line)) { cur.temp = line; return; }
+    cur.digest = cur.digest ? cur.digest + ' ' + line : line;
+  });
+  if (cur) records.push(cur);
+  return records;
+}
+
+// Единая точка входа: сначала пробуем «диспетчерский» формат (с 🚚), если не нашли —
+// пробуем формат таблицы сайта (метка + время подряд, без эмодзи).
+function parseGpsReport(text) {
+  if (/🚚/.test(text)) {
+    const r = parseDispatcherFormat(text);
+    if (r.length) return r;
+  }
+  return parseTableFormat(text);
+}
+
 // «08-17（09:22）» → ISO-дата (год берём текущий — отчёты почти всегда «на сегодня»)
+// Понимает и «MM-DD（HH:MM）» (диспетчерский формат, год берём текущий),
+// и полный «YYYY-MM-DD HH:MM:SS» (формат таблицы сайта, год уже есть в самой строке).
 function parseGpsDateTime(str) {
-  const m = (str || '').match(/(\d{1,2})-(\d{1,2}).*?(\d{1,2}):(\d{2})/);
-  if (!m) return new Date().toISOString();
-  const [, mo, da, hh, mi] = m;
-  const now = new Date();
-  return new Date(now.getFullYear(), parseInt(mo) - 1, parseInt(da), parseInt(hh), parseInt(mi)).toISOString();
+  str = str || '';
+  const full = str.match(/(\d{4})-(\d{1,2})-(\d{1,2})[^\d]+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (full) {
+    const [, yyyy, mo, da, hh, mi, ss] = full;
+    return new Date(parseInt(yyyy), parseInt(mo) - 1, parseInt(da), parseInt(hh), parseInt(mi), parseInt(ss || '0')).toISOString();
+  }
+  const short = str.match(/(\d{1,2})-(\d{1,2})[^\d]+(\d{1,2}):(\d{2})/);
+  if (short) {
+    const [, mo, da, hh, mi] = short;
+    return new Date(new Date().getFullYear(), parseInt(mo) - 1, parseInt(da), parseInt(hh), parseInt(mi)).toISOString();
+  }
+  return new Date().toISOString();
 }
 
 // Первое число из «3.2 / 3.1 ℃» → 3.2 (для temp_c; полностью строка сохраняется в note)
@@ -11910,11 +11966,18 @@ function parseAndPreviewGps() {
   prev.innerHTML = `<div style="font-size:12px;font-weight:700;margin-bottom:8px">Найдено машин: ${parsed.length} — сопоставьте с отгрузками / 匹配车次:</div>` +
     parsed.map((r, i) => {
       const preselect = savedMap[r.truckNo] || '';
+      const label = /^\d+$/.test(r.truckNo) ? `${r.truckNo}号车` : r.truckNo;
+      const metaLine = r.location
+        ? `${escHtml(r.location)} · ${r.temp ? escHtml(r.temp) : 'нет данных темп.'}`
+        : `${r.temp ? escHtml(r.temp) : 'нет данных темп.'}${r.digest ? ' · ' + escHtml(r.digest) : ''}`;
+      const subLine = (r.tractor || r.trailer)
+        ? `${escHtml(r.tractor)} / ${escHtml(r.trailer)} · ETA: ${escHtml(r.eta||'—')}`
+        : `Время: ${escHtml(r.reportTime||'—')}${r.expiry ? ' · Обслуживание до: ' + escHtml(r.expiry) : ''}`;
       return `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
         <div style="flex:1;min-width:0">
-          <b style="font-size:12px">🚚 ${r.truckNo}号车</b>
-          <span style="font-size:11px;color:var(--mid)"> · ${escHtml(r.location||'—')} · ${r.temp?escHtml(r.temp)+'℃':'нет данных темп.'}</span>
-          <div style="font-size:10px;color:var(--light)">${escHtml(r.tractor)} / ${escHtml(r.trailer)} · ETA: ${escHtml(r.eta||'—')}</div>
+          <b style="font-size:12px">🚚 ${escHtml(label)}</b>
+          <span style="font-size:11px;color:var(--mid)"> · ${metaLine}</span>
+          <div style="font-size:10px;color:var(--light)">${subLine}</div>
         </div>
         <select class="inp" id="gps-map-${i}" style="width:220px;font-size:11px">
           <option value="">— не сохранять / 不保存 —</option>
@@ -11953,6 +12016,7 @@ async function saveGpsReport() {
       distDest: r.distDest, destName: r.destName, eta: r.eta,
       mileageWindow: r.mileageWindow, mileageValue: r.mileageValue,
       tractor: r.tractor, trailer: r.trailer, truckNo: r.truckNo, refs: r.refs,
+      digest: r.digest, expiry: r.expiry,
     };
     const { error } = await sb.from('shipment_tracking').insert({
       shipment_id: shipmentId, kind: 'gps',
