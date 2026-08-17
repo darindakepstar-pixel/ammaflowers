@@ -3989,6 +3989,18 @@ async function translateToZh(text) {
   } catch (e) { return ''; }
 }
 
+// Обратный перевод, китайский → русский (для GPS-отчётов и прочих китайских текстов из сторонних систем)
+async function translateToRu(text) {
+  if (!text) return '';
+  try {
+    const resp = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=zh-CN|ru`);
+    const data = await resp.json();
+    const t = data?.responseData?.translatedText;
+    if (t && !/MYMEMORY WARNING/i.test(t)) return t;
+    return '';
+  } catch (e) { return ''; }
+}
+
 async function _doTranslateField(srcId, cnId) {
   const srcEl = document.getElementById(srcId);
   const cnEl = document.getElementById(cnId);
@@ -11756,11 +11768,19 @@ async function renderTracking() {
       ${gps.map(r => {
         const dt = new Date(r.happened_at).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
         let meta = {}; try { meta = JSON.parse(r.note || '{}'); } catch(e) {}
+        const locTranslated = meta.locationRu && meta.locationRu !== meta.location;
+        const locText = locTranslated
+          ? `${escHtml(meta.locationRu)}<div style="color:var(--light);font-size:9px">${escHtml(meta.location||'')}</div>`
+          : escHtml(meta.location || meta.digestRu || meta.digest || '');
+        const destLabel = meta.destNameRu || meta.destName || '';
+        const distCell = (meta.distBorder || meta.distDest)
+          ? `${escHtml(meta.distBorder||'')}${meta.distDest?' · осталось до '+escHtml(destLabel)+': '+escHtml(meta.distDest):''}`
+          : (meta.mileageTotal ? `Пройдено: ${escHtml(meta.mileageTotal)}` : '');
         return `<tr>
           <td style="font-size:10px;text-align:center;white-space:nowrap">${dt}</td>
-          <td class="L" style="font-size:10px">${escHtml(meta.location||'')}</td>
+          <td class="L" style="font-size:10px">${locText}</td>
           <td style="font-size:10px;text-align:center;white-space:nowrap">${r.temp_c!=null?r.temp_c+'°':''}${meta.humidity?' · '+escHtml(meta.humidity):''}</td>
-          <td class="L" style="font-size:10px;white-space:nowrap">${escHtml(meta.distBorder||'')}${meta.distDest?' · '+escHtml(meta.destName||'')+': '+escHtml(meta.distDest):''}</td>
+          <td class="L" style="font-size:10px;white-space:nowrap">${distCell}</td>
           <td class="L" style="font-size:10px;white-space:nowrap">${escHtml(meta.eta||'')}</td>
           <td>${isMgrLocal ? `<button class="rbtn" onclick="delTrackRow(${r.id})">×</button>` : ''}</td>
         </tr>`;
@@ -11853,19 +11873,34 @@ function parseDispatcherFormat(text) {
   }).filter(r => r.truckNo); // отбрасываем мусор, где не распознался заголовок
 }
 
-// Разбирает кусок, скопированный прямо из таблицы «最新数据» на сайте трекинга —
-// без вёрстки, просто плоский текст ячеек подряд. Пример:
+// Разбирает кусок, скопированный прямо из таблицы/карточки объекта на сайте трекинга —
+// без вёрстки, просто плоский текст ячеек подряд. Понимает как совсем короткий вариант:
 //   鲜花708 2026-08-17 09:22:07
 //   2026-10-09 07:16:26
 //   例行上报
 //   2.9°C
-// Строка «метка + дата-время» начинает новую запись; дальше по паттерну строки
-// раскладываются на срок обслуживания / текст сводки / температуру.
+// так и более полный (со страницы «位置服务» и т.п.), где после температуры идут ещё
+// влажность, пробег, служебные прочерки и адрес локации:
+//   862606278001102 2026-08-17 09:22:07
+//   2026-10-09 07:16:26
+//   Регулярная отчетность
+//   13.9℃
+//   90.0%
+//   6202.38КМ
+//   --
+//   ФУНТОВ*
+//   Атбасарский район, Акмолинская область, Казахстан
+// Строка «метка + дата-время» начинает новую запись; дальше строки раскладываются
+// по паттерну (дата → срок обслуживания, число+℃ → температура, число+% → влажность,
+// число+КМ → пробег, «--» пропускается, последняя оставшаяся текстовая строка — адрес).
 function parseTableFormat(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const startRe = /^(.+?)\s+(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}(?::\d{2})?)$/;
   const dateOnlyRe = /^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}(?::\d{2})?$/;
   const tempRe = /-?[\d.]+\s*[°℃]/;
+  const humidityRe = /^[\d.]+\s*%$/;
+  const mileageRe = /^[\d.]+\s*(КМ|км|公里|KM)$/i;
+  const placeholderRe = /^-+$/;
 
   const records = [];
   let cur = null;
@@ -11877,14 +11912,20 @@ function parseTableFormat(text) {
         raw: line, truckNo: sm[1], refs: [], cargo: '', departDate: '',
         tractor: '', trailer: '', location: '', temp: '', humidity: '',
         distBorder: '', distDest: '', destName: '', reportTime: sm[2],
-        mileageWindow: '', mileageValue: '', eta: '', digest: '', expiry: '',
+        mileageWindow: '', mileageValue: '', mileageTotal: '', extra: '',
+        eta: '', digest: '', expiry: '',
       };
       return;
     }
     if (!cur) return; // мусор до первой распознанной записи — пропускаем
     if (dateOnlyRe.test(line)) { cur.expiry = line; return; }
     if (tempRe.test(line)) { cur.temp = line; return; }
-    cur.digest = cur.digest ? cur.digest + ' ' + line : line;
+    if (humidityRe.test(line)) { cur.humidity = line; return; }
+    if (mileageRe.test(line)) { cur.mileageTotal = line; return; }
+    if (placeholderRe.test(line)) { return; } // «--» — пустое поле, пропускаем
+    if (!cur.digest) { cur.digest = line; return; }
+    if (/\*$/.test(line) && !cur.extra) { cur.extra = line; return; } // «ФУНТОВ*» и подобное — назначение не ясно, сохраняем как есть
+    cur.location = line; // последняя оставшаяся текстовая строка записи — адрес
   });
   if (cur) records.push(cur);
   return records;
@@ -11943,7 +11984,7 @@ function showGpsReportModal() {
   openModal();
 }
 
-function parseAndPreviewGps() {
+async function parseAndPreviewGps() {
   const text = document.getElementById('gps-raw-text')?.value || '';
   const parsed = parseGpsReport(text);
   const prev = document.getElementById('gps-preview');
@@ -11952,9 +11993,30 @@ function parseAndPreviewGps() {
     return;
   }
   window._gpsParsed = parsed;
+  prev.innerHTML = `<div style="font-size:12px;color:var(--mid)">⏳ Переводим локации на русский... / 翻译中...</div>`;
 
-  // Запоминаем сопоставление "номер машины у перевозчика" → "наша отгрузка" в localStorage,
-  // чтобы в следующий раз не выбирать заново
+  // Переводим только то, что реально на китайском — если сайт уже отдал текст на русском
+  // (бывает, если у поставщика переключён интерфейс), лишний раз не дёргаем переводчик
+  const hasCjk = s => /[\u4e00-\u9fff]/.test(s || '');
+  const toTranslate = new Set();
+  parsed.forEach(r => {
+    [r.location, r.digest, r.cargo, r.destName].forEach(v => { if (hasCjk(v)) toTranslate.add(v); });
+  });
+  const ruMap = {};
+  await Promise.all([...toTranslate].map(async txt => { ruMap[txt] = await translateToRu(txt); }));
+  parsed.forEach(r => {
+    const ru = v => v ? (ruMap[v] || (hasCjk(v) ? '' : v)) : '';
+    r.locationRu = ru(r.location);
+    r.digestRu = ru(r.digest);
+    r.cargoRu = ru(r.cargo);
+    r.destNameRu = ru(r.destName);
+  });
+
+  renderGpsPreview(parsed);
+}
+
+function renderGpsPreview(parsed) {
+  const prev = document.getElementById('gps-preview');
   let savedMap = {};
   try { savedMap = JSON.parse(localStorage.getItem('amma-gps-truck-map') || '{}'); } catch (e) {}
 
@@ -11965,11 +12027,22 @@ function parseAndPreviewGps() {
 
   prev.innerHTML = `<div style="font-size:12px;font-weight:700;margin-bottom:8px">Найдено машин: ${parsed.length} — сопоставьте с отгрузками / 匹配车次:</div>` +
     parsed.map((r, i) => {
-      const preselect = savedMap[r.truckNo] || '';
       const label = /^\d+$/.test(r.truckNo) ? `${r.truckNo}号车` : r.truckNo;
-      const metaLine = r.location
-        ? `${escHtml(r.location)} · ${r.temp ? escHtml(r.temp) : 'нет данных темп.'}`
-        : `${r.temp ? escHtml(r.temp) : 'нет данных темп.'}${r.digest ? ' · ' + escHtml(r.digest) : ''}`;
+      const locTranslated = r.locationRu && r.locationRu !== r.location;
+      const locationShown = r.location
+        ? `${locTranslated ? escHtml(r.locationRu) : escHtml(r.location)}${locTranslated ? ` <span style="color:var(--light)">(${escHtml(r.location)})</span>` : ''}`
+        : '';
+      const metaLine = locationShown
+        ? `${locationShown} · ${r.temp ? escHtml(r.temp) : 'нет данных темп.'}`
+        : `${r.temp ? escHtml(r.temp) : 'нет данных темп.'}${r.digestRu ? ' · ' + escHtml(r.digestRu) : (r.digest ? ' · ' + escHtml(r.digest) : '')}`;
+      // Остаток пути — берём то, что реально распарсилось: либо явное "до цели", либо считаем от "до границы"
+      const remainLine = r.distDest
+        ? `Осталось до ${r.destNameRu ? escHtml(r.destNameRu) : escHtml(r.destName||'цели')}: <b>${escHtml(r.distDest)}</b>${r.distBorder ? ' · ' + escHtml(r.distBorder) : ''}`
+        : (r.distBorder ? escHtml(r.distBorder) : '');
+      const mileageLine = r.mileageTotal
+        ? `Пройдено (общий пробег): ${escHtml(r.mileageTotal)}` : '';
+      const extraLine = r.extra
+        ? `❓ Поле «${escHtml(r.extra)}» — назначение неизвестно` : '';
       const subLine = (r.tractor || r.trailer)
         ? `${escHtml(r.tractor)} / ${escHtml(r.trailer)} · ETA: ${escHtml(r.eta||'—')}`
         : `Время: ${escHtml(r.reportTime||'—')}${r.expiry ? ' · Обслуживание до: ' + escHtml(r.expiry) : ''}`;
@@ -11977,6 +12050,9 @@ function parseAndPreviewGps() {
         <div style="flex:1;min-width:0">
           <b style="font-size:12px">🚚 ${escHtml(label)}</b>
           <span style="font-size:11px;color:var(--mid)"> · ${metaLine}</span>
+          ${remainLine ? `<div style="font-size:10.5px;color:var(--sage-d);margin-top:1px">📍 ${remainLine}</div>` : ''}
+          ${mileageLine ? `<div style="font-size:10px;color:var(--mid)">${mileageLine}${r.humidity ? ' · Влажность: ' + escHtml(r.humidity) : ''}</div>` : ''}
+          ${extraLine ? `<div style="font-size:9.5px;color:var(--light)">${extraLine}</div>` : ''}
           <div style="font-size:10px;color:var(--light)">${subLine}</div>
         </div>
         <select class="inp" id="gps-map-${i}" style="width:220px;font-size:11px">
@@ -12012,11 +12088,12 @@ async function saveGpsReport() {
 
     savedMap[r.truckNo] = String(shipmentId);
     const meta = {
-      location: r.location, humidity: r.humidity, distBorder: r.distBorder,
-      distDest: r.distDest, destName: r.destName, eta: r.eta,
+      location: r.location, locationRu: r.locationRu, humidity: r.humidity, distBorder: r.distBorder,
+      distDest: r.distDest, destName: r.destName, destNameRu: r.destNameRu, eta: r.eta,
       mileageWindow: r.mileageWindow, mileageValue: r.mileageValue,
       tractor: r.tractor, trailer: r.trailer, truckNo: r.truckNo, refs: r.refs,
-      digest: r.digest, expiry: r.expiry,
+      digest: r.digest, digestRu: r.digestRu, expiry: r.expiry,
+      mileageTotal: r.mileageTotal, extra: r.extra,
     };
     const { error } = await sb.from('shipment_tracking').insert({
       shipment_id: shipmentId, kind: 'gps',
