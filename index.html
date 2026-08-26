@@ -12628,7 +12628,7 @@ const CATALOG_FILE_LABELS = { cut: 'Срезы', potted: 'Горшечные', s
 const CATALOG_TITLES = { cut: 'Fresh Cut / 鲜切花', potted: 'Potted Plants / 绿植盆栽', supplies: 'Supplies / 包装辅材' };
 
 async function exportPriceExcel() {
-  const list = flowers.filter(f => flowerCatalog(f) === currentCatalog && (!hiddenOut || f.in_stock));
+  const list = flowers.filter(f => flowerCatalog(f) === currentCatalog && f.in_stock);
   if (!list.length) { toast('В этой вкладке нет позиций / 该目录暂无数据'); return; }
   toast('⏳ Готовлю Excel с фото... / 生成中');
   try { await loadExcelJS(); }
@@ -12766,7 +12766,7 @@ function exportPricePDF() {
   let lastCat = null;
   flowers.forEach(f => {
     if (flowerCatalog(f) !== currentCatalog) return;
-    if (!f.in_stock && hiddenOut) return;
+    if (!f.in_stock) return;
     if (f.cat_ru !== lastCat) {
       html += `<tr><td colspan="14" class="cat">${f.cat_ru||''} · ${f.cat_en||''}</td></tr>`;
       lastCat = f.cat_ru;
