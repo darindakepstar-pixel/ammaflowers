@@ -141,6 +141,19 @@
           <option value="price_ap">price_ap — за короб (+10%)</option>
         </select>
       </div>
+      <div class="fld"><label>Валюта в прайсе</label>
+        <select id="f_cur" onchange="cfg().currency=this.value;updateRateVis();renderSheet()">
+          <option value="rub">₽ Рубли (пересчёт из юаней)</option>
+          <option value="cny">¥ Юани (как в базе)</option>
+        </select>
+      </div>
+      <div class="fld" id="rateFld"><label>Курс: 1 ¥ = … ₽</label>
+        <div style="display:flex;gap:6px">
+          <input id="f_rate" type="number" step="0.01" min="0" style="flex:1" oninput="cfg().rate=parseFloat(this.value)||0;renderSheet()">
+          <button class="ghost" style="color:var(--green);border-color:var(--line);white-space:nowrap" onclick="fetchRate()">↻ курс ЦБ</button>
+        </div>
+        <div class="hint">Курс задаёте сами (можно заложить запас на расходы). Кнопка подставит официальный курс ЦБ РФ на сегодня.</div>
+      </div>
       <div class="fld"><label>Блок «Условия заказа» (каждая строка — пункт)</label><textarea id="f_cond" oninput="cfg().conditions=this.value"></textarea></div>
       <div class="fld"><label>Блок «Сроки доставки» (каждая строка — пункт)</label><textarea id="f_deliv" oninput="cfg().delivery=this.value"></textarea></div>
       <div class="fld"><label>Блок «Совет недели»</label><textarea id="f_tip" oninput="cfg().tip=this.value"></textarea></div>
@@ -177,12 +190,12 @@ function rangeStr(){const d=new Date();const mon=new Date(d);mon.setDate(d.getDa
 function blankCfg(){return{
   week:'НЕДЕЛЯ '+weekNum()+' · '+rangeStr(),
   contact:'☎ +7 (977) 166-77-88 · TG @Amma_Flowers',
-  priceField:'price_a', picks:[],
+  priceField:'price_a', currency:'rub', rate:12.7, picks:[],
   conditions:'Цены в прайсе — от 8 коробов / 80 000 ₽\nОт 1 короба — +10% к цене\nОтгрузка 3–5 дней после подтверждения',
   delivery:'Москва: 7–10 дн · зима 14\nНовосибирск: 5–7 дн\nКазань: 6–9 дн',
   tip:'Под осенние палитры берите тёмную гвоздику + эвкалипт: дёшево, стойко, в тренде.'
 };}
-function cfg(){ if(!cfgMap[curCat]) cfgMap[curCat]=blankCfg(); return cfgMap[curCat]; }
+function cfg(){ if(!cfgMap[curCat]) cfgMap[curCat]=blankCfg(); const c=cfgMap[curCat]; if(!c.currency)c.currency='rub'; if(c.rate==null)c.rate=12.7; return c; }
 
 function loadAll(){ try{const s=localStorage.getItem('amma_price_cfg_v2'); if(s) cfgMap=JSON.parse(s);}catch(e){} }
 function save(){ try{localStorage.setItem('amma_price_cfg_v2',JSON.stringify(cfgMap)); toast('Сохранено');}catch(e){toast('Не удалось сохранить');} }
@@ -190,6 +203,14 @@ function toast(m){const n=document.getElementById('note');n.textContent=m;n.styl
 function warn(m){const n=document.getElementById('note');n.textContent=m;n.style.display='block';}
 
 function fmtPrice(v){ if(v==null||v==='')return '—'; const n=Number(v); if(isNaN(n))return String(v); return n.toLocaleString('ru-RU',{minimumFractionDigits:(n%1?1:0),maximumFractionDigits:2}); }
+function curSym(){ return cfg().currency==='cny' ? '¥' : '₽'; }
+function money(v){
+  if(v==null||v==='') return '—';
+  let n=Number(v); if(isNaN(n)) return String(v);
+  if(cfg().currency!=='cny'){ n = n * (Number(cfg().rate)||0); }
+  const dec = cfg().currency==='cny' ? (n%1?2:0) : (n>=100?0:1);
+  return n.toLocaleString('ru-RU',{minimumFractionDigits:dec,maximumFractionDigits:dec}) + ' ' + curSym();
+}
 function unitOf(f){ return f.flower_weight? 'за пачку':'за шт.'; }
 function packOf(f){ const p=[]; if(f.boxes_per_box) p.push('Короб '+f.boxes_per_box+(f.flower_weight?' пач.':' шт')); if(f.stems) p.push('Пачка '+f.stems+' шт'); if(f.flower_weight) p.push(f.flower_weight+' г'); return p.join('<br>')||'—'; }
 function nameAlt(f){ return [f.cn,f.en,f.length?f.length+' см':''].filter(Boolean).join(' · '); }
@@ -213,7 +234,7 @@ function renderPicker(){
     return `<div class="row ${picked.has(f.id)?'picked':''}" onclick="togglePick(${f.id})">
       <div class="th" style="background:${col}">${th}</div>
       <div class="nm"><b>${f.ru||'—'}</b><small>${nameAlt(f)||(f.cat_ru||'')}</small></div>
-      <div class="pr">${fmtPrice(f[cfg().priceField])} ₽</div>
+      <div class="pr">${money(f[cfg().priceField])}</div>
     </div>`;
   }).join('') || '<div class="empty">Ничего не найдено</div>';
 }
@@ -259,7 +280,7 @@ function itemRow(f,pk){
       <span class="alt">${nameAlt(f)}</span>
       ${pk.comment?`<span class="cmt">${pk.comment}</span>`:''}</td>
     <td class="pack">${packOf(f)}</td>
-    <td class="pr">${fmtPrice(f[cfg().priceField])} ₽<span class="u">${unitOf(f)}</span></td>
+    <td class="pr">${money(f[cfg().priceField])}<span class="u">${unitOf(f)}</span></td>
   </tr>`;
 }
 function sectionTable(picks,byId){
@@ -307,11 +328,25 @@ async function ensurePhotos(ids){
   }
 }
 
+function updateRateVis(){ const el=document.getElementById('rateFld'); if(el) el.style.display=(cfg().currency==='cny'?'none':'block'); }
+async function fetchRate(){
+  try{
+    const r=await fetch('https://www.cbr-xml-daily.ru/daily_json.js');
+    const j=await r.json();
+    const c=j.Valute&&j.Valute.CNY;
+    if(!c) throw new Error('нет CNY в ответе');
+    const v=+(c.Value/(c.Nominal||1)).toFixed(2);
+    cfg().rate=v; cfg().currency='rub'; syncFields(); renderSheet(); toast('Курс ЦБ на сегодня: 1 ¥ = '+v+' ₽');
+  }catch(e){ warn('Не удалось получить курс ЦБ ('+(e.message||e)+') — впишите курс вручную.'); }
+}
 function syncFields(){
   const c=cfg();
   document.getElementById('f_week').value=c.week||'';
   document.getElementById('f_contact').value=c.contact||'';
   document.getElementById('f_price').value=c.priceField||'price_a';
+  document.getElementById('f_cur').value=c.currency||'rub';
+  document.getElementById('f_rate').value=(c.rate!=null?c.rate:12.7);
+  updateRateVis();
   document.getElementById('f_cond').value=c.conditions||'';
   document.getElementById('f_deliv').value=c.delivery||'';
   document.getElementById('f_tip').value=c.tip||'';
