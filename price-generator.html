@@ -116,6 +116,7 @@
     </div>
   </div>
   <div class="note" id="note"></div>
+  <div id="loadStatus" style="font-size:11px;color:var(--muted);margin:8px 0"></div>
 
   <div class="tabs" id="tabs"></div>
 
@@ -381,16 +382,37 @@ const DEMO=[
   {id:8,catalog:'supplies',ru:'Пробирка-колба 10 мл',cn:'试管',en:'Floral tube',cat_ru:'Расходники',price_a:6.5,price_ap:7.2},
 ];
 
+
+// Порционная загрузка: фото хранятся base64 в таблице, одним запросом не тянется
+// (+ Supabase отдаёт максимум 1000 строк за раз)
+async function loadFlowersChunked(){
+  allFlowers=[]; const CHUNK=25; let from=0;
+  const st=document.getElementById('loadStatus');
+  while(true){
+    let {data,error}=await sb.from('flowers')
+      .select('id,ru,cn,en,cat_ru,catalog,price_a,price_ap,boxes_per_box,stems,pack,length,box_size,flower_weight,in_stock'+',photo_url').order('id').range(from, from+CHUNK-1);
+    if(error){
+      const light=await sb.from('flowers').select('id,ru,cn,en,cat_ru,catalog,price_a,price_ap,boxes_per_box,stems,pack,length,box_size,flower_weight,in_stock').order('id').range(from, from+CHUNK-1);
+      if(light.error){ if(!allFlowers.length) throw light.error; break; }
+      data=(light.data||[]).map(f=>({...f,photo_url:null}));
+    }
+    if(!data||!data.length) break;
+    data.forEach(f=>{ f.catalog=f.catalog||'cut'; if(f.photo_url) photoCache[f.id]=f.photo_url; });
+    allFlowers.push(...data);
+    if(st) st.textContent='⏳ Загружено позиций: '+allFlowers.length+'…';
+    if(allFlowers.length%200===0){ renderPicker(); }
+    if(data.length<CHUNK) break;
+    from+=CHUNK;
+  }
+  if(st) st.textContent='✅ Загружено позиций: '+allFlowers.length;
+}
+
 async function boot(){
   loadAll(); renderTabs();
   if(!sb){ warn('⚠ Библиотека Supabase не загрузилась (нет интернета?) — показаны демо-данные. На GitHub Pages всё подключится.'); allFlowers=DEMO; }
   else{
     try{
-      const {data,error}=await sb.from('flowers')
-        .select('id,ru,cn,en,cat_ru,catalog,price_a,price_ap,boxes_per_box,stems,pack,length,box_size,flower_weight,in_stock,photo_url');
-      if(error) throw error;
-      allFlowers=(data||[]).map(f=>({...f,catalog:f.catalog||'cut'}));
-      allFlowers.forEach(f=>{ if(f.photo_url) photoCache[f.id]=f.photo_url; });
+      await loadFlowersChunked();
       if(!allFlowers.length){ warn('База ответила, но каталог пуст — показаны демо-данные.'); allFlowers=DEMO; }
     }catch(e){ warn('⚠ Не удалось прочитать каталог ('+(e.message||e)+') — показаны демо-данные.'); allFlowers=DEMO; }
   }
