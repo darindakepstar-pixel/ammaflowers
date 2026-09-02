@@ -141,6 +141,13 @@
           <option value="price_ap">price_ap — за короб (+10%)</option>
         </select>
       </div>
+      <div class="fld"><label>Цена показывается</label>
+        <select id="f_unit" onchange="cfg().unitMode=this.value;renderPicker();renderSheet()">
+          <option value="banch">за банч (как в базе)</option>
+          <option value="stem">за штуку (банч ÷ шт. в банче)</option>
+          <option value="box">за короб (банч × кол-во в коробе)</option>
+        </select>
+      </div>
       <div class="fld"><label>Валюта в прайсе</label>
         <select id="f_cur" onchange="cfg().currency=this.value;updateRateVis();renderSheet()">
           <option value="rub">₽ Рубли (пересчёт из юаней)</option>
@@ -190,12 +197,12 @@ function rangeStr(){const d=new Date();const mon=new Date(d);mon.setDate(d.getDa
 function blankCfg(){return{
   week:'НЕДЕЛЯ '+weekNum()+' · '+rangeStr(),
   contact:'☎ +7 (977) 166-77-88 · TG @Amma_Flowers',
-  priceField:'price_a', currency:'rub', rate:12.7, picks:[],
+  priceField:'price_a', unitMode:'banch', currency:'rub', rate:12.7, picks:[],
   conditions:'Цены в прайсе — от 8 коробов / 80 000 ₽\nОт 1 короба — +10% к цене\nОтгрузка 3–5 дней после подтверждения',
   delivery:'Москва: 7–10 дн · зима 14\nНовосибирск: 5–7 дн\nКазань: 6–9 дн',
   tip:'Под осенние палитры берите тёмную гвоздику + эвкалипт: дёшево, стойко, в тренде.'
 };}
-function cfg(){ if(!cfgMap[curCat]) cfgMap[curCat]=blankCfg(); const c=cfgMap[curCat]; if(!c.currency)c.currency='rub'; if(c.rate==null)c.rate=12.7; return c; }
+function cfg(){ if(!cfgMap[curCat]) cfgMap[curCat]=blankCfg(); const c=cfgMap[curCat]; if(!c.currency)c.currency='rub'; if(c.rate==null)c.rate=12.7; if(!c.unitMode)c.unitMode='banch'; return c; }
 
 function loadAll(){ try{const s=localStorage.getItem('amma_price_cfg_v2'); if(s) cfgMap=JSON.parse(s);}catch(e){} }
 function save(){ try{localStorage.setItem('amma_price_cfg_v2',JSON.stringify(cfgMap)); toast('Сохранено');}catch(e){toast('Не удалось сохранить');} }
@@ -211,8 +218,10 @@ function money(v){
   const dec = cfg().currency==='cny' ? (n%1?2:0) : (n>=100?0:1);
   return n.toLocaleString('ru-RU',{minimumFractionDigits:dec,maximumFractionDigits:dec}) + ' ' + curSym();
 }
-function unitOf(f){ return f.flower_weight? 'за пачку':'за шт.'; }
-function packOf(f){ const p=[]; if(f.boxes_per_box) p.push('Короб '+f.boxes_per_box+(f.flower_weight?' пач.':' шт')); if(f.stems) p.push('Пачка '+f.stems+' шт'); if(f.flower_weight) p.push(f.flower_weight+' г'); return p.join('<br>')||'—'; }
+function isWeight(f){ return !!f.flower_weight; }
+function rawPrice(f){ const p=Number(f[cfg().priceField]); if(isNaN(p))return null; const m=cfg().unitMode||'banch'; if(m==='stem')return f.stems? p/f.stems : p; if(m==='box')return p*(f.boxes_per_box||1); return p; }
+function unitLabel(){ const m=cfg().unitMode||'banch'; return m==='stem'?'за шт.':m==='box'?'за короб':'за банч'; }
+function packOf(f){ const p=[]; if(f.boxes_per_box) p.push('Короб '+f.boxes_per_box+' банч.'); if(isWeight(f)) p.push('Банч '+f.flower_weight+' г'); else if(f.stems) p.push('Банч '+f.stems+' шт'); return p.join('<br>')||'—'; }
 function nameAlt(f){ return [f.cn,f.en,f.length?f.length+' см':''].filter(Boolean).join(' · '); }
 
 function catFlowers(){ return allFlowers.filter(f=>(f.catalog||'cut')===curCat); }
@@ -230,11 +239,11 @@ function renderPicker(){
   document.getElementById('list').innerHTML = items.slice(0,600).map((f,i)=>{
     const col=COLORS[f.id%COLORS.length];
     const ph=photoCache[f.id];
-    const th=ph?`<img src="${ph}">`:'✿';
+    const th=ph?`<img src="${ph}" onerror="this.parentElement.innerHTML='✿'">`:'✿';
     return `<div class="row ${picked.has(f.id)?'picked':''}" onclick="togglePick(${f.id})">
       <div class="th" style="background:${col}">${th}</div>
       <div class="nm"><b>${f.ru||'—'}</b><small>${nameAlt(f)||(f.cat_ru||'')}</small></div>
-      <div class="pr">${money(f[cfg().priceField])}</div>
+      <div class="pr">${money(rawPrice(f))}</div>
     </div>`;
   }).join('') || '<div class="empty">Ничего не найдено</div>';
 }
@@ -272,7 +281,7 @@ function renderPicks(){
 function itemRow(f,pk){
   const col=COLORS[(f.id||0)%COLORS.length];
   const ph=photoCache[f.id];
-  const th=ph?`<img src="${ph}">`:'✿';
+  const th=ph?`<img src="${ph}" onerror="this.parentElement.innerHTML='✿'">`:'✿';
   const badge = pk.section==='hit'?'<span class="badge b-hit">ХИТ</span>' : pk.section==='new'?'<span class="badge b-new">НОВИНКА</span>' : '<span class="badge b-rec">ВЫБОР</span>';
   return `<tr>
     <td><div class="thumb" style="background:${col}">${th}</div></td>
@@ -280,7 +289,7 @@ function itemRow(f,pk){
       <span class="alt">${nameAlt(f)}</span>
       ${pk.comment?`<span class="cmt">${pk.comment}</span>`:''}</td>
     <td class="pack">${packOf(f)}</td>
-    <td class="pr">${money(f[cfg().priceField])}<span class="u">${unitOf(f)}</span></td>
+    <td class="pr">${money(rawPrice(f))}<span class="u">${unitLabel()}</span></td>
   </tr>`;
 }
 function sectionTable(picks,byId){
@@ -344,6 +353,7 @@ function syncFields(){
   document.getElementById('f_week').value=c.week||'';
   document.getElementById('f_contact').value=c.contact||'';
   document.getElementById('f_price').value=c.priceField||'price_a';
+  document.getElementById('f_unit').value=c.unitMode||'banch';
   document.getElementById('f_cur').value=c.currency||'rub';
   document.getElementById('f_rate').value=(c.rate!=null?c.rate:12.7);
   updateRateVis();
@@ -376,9 +386,10 @@ async function boot(){
   else{
     try{
       const {data,error}=await sb.from('flowers')
-        .select('id,ru,cn,en,cat_ru,catalog,price_a,price_ap,boxes_per_box,stems,pack,length,box_size,flower_weight,in_stock');
+        .select('id,ru,cn,en,cat_ru,catalog,price_a,price_ap,boxes_per_box,stems,pack,length,box_size,flower_weight,in_stock,photo_url');
       if(error) throw error;
       allFlowers=(data||[]).map(f=>({...f,catalog:f.catalog||'cut'}));
+      allFlowers.forEach(f=>{ if(f.photo_url) photoCache[f.id]=f.photo_url; });
       if(!allFlowers.length){ warn('База ответила, но каталог пуст — показаны демо-данные.'); allFlowers=DEMO; }
     }catch(e){ warn('⚠ Не удалось прочитать каталог ('+(e.message||e)+') — показаны демо-данные.'); allFlowers=DEMO; }
   }
