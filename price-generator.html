@@ -221,7 +221,8 @@ function money(v){
 function isWeight(f){ return !!f.flower_weight; }
 function rawPrice(f){ const p=Number(f[cfg().priceField]); if(isNaN(p))return null; const m=cfg().unitMode||'banch'; if(m==='stem')return f.stems? p/f.stems : p; if(m==='box')return p*(f.boxes_per_box||1); return p; }
 function unitLabel(){ const m=cfg().unitMode||'banch'; return m==='stem'?'за шт.':m==='box'?'за короб':'за банч'; }
-function packOf(f){ const p=[]; if(f.boxes_per_box) p.push('Короб '+f.boxes_per_box+' банч.'); if(isWeight(f)) p.push('Банч '+f.flower_weight+' г'); else if(f.stems) p.push('Банч '+f.stems+' шт'); return p.join('<br>')||'—'; }
+function boxM3(x){ const m=String(x||'').replace(/,/g,'.').match(/(\d+(?:\.\d+)?)\s*[*xX×]\s*(\d+(?:\.\d+)?)\s*[*xX×]\s*(\d+(?:\.\d+)?)/); if(!m) return null; const v=(+m[1])*(+m[2])*(+m[3])/1e6; return v>0? v : null; }
+function packOf(f){ const p=[]; if(f.boxes_per_box) p.push('Короб '+f.boxes_per_box+' банч.'); if(isWeight(f)) p.push('Банч '+f.flower_weight+' г'); else if(f.stems) p.push('Банч '+f.stems+' шт'); if(f.box_size){ const v=boxM3(f.box_size); p.push('<span style="white-space:nowrap">▫ '+f.box_size+' см'+(v?' · '+v.toFixed(3).replace('.',',')+' м³':'')+'</span>'); } return p.join('<br>')||'—'; }
 function nameAlt(f){ return [f.cn,f.en,f.length?f.length+' см':''].filter(Boolean).join(' · '); }
 
 function catFlowers(){ return allFlowers.filter(f=>(f.catalog||'cut')===curCat); }
@@ -293,7 +294,7 @@ function itemRow(f,pk){
   </tr>`;
 }
 function sectionTable(picks,byId){
-  return `<table><thead><tr><th style="width:44px"></th><th>Наименование</th><th style="width:82px">Упаковка</th><th class="pr" style="width:72px">Цена</th></tr></thead><tbody>
+  return `<table><thead><tr><th style="width:44px"></th><th>Наименование</th><th style="width:104px">Упаковка</th><th class="pr" style="width:72px">Цена</th></tr></thead><tbody>
     ${picks.map(pk=>itemRow(byId[pk.id]||{id:pk.id,ru:'#'+pk.id},pk)).join('')}</tbody></table>`;
 }
 function liList(txt){ return (txt||'').split('\n').filter(x=>x.trim()).map(x=>`<li>${x}</li>`).join(''); }
@@ -370,12 +371,12 @@ async function downloadPDF(){
 }
 
 const DEMO=[
-  {id:1,catalog:'cut',ru:'Гвоздика одноголовая Хонгфу Ред',cn:'红富红单头康乃馨',en:'Hongfu Red',cat_ru:'Гвоздика',price_a:37.9,price_ap:41.7,boxes_per_box:400,stems:20,length:65},
-  {id:2,catalog:'cut',ru:'Эвкалипт Цинерея',cn:'尤加利',en:'Eucalyptus Cinerea',cat_ru:'Зелень',price_a:210,price_ap:231,boxes_per_box:30,flower_weight:300,length:60},
+  {id:1,catalog:'cut',ru:'Гвоздика одноголовая Хонгфу Ред',cn:'红富红单头康乃馨',en:'Hongfu Red',cat_ru:'Гвоздика',price_a:37.9,price_ap:41.7,boxes_per_box:400,stems:20,length:65,box_size:'100*40*20'},
+  {id:2,catalog:'cut',ru:'Эвкалипт Цинерея',cn:'尤加利',en:'Eucalyptus Cinerea',cat_ru:'Зелень',price_a:210,price_ap:231,boxes_per_box:30,flower_weight:300,length:60,box_size:'110*40*25'},
   {id:3,catalog:'cut',ru:'Эустома Микс',cn:'杂色洋桔梗',en:'Lisianthus Mix',cat_ru:'Эустома',price_a:1390,price_ap:1529,boxes_per_box:14,stems:10,length:70,flower_weight:700},
-  {id:4,catalog:'cut',ru:'Гвоздика кустовая Дракула',cn:'吸血鬼丛生康乃馨',en:'Spray Carnation Dracula',cat_ru:'Гвоздика',price_a:32.9,price_ap:36.2,boxes_per_box:420,stems:20,length:60},
+  {id:4,catalog:'cut',ru:'Гвоздика кустовая Дракула',cn:'吸血鬼丛生康乃馨',en:'Spray Carnation Dracula',cat_ru:'Гвоздика',price_a:32.9,price_ap:36.2,boxes_per_box:420,stems:20,length:60,box_size:'100*40*20'},
   {id:5,catalog:'cut',ru:'Хризантема кустовая Сантини',cn:'小菊',en:'Spray Chrys. Santini',cat_ru:'Хризантема',price_a:44,price_ap:48.4,boxes_per_box:200,stems:10,length:55},
-  {id:6,catalog:'cut',ru:'Лимониум Синий',cn:'勿忘我',en:'Limonium Blue',cat_ru:'Сухоцвет',price_a:180,price_ap:198,boxes_per_box:44,flower_weight:150,length:65},
+  {id:6,catalog:'cut',ru:'Лимониум Синий',cn:'勿忘我',en:'Limonium Blue',cat_ru:'Сухоцвет',price_a:180,price_ap:198,boxes_per_box:44,flower_weight:150,length:65,box_size:'105*35*22'},
   {id:7,catalog:'potted',ru:'Фаленопсис 2 ветки',cn:'蝴蝶兰',en:'Phalaenopsis 2 st.',cat_ru:'Орхидея',price_a:640,price_ap:704},
   {id:8,catalog:'supplies',ru:'Пробирка-колба 10 мл',cn:'试管',en:'Floral tube',cat_ru:'Расходники',price_a:6.5,price_ap:7.2},
 ];
