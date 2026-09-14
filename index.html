@@ -836,6 +836,193 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
   </div>
 
+  <!-- PAGE: PRICE PDF GENERATOR (manager) -->
+  <style id="pg-editor-css">
+    #page-pricepdf .pg-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    @media(max-width:1000px){#page-pricepdf .pg-grid{grid-template-columns:1fr}}
+    #page-pricepdf .pg-h{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--sage-d);font-weight:700;margin-bottom:10px}
+    #page-pricepdf .pg-f{margin-bottom:9px}
+    #page-pricepdf .pg-f label{display:block;font-size:11px;color:var(--mid);margin-bottom:3px}
+    #page-pricepdf .pg-f input,#page-pricepdf .pg-f select,#page-pricepdf .pg-f textarea{width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--r);font-size:12.5px;font-family:var(--font-b);color:var(--charcoal);background:#fff}
+    #page-pricepdf .pg-f textarea{min-height:58px;resize:vertical}
+    #page-pricepdf .pg-f input[type=color]{height:36px;padding:2px}
+    #page-pricepdf .pg-two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    #page-pricepdf .pg-four{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+    @media(max-width:640px){#page-pricepdf .pg-two,#page-pricepdf .pg-four{grid-template-columns:1fr 1fr}}
+    #page-pricepdf .pg-list{max-height:430px;overflow:auto;border:1px solid var(--border);border-radius:var(--r)}
+    #page-pricepdf .pg-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--border);font-size:12.5px;cursor:pointer}
+    #page-pricepdf .pg-row:hover{background:var(--sage-l)}
+    #page-pricepdf .pg-row.on{background:var(--sage-l)}
+    #page-pricepdf .pg-row .pg-th{width:28px;height:28px;border-radius:6px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;overflow:hidden}
+    #page-pricepdf .pg-row .pg-th img{width:100%;height:100%;object-fit:cover}
+    #page-pricepdf .pg-row .pg-nm{flex:1;min-width:0}
+    #page-pricepdf .pg-row .pg-nm b{font-size:12.5px;font-weight:600}
+    #page-pricepdf .pg-row .pg-nm small{display:block;color:var(--mid);font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #page-pricepdf .pg-row .pg-pr{font-weight:700;font-size:12px;white-space:nowrap;color:var(--sage-d)}
+    #page-pricepdf .pg-pick{border:1px solid var(--border);border-radius:var(--r);padding:9px;margin-bottom:8px;background:#fff}
+    #page-pricepdf .pg-pick .pg-top{display:flex;align-items:center;gap:8px}
+    #page-pricepdf .pg-pick .pg-top b{flex:1;font-size:12.5px;font-weight:600}
+    #page-pricepdf .pg-seg{display:flex;gap:4px}
+    #page-pricepdf .pg-seg span{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--border);cursor:pointer;background:#fff;white-space:nowrap}
+    #page-pricepdf .pg-seg span.on.hit{background:var(--red-l);border-color:#e2b4b4;color:var(--red)}
+    #page-pricepdf .pg-seg span.on.rec{background:var(--gold-l);border-color:#e0cfa0;color:#9a7420}
+    #page-pricepdf .pg-seg span.on.new{background:var(--sage-l);border-color:#bcdcc7;color:var(--sage-d)}
+    #page-pricepdf .pg-mv{display:flex;gap:4px}
+    #page-pricepdf .pg-mv button{border:1px solid var(--border);background:#fff;border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:12px}
+    #page-pricepdf .pg-pick textarea{width:100%;margin-top:6px;border:1.5px solid var(--border);border-radius:var(--r);padding:6px 8px;font-size:11.5px;font-family:var(--font-b);resize:vertical;min-height:36px}
+    #page-pricepdf .pg-mkrow{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--mid);flex-wrap:wrap}
+    #page-pricepdf .pg-mkrow select{padding:3px 6px;border:1px solid var(--border);border-radius:6px;font-size:11px;font-family:var(--font-b)}
+    #page-pricepdf .pg-mkrow .pg-prc{font-weight:700;color:var(--sage-d);font-size:11.5px;margin-left:auto}
+    #page-pricepdf .pg-mk{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    #page-pricepdf .pg-mk button{border:1.5px solid var(--border);background:#fff;border-radius:999px;padding:7px 14px;font-size:12px;font-weight:600;color:var(--mid);cursor:pointer;font-family:var(--font-b)}
+    #page-pricepdf .pg-mk button.on{background:var(--sage-d);border-color:var(--sage-d);color:#fff}
+    #page-pricepdf .pg-mk input{width:96px;padding:7px 9px;border:1.5px solid var(--border);border-radius:var(--r);font-size:12px;font-family:var(--font-b)}
+    #page-pricepdf .pg-pals{display:flex;gap:6px;flex-wrap:wrap}
+    #page-pricepdf .pg-pal{border:1.5px solid var(--border);border-radius:10px;padding:5px 7px;background:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px}
+    #page-pricepdf .pg-pal.on{border-color:var(--sage-d);box-shadow:0 0 0 2px rgba(61,92,54,.15)}
+    #page-pricepdf .pg-pal .pg-sw{display:flex}
+    #page-pricepdf .pg-pal .pg-sw i{width:14px;height:14px;display:block}
+    #page-pricepdf .pg-pal .pg-sw i:first-child{border-radius:4px 0 0 4px}
+    #page-pricepdf .pg-pal .pg-sw i:last-child{border-radius:0 4px 4px 0;border:1px solid var(--border);border-left:none;width:13px}
+    #page-pricepdf .pg-pal small{font-size:9.5px;color:var(--mid);white-space:nowrap}
+    #page-pricepdf .pg-empty{padding:22px;text-align:center;color:var(--mid);font-size:12px}
+    #page-pricepdf .pg-hint{font-size:11px;color:var(--mid);margin-top:5px;line-height:1.45}
+    #page-pricepdf .pg-prevbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+    #page-pricepdf .pg-prevwrap{overflow:auto;background:#e9ece5;border-radius:var(--r);padding:14px;display:flex;justify-content:center}
+    #page-pricepdf .pg-scale{transform-origin:top left}
+  </style>
+
+  <div class="page" id="page-pricepdf">
+    <div class="page-inner">
+      <div class="page-title">Прайс для клиентов / 宣传价格单</div>
+      <div class="page-sub">Короткий PDF с хитами и рекомендациями: своя компания в шапке, своя наценка, свои цвета</div>
+
+      <div class="card" style="padding:16px">
+        <div class="pg-h">1 · Компания — шапка и футер</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <select class="inp" id="pg-bsel" style="min-width:190px" onchange="PG.switchBrand(this.value)"></select>
+          <button class="btn btn-secondary btn-sm" onclick="PG.newBrand()">+ Новая компания</button>
+          <button class="btn btn-secondary btn-sm" onclick="PG.dupBrand()">⧉ Копия</button>
+          <button class="btn btn-secondary btn-sm" style="color:var(--red)" onclick="PG.delBrand()">🗑 Удалить</button>
+        </div>
+        <div class="pg-grid">
+          <div>
+            <div class="pg-two">
+              <div class="pg-f"><label>Название компании</label><input id="pg-name" oninput="PG.setBrand('name',this.value)"></div>
+              <div class="pg-f"><label>Контакты (шапка и футер)</label><input id="pg-contact" oninput="PG.setBrand('contact',this.value)" placeholder="☎ +7 … · TG @…"></div>
+            </div>
+            <div class="pg-f"><label>Описание под логотипом</label><input id="pg-sub" oninput="PG.setBrand('sub',this.value)"></div>
+            <div class="pg-f"><label>Лента под шапкой</label><input id="pg-ribbon" oninput="PG.setBrand('ribbon',this.value)"></div>
+            <div class="pg-two">
+              <div class="pg-f"><label>Футер — название</label><input id="pg-ftitle" oninput="PG.setBrand('ftitle',this.value)"></div>
+              <div class="pg-f"><label>Футер — подпись</label><textarea id="pg-ftext" style="min-height:40px" oninput="PG.setBrand('ftext',this.value)"></textarea></div>
+            </div>
+          </div>
+          <div>
+            <div class="pg-f"><label>Цветовая схема</label><div class="pg-pals" id="pg-pals"></div></div>
+            <div class="pg-four">
+              <div class="pg-f"><label>Основной</label><input type="color" id="pg-acc" oninput="PG.setBrand('acc',this.value)"></div>
+              <div class="pg-f"><label>Второй тон</label><input type="color" id="pg-acc2" oninput="PG.setBrand('acc2',this.value)"></div>
+              <div class="pg-f"><label>Акцент</label><input type="color" id="pg-gold" oninput="PG.setBrand('gold',this.value)"></div>
+              <div class="pg-f"><label>Светлый</label><input type="color" id="pg-soft" oninput="PG.setBrand('soft',this.value)"></div>
+            </div>
+            <div class="pg-f"><label>Логотип</label>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <input type="file" id="pg-file" accept="image/*" onchange="PG.uploadLogo(this)" style="border:none;padding:0;font-size:11px">
+                <button class="btn btn-secondary btn-sm" onclick="PG.useSystemLogo()">Логотип AMMA</button>
+                <button class="btn btn-secondary btn-sm" onclick="PG.clearLogo()">Только текст</button>
+              </div>
+              <div class="pg-hint">PNG или SVG с прозрачным фоном. Без файла в шапке печатается название компании текстом.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:16px">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px" id="pg-cats"></div>
+        <div class="pg-grid">
+          <div>
+            <div class="pg-h">2 · Каталог — отметьте позиции</div>
+            <input class="inp" id="pg-search" style="width:100%;margin-bottom:8px" placeholder="🔍 Поиск RU / 中文 / EN…" oninput="PG.renderPicker()">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--mid);margin-bottom:8px;cursor:pointer">
+              <input type="checkbox" id="pg-instock" onchange="PG.renderPicker()" style="width:15px;height:15px;accent-color:var(--sage-d)"> Только в наличии / 有货
+            </label>
+            <div style="font-size:11px;color:var(--mid);margin-bottom:6px" id="pg-count"></div>
+            <div class="pg-list" id="pg-picker"></div>
+          </div>
+          <div>
+            <div class="pg-h">3 · Выбранные позиции</div>
+            <div id="pg-picks"></div>
+            <div id="pg-picks-empty" class="pg-empty">Пока ничего не выбрано — отметьте позиции слева.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:16px">
+        <div class="pg-h">4 · Цены, наценка и текстовые блоки</div>
+        <div class="pg-grid">
+          <div>
+            <div class="pg-f"><label>Неделя / период (плашка в шапке)</label><input id="pg-week" oninput="PG.setCfg('week',this.value)"></div>
+            <div class="pg-two">
+              <div class="pg-f"><label>Какую цену брать</label>
+                <select id="pg-basis" onchange="PG.setCfg('basis',this.value,true)">
+                  <option value="a_bunch">Цена A — за банч / 扎</option>
+                  <option value="ap_bunch">Цена A+ — за банч / 扎</option>
+                  <option value="a_box">Цена A — за короб / 件</option>
+                  <option value="ap_box">Цена A+ — за короб / 件</option>
+                </select>
+              </div>
+              <div class="pg-f"><label>Валюта в PDF</label>
+                <select id="pg-cur" onchange="PG.setCfg('cur',this.value,true)">
+                  <option value="cny">¥ юань — как в системе</option>
+                  <option value="rub">₽ рубль — по курсу</option>
+                </select>
+              </div>
+            </div>
+            <div class="pg-two">
+              <div class="pg-f"><label>Курс ¥ → ₽</label><input type="number" step="0.01" id="pg-rate" oninput="PG.setCfg('rate',this.value,true)"></div>
+              <div class="pg-f"><label>Округление цены</label>
+                <select id="pg-round" onchange="PG.setCfg('round',this.value,true)">
+                  <option value="raw">как получилось</option>
+                  <option value="0.1">до 0,1</option>
+                  <option value="1">до 1</option>
+                  <option value="5">до 5</option>
+                  <option value="10">до 10</option>
+                </select>
+              </div>
+            </div>
+            <div class="pg-f"><label>Наценка на весь прайс</label>
+              <div class="pg-mk" id="pg-mkbar"></div>
+              <div class="pg-hint">В PDF попадает уже цена с наценкой, сам процент нигде не печатается. Для отдельной позиции можно задать свой — в её карточке выше.</div>
+            </div>
+          </div>
+          <div>
+            <div class="pg-f"><label>Блок «Условия заказа» (каждая строка — пункт)</label><textarea id="pg-cond" oninput="PG.setCfg('conditions',this.value)"></textarea></div>
+            <div class="pg-f"><label>Блок «Сроки доставки» (каждая строка — пункт)</label><textarea id="pg-deliv" oninput="PG.setCfg('delivery',this.value)"></textarea></div>
+            <div class="pg-f"><label>Блок «Совет недели»</label><textarea id="pg-tip" oninput="PG.setCfg('tip',this.value)"></textarea></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:16px">
+        <div class="pg-prevbar">
+          <div class="pg-h" style="margin:0;flex:1">5 · Предпросмотр — так и уйдёт в PDF</div>
+          <select class="inp" id="pg-zoom" onchange="PG.setZoom(this.value)" style="width:auto">
+            <option value="0.5">50 %</option>
+            <option value="0.72" selected>72 %</option>
+            <option value="1">100 %</option>
+          </select>
+          <button class="btn btn-secondary" onclick="PG.save()">💾 Сохранить настройки</button>
+          <button class="btn btn-primary" onclick="PG.printPDF()">📄 Скачать PDF / 下载</button>
+        </div>
+        <div class="pg-prevwrap" id="pg-prevwrap">
+          <div class="pg-scale" id="pg-scale"><div class="pgsheet" id="pg-sheet"></div></div>
+        </div>
+        <div class="pg-hint">В окне печати выберите «Сохранить как PDF», поля — «Нет», фоновая графика — включена.</div>
+      </div>
+    </div>
+  </div>
+
   <!-- PAGE: MY ORDER (client) -->
   <div class="page" id="page-my-order">
     <div class="page-inner">
@@ -1421,6 +1608,7 @@ async function initApp() {
       <div class="nav-tab" onclick="showPage('dashboard',this)">📊 Дашборд</div>
       <div class="nav-tab" onclick="showPage('reference',this)">📖 Справка / 参考</div>
       <div class="nav-tab" onclick="showPage('chat',this)">💬 Чат / 聊天 <span class="cnt" id="cnt-chat" style="display:none">0</span></div>
+      <div class="nav-tab" onclick="showPage('pricepdf',this)">📄 Прайс-PDF / 宣传单</div>
       <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
     `;
     document.getElementById('btn-save-prices').style.display = 'inline-flex';
@@ -1522,6 +1710,7 @@ function showPage(name, tabEl) {
   if (tabEl) tabEl.classList.add('active');
 
   if (name === 'price') renderPrice();
+  if (name === 'pricepdf') PG.open();
   if (name === 'orders') loadOrders();
   if (name === 'invoices') loadInvoices();
   if (name === 'waybills') loadWaybills();
@@ -12628,7 +12817,7 @@ const CATALOG_FILE_LABELS = { cut: 'Срезы', potted: 'Горшечные', s
 const CATALOG_TITLES = { cut: 'Fresh Cut / 鲜切花', potted: 'Potted Plants / 绿植盆栽', supplies: 'Supplies / 包装辅材' };
 
 async function exportPriceExcel() {
-  const list = flowers.filter(f => flowerCatalog(f) === currentCatalog && f.in_stock);
+  const list = flowers.filter(f => flowerCatalog(f) === currentCatalog && (!hiddenOut || f.in_stock));
   if (!list.length) { toast('В этой вкладке нет позиций / 该目录暂无数据'); return; }
   toast('⏳ Готовлю Excel с фото... / 生成中');
   try { await loadExcelJS(); }
@@ -12766,7 +12955,7 @@ function exportPricePDF() {
   let lastCat = null;
   flowers.forEach(f => {
     if (flowerCatalog(f) !== currentCatalog) return;
-    if (!f.in_stock) return;
+    if (!f.in_stock && hiddenOut) return;
     if (f.cat_ru !== lastCat) {
       html += `<tr><td colspan="14" class="cat">${f.cat_ru||''} · ${f.cat_en||''}</td></tr>`;
       lastCat = f.cat_ru;
@@ -12823,5 +13012,481 @@ function exportPricePDF() {
     <button class="btn btn-secondary" onclick="closeImportModal()" style="margin-top:12px">Закрыть / 关闭</button>
   </div>
 </div>
+<script>
+// ══════════════════════════════════════════════════════════
+//  PRICE PDF GENERATOR — короткий рекламный прайс (менеджер)
+//  Данные берутся из уже загруженного каталога `flowers`.
+//  Всё изолировано в PG, разметка с префиксом pg-, лист .pgsheet
+// ══════════════════════════════════════════════════════════
+(function () {
+  const PG = window.PG = {};
+  const LS_CFG = 'amma_pricegen_cfg_v1', LS_BRANDS = 'amma_pricegen_brands_v1';
+
+  const CATS = [
+    { k: 'cut',      label: '🌸 Срезы / 鲜切',      title: 'СРЕЗАННЫЕ ЦВЕТЫ',      acc: '#1f4030' },
+    { k: 'potted',   label: '🪴 Горшечные / 盆栽',  title: 'ГОРШЕЧНЫЕ РАСТЕНИЯ',  acc: '#7a3b23' },
+    { k: 'supplies', label: '📦 Упаковка / 辅材',   title: 'СОПУТСТВУЮЩИЕ ТОВАРЫ', acc: '#5c5030' }
+  ];
+
+  const PALETTES = [
+    { n: 'AMMA зелёный',  acc: '#1f4030', acc2: '#2f5c44', gold: '#c79a4b', soft: '#eef3ee' },
+    { n: 'SRB Global',    acc: '#051c64', acc2: '#0e337a', gold: '#0fccce', soft: '#83ece4' },
+    { n: 'SRB светлый',   acc: '#0e337a', acc2: '#051c64', gold: '#83ece4', soft: '#e3f8f6' },
+    { n: 'Морская волна', acc: '#0b3b3c', acc2: '#14605f', gold: '#0fccce', soft: '#d8f2f0' },
+    { n: 'Тёмно-синий',   acc: '#14243f', acc2: '#2c4470', gold: '#c9a227', soft: '#e6ebf5' },
+    { n: 'Бордо',         acc: '#4a1220', acc2: '#7a2438', gold: '#d4a373', soft: '#f6e7e3' },
+    { n: 'Графит и охра', acc: '#23262b', acc2: '#43494f', gold: '#e0a458', soft: '#ecebe6' },
+    { n: 'Ч/б печать',    acc: '#1a1a1a', acc2: '#4a4a4a', gold: '#9a9a9a', soft: '#ededed' }
+  ];
+
+  const BRAND_PRESETS = {
+    amma: {
+      name: 'AMMA FLOWERS', logo: '', sysLogo: true,
+      sub: 'ПРЯМЫЕ ПОСТАВКИ ЦВЕТОВ ИЗ КИТАЯ · РОССИЯ И СНГ',
+      contact: '',
+      ribbon: 'ХИТЫ · РЕКОМЕНДАЦИИ · НОВИНКИ',
+      ftitle: 'AMMA FLOWERS', ftext: 'Куньмин → РФ и СНГ\nПолный каталог — в системе AMMA',
+      acc: '#1f4030', acc2: '#2f5c44', gold: '#c79a4b', soft: '#eef3ee', useCatColor: true
+    },
+    srb: {
+      name: 'SRB GLOBAL', logo: '', sysLogo: false,
+      sub: 'СРБ — ПОЛНЫЙ ЦИКЛ МЕЖДУНАРОДНОЙ ТОРГОВЛИ В ОДНИХ РУКАХ',
+      contact: '',
+      ribbon: 'ЛОГИСТИКА · ЗАКУПКА ТОВАРА · МЕЖДУНАРОДНЫЕ ПЕРЕВОДЫ · РАСТАМОЖКА',
+      ftitle: 'SRB GLOBAL', ftext: 'Китай → РФ и СНГ\nЛогистика · закупка · переводы · растаможка',
+      acc: '#051c64', acc2: '#0e337a', gold: '#0fccce', soft: '#83ece4', useCatColor: false
+    }
+  };
+
+  const COLORS = ['#c0392b', '#7f8c5a', '#8e44ad', '#d98c9a', '#c79a4b', '#3a6ea5', '#2f7d54', '#b5651d'];
+  const MK_STEPS = [0, 5, 10, 15];
+
+  let curCat = 'cut', cfgMap = {}, brands = {}, curBrand = 'amma', zoom = 0.72, inited = false;
+
+  // ── утилиты ────────────────────────────────────────────
+  function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function $(id) { return document.getElementById(id); }
+  function weekNum() { const d = new Date(), s = new Date(d.getFullYear(), 0, 1); return Math.ceil((((d - s) / 86400000) + s.getDay() + 1) / 7); }
+  function rangeStr() {
+    const d = new Date(), mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    const f = x => ('0' + x.getDate()).slice(-2) + '.' + ('0' + (x.getMonth() + 1)).slice(-2);
+    return f(mon) + '–' + f(sun);
+  }
+  function say(m) { try { toast(m); } catch (e) { console.log(m); } }
+
+  function blankCfg() {
+    return {
+      week: 'НЕДЕЛЯ ' + weekNum() + ' · ' + rangeStr(),
+      basis: 'a_bunch', cur: 'cny', rate: 12, markup: 0, round: 'raw', picks: [],
+      conditions: 'Минимальный заказ — 1 короб на позицию\nЦены действительны 3 дня\nОтгрузка 3–5 дней после подтверждения',
+      delivery: 'Москва: 7–10 дн · зима до 14\nНовосибирск: 5–7 дн\nКазань: 6–9 дн',
+      tip: 'Под осенние палитры берите тёмную гвоздику + эвкалипт: недорого, стойко, в тренде.'
+    };
+  }
+  function cfg() { if (!cfgMap[curCat]) cfgMap[curCat] = blankCfg(); return cfgMap[curCat]; }
+  function brand() { if (!brands[curBrand]) brands[curBrand] = Object.assign({}, BRAND_PRESETS.amma); return brands[curBrand]; }
+  function palOf(b) { const acc = b.acc || '#1f4030'; return { acc: acc, acc2: b.acc2 || acc, gold: b.gold || '#c79a4b', soft: b.soft || '#eef3ee' }; }
+  function sysLogoSrc() { const el = document.querySelector('.logo-img'); return el ? el.getAttribute('src') : ''; }
+  function logoSrc(b) { return b.logo || (b.sysLogo ? sysLogoSrc() : ''); }
+
+  function relLum(hex) {
+    const c = String(hex || '').replace('#', ''); if (c.length !== 6) return 0;
+    const ch = i => { const v = parseInt(c.substr(i, 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * ch(0) + 0.7152 * ch(2) + 0.0722 * ch(4);
+  }
+  function cw(hex) { return 1.05 / (relLum(hex) + 0.05); }
+
+  // ── цены ───────────────────────────────────────────────
+  function baseOf(f) {
+    const basis = cfg().basis || 'a_bunch';
+    let p = basis.indexOf('ap') === 0 ? f.price_ap : f.price_a;
+    if (p == null || p === '') return null;
+    p = Number(p); if (isNaN(p)) return null;
+    if (basis.slice(-3) === 'box') p = p * (Number(f.boxes_per_box) || 1);
+    return p;
+  }
+  function pickMk(pk) {
+    if (pk && pk.mk !== '' && pk.mk != null && !isNaN(Number(pk.mk))) return Number(pk.mk);
+    const m = Number(cfg().markup || 0); return isNaN(m) ? 0 : m;
+  }
+  function roundPrice(v) {
+    const r = cfg().round || 'raw';
+    if (r === '0.1') return Math.round(v * 10) / 10;
+    if (r === '1') return Math.round(v);
+    if (r === '5') return Math.round(v / 5) * 5;
+    if (r === '10') return Math.round(v / 10) * 10;
+    return Math.round(v * 100) / 100;
+  }
+  function rate() { return cfg().cur === 'rub' ? (Number(cfg().rate) || 1) : 1; }
+  function curSign() { return cfg().cur === 'rub' ? '₽' : '¥'; }
+  function calcPrice(f, pk) { const b = baseOf(f); if (b == null) return null; return roundPrice(b * (1 + pickMk(pk) / 100) * rate()); }
+  function fmtPrice(v) {
+    if (v == null) return '—';
+    return Number(v).toLocaleString('ru-RU', { minimumFractionDigits: (v % 1 ? 1 : 0), maximumFractionDigits: 2 });
+  }
+  function unitLabel() {
+    if ((cfg().basis || '').slice(-3) === 'box') return 'за короб';
+    return curCat === 'cut' ? 'за банч' : 'за шт.';
+  }
+  function packOf(f) {
+    const p = [];
+    if (f.boxes_per_box) p.push('Короб ' + f.boxes_per_box + (curCat === 'cut' ? ' бан.' : ' шт'));
+    if (f.stems) p.push('Банч ' + f.stems + ' шт');
+    if (f.flower_weight) p.push(f.flower_weight + ' г');
+    if (!p.length && f.pack) p.push(esc(f.pack));
+    return p.join('<br>') || '—';
+  }
+  function nameAlt(f) { return [f.cn, f.en, f.length ? f.length + ' см' : ''].filter(Boolean).join(' · '); }
+  function catFlowers() {
+    const src = (typeof flowers !== 'undefined' && flowers) ? flowers : [];
+    return src.filter(f => (f.catalog || 'cut') === curCat);
+  }
+
+  // ── хранилище ──────────────────────────────────────────
+  function load() {
+    try { const s = localStorage.getItem(LS_CFG); if (s) cfgMap = JSON.parse(s); } catch (e) { }
+    let st = null; try { st = JSON.parse(localStorage.getItem(LS_BRANDS) || 'null'); } catch (e) { }
+    if (st && st.brands && Object.keys(st.brands).length) {
+      brands = st.brands;
+      if (!st.seeded && !brands.srb) brands.srb = Object.assign({}, BRAND_PRESETS.srb);
+      curBrand = (st.active && brands[st.active]) ? st.active : Object.keys(brands)[0];
+    } else {
+      brands = { amma: Object.assign({}, BRAND_PRESETS.amma), srb: Object.assign({}, BRAND_PRESETS.srb) };
+      curBrand = 'amma';
+    }
+  }
+  PG.save = function () {
+    try {
+      localStorage.setItem(LS_CFG, JSON.stringify(cfgMap));
+      localStorage.setItem(LS_BRANDS, JSON.stringify({ brands: brands, active: curBrand, seeded: true }));
+      say('💾 Настройки прайса сохранены');
+    } catch (e) { say('⚠️ Не удалось сохранить — возможно, логотип слишком тяжёлый'); }
+  };
+
+  // ── каталог и подбор ───────────────────────────────────
+  function renderCats() {
+    $('pg-cats').innerHTML = CATS.map(c =>
+      '<button class="wh-tab' + (c.k === curCat ? ' active' : '') + '" onclick="PG.switchCat(\'' + c.k + '\')">' + c.label + '</button>'
+    ).join('');
+  }
+  PG.switchCat = function (k) { curCat = k; renderCats(); syncFields(); PG.renderPicker(); renderPicks(); render(); };
+
+  PG.renderPicker = function () {
+    const q = ($('pg-search').value || '').toLowerCase().trim();
+    const onlyStock = $('pg-instock').checked;
+    const items = catFlowers().filter(f => {
+      if (onlyStock && !f.in_stock) return false;
+      if (!q) return true;
+      return [f.ru, f.cn, f.en, f.cat_ru].filter(Boolean).join(' ').toLowerCase().indexOf(q) >= 0;
+    });
+    const cat = CATS.find(c => c.k === curCat);
+    $('pg-count').textContent = items.length + ' позиций в разделе «' + cat.label + '»';
+    const picked = {}; cfg().picks.forEach(p => picked[p.id] = 1);
+    $('pg-picker').innerHTML = items.slice(0, 600).map(f => {
+      const col = COLORS[(f.id || 0) % COLORS.length];
+      const th = f.photo_url ? '<img src="' + f.photo_url + '">' : '✿';
+      return '<div class="pg-row' + (picked[f.id] ? ' on' : '') + '" onclick="PG.togglePick(' + f.id + ')">' +
+        '<div class="pg-th" style="background:' + col + '">' + th + '</div>' +
+        '<div class="pg-nm"><b>' + esc(f.ru || '—') + '</b><small>' + esc(nameAlt(f) || f.cat_ru || '') + '</small></div>' +
+        '<div class="pg-pr">' + fmtPrice(calcPrice(f)) + ' ' + curSign() + '</div></div>';
+    }).join('') || '<div class="pg-empty">Ничего не найдено</div>';
+  };
+
+  PG.togglePick = function (id) {
+    const p = cfg().picks, i = p.findIndex(x => x.id === id);
+    if (i >= 0) p.splice(i, 1); else p.push({ id: id, section: 'hit', comment: '', mk: '' });
+    PG.renderPicker(); renderPicks(); render();
+  };
+  PG.setSection = function (id, s) { const p = cfg().picks.find(x => x.id === id); if (p) { p.section = s; renderPicks(); render(); } };
+  PG.setComment = function (id, v) { const p = cfg().picks.find(x => x.id === id); if (p) { p.comment = v; clearTimeout(PG._t); PG._t = setTimeout(render, 400); } };
+  PG.setPickMk = function (id, v) { const p = cfg().picks.find(x => x.id === id); if (p) { p.mk = v; renderPicks(); render(); } };
+  PG.move = function (id, d) {
+    const p = cfg().picks, i = p.findIndex(x => x.id === id), j = i + d;
+    if (j < 0 || j >= p.length) return;
+    const t = p[i]; p[i] = p[j]; p[j] = t; renderPicks(); render();
+  };
+
+  function byId() { const m = {}; ((typeof flowers !== 'undefined' && flowers) ? flowers : []).forEach(f => m[f.id] = f); return m; }
+
+  function renderPicks() {
+    const p = cfg().picks, map = byId();
+    $('pg-picks-empty').style.display = p.length ? 'none' : 'block';
+    const gm = Number(cfg().markup || 0);
+    $('pg-picks').innerHTML = p.map(pk => {
+      const f = map[pk.id] || { ru: '#' + pk.id };
+      const opts = [0, 5, 10, 15, 20, 25, 30].map(m =>
+        '<option value="' + m + '"' + (String(pk.mk) === String(m) ? ' selected' : '') + '>' + (m ? '+' + m + '%' : '0% — без наценки') + '</option>').join('');
+      return '<div class="pg-pick">' +
+        '<div class="pg-top"><b>' + esc(f.ru || '—') + '</b>' +
+        '<div class="pg-seg">' +
+        '<span class="hit' + (pk.section === 'hit' ? ' on' : '') + '" onclick="PG.setSection(' + pk.id + ',\'hit\')">🔥 Хит</span>' +
+        '<span class="rec' + (pk.section === 'rec' ? ' on' : '') + '" onclick="PG.setSection(' + pk.id + ',\'rec\')">⭐ Выбор</span>' +
+        '<span class="new' + (pk.section === 'new' ? ' on' : '') + '" onclick="PG.setSection(' + pk.id + ',\'new\')">🌱 Новинка</span>' +
+        '</div>' +
+        '<div class="pg-mv"><button onclick="PG.move(' + pk.id + ',-1)">↑</button><button onclick="PG.move(' + pk.id + ',1)">↓</button><button onclick="PG.togglePick(' + pk.id + ')">✕</button></div>' +
+        '</div>' +
+        '<textarea placeholder="Комментарий эксперта (стойкость, сочетания, повод)…" oninput="PG.setComment(' + pk.id + ',this.value)">' + esc(pk.comment || '') + '</textarea>' +
+        '<div class="pg-mkrow"><span>Наценка:</span>' +
+        '<select onchange="PG.setPickMk(' + pk.id + ',this.value)">' +
+        '<option value=""' + ((!pk.mk && pk.mk !== 0) ? ' selected' : '') + '>как у всего прайса (' + gm + '%)</option>' + opts +
+        '</select>' +
+        '<span class="pg-prc">' + fmtPrice(baseOf(f)) + ' → ' + fmtPrice(calcPrice(f, pk)) + ' ' + curSign() + '</span>' +
+        '</div></div>';
+    }).join('');
+  }
+
+  // ── наценка ────────────────────────────────────────────
+  function renderMk() {
+    const cur = Number(cfg().markup || 0), custom = MK_STEPS.indexOf(cur) < 0;
+    $('pg-mkbar').innerHTML =
+      MK_STEPS.map(m => '<button class="' + ((!custom && cur === m) ? 'on' : '') + '" onclick="PG.setMarkup(' + m + ')">' + (m ? '+' + m + '%' : 'без наценки') + '</button>').join('') +
+      '<input type="number" step="0.5" min="0" placeholder="своя, %" value="' + (custom ? cur : '') + '" oninput="PG.setMarkup(this.value,true)">';
+  }
+  PG.setMarkup = function (v, typing) {
+    cfg().markup = (v === '' || v == null) ? 0 : Number(v);
+    if (typing) { document.querySelectorAll('#pg-mkbar button').forEach(b => b.classList.remove('on')); }
+    else renderMk();
+    PG.renderPicker(); renderPicks(); render();
+  };
+  PG.setCfg = function (k, v, hard) {
+    cfg()[k] = v;
+    if (hard) { PG.renderPicker(); renderPicks(); }
+    render();
+  };
+
+  // ── компании ───────────────────────────────────────────
+  function renderBrandSel() {
+    $('pg-bsel').innerHTML = Object.keys(brands).map(k =>
+      '<option value="' + k + '"' + (k === curBrand ? ' selected' : '') + '>' + esc(brands[k].name || k) + '</option>').join('');
+  }
+  function renderPals() {
+    const P = palOf(brand());
+    $('pg-pals').innerHTML = PALETTES.map((p, i) => {
+      const on = (p.acc === P.acc && p.acc2 === P.acc2 && p.gold === P.gold && p.soft === P.soft);
+      return '<div class="pg-pal' + (on ? ' on' : '') + '" onclick="PG.applyPal(' + i + ')" title="' + p.n + '">' +
+        '<span class="pg-sw"><i style="background:' + p.acc + '"></i><i style="background:' + p.acc2 + '"></i><i style="background:' + p.gold + '"></i><i style="background:' + p.soft + '"></i><i style="background:#fff"></i></span>' +
+        '<small>' + p.n + '</small></div>';
+    }).join('');
+  }
+  function syncBrandFields() {
+    const b = brand(), P = palOf(b);
+    $('pg-name').value = b.name || ''; $('pg-contact').value = b.contact || '';
+    $('pg-sub').value = b.sub || ''; $('pg-ribbon').value = b.ribbon || '';
+    $('pg-ftitle').value = b.ftitle || ''; $('pg-ftext').value = b.ftext || '';
+    $('pg-acc').value = P.acc; $('pg-acc2').value = P.acc2; $('pg-gold').value = P.gold; $('pg-soft').value = P.soft;
+    $('pg-file').value = '';
+    renderPals();
+  }
+  PG.setBrand = function (k, v) {
+    brand()[k] = v;
+    if (k === 'name') renderBrandSel();
+    if (['acc', 'acc2', 'gold', 'soft'].indexOf(k) >= 0) { brand().useCatColor = false; renderPals(); }
+    render();
+  };
+  PG.switchBrand = function (k) { if (!brands[k]) return; curBrand = k; syncBrandFields(); render(); };
+  PG.applyPal = function (i) {
+    const p = PALETTES[i], b = brand();
+    b.acc = p.acc; b.acc2 = p.acc2; b.gold = p.gold; b.soft = p.soft; b.useCatColor = false;
+    syncBrandFields(); render();
+  };
+  PG.newBrand = function () {
+    const n = (prompt('Название новой компании:', '') || '').trim(); if (!n) return;
+    const k = 'b' + Date.now();
+    brands[k] = { name: n, logo: '', sysLogo: false, sub: '', contact: '', ribbon: '', ftitle: n, ftext: '', acc: '#1f4030', acc2: '#2f5c44', gold: '#c79a4b', soft: '#eef3ee', useCatColor: false };
+    curBrand = k; renderBrandSel(); syncBrandFields(); render(); say('Компания «' + n + '» добавлена');
+  };
+  PG.dupBrand = function () {
+    const src = brand(), n = (prompt('Название копии:', (src.name || '') + ' — копия') || '').trim(); if (!n) return;
+    const k = 'b' + Date.now(); brands[k] = Object.assign({}, src, { name: n, ftitle: n });
+    curBrand = k; renderBrandSel(); syncBrandFields(); render();
+  };
+  PG.delBrand = function () {
+    if (Object.keys(brands).length < 2) { say('Нельзя удалить последнюю компанию'); return; }
+    if (!confirm('Удалить «' + (brand().name || curBrand) + '»?')) return;
+    delete brands[curBrand]; curBrand = Object.keys(brands)[0];
+    renderBrandSel(); syncBrandFields(); render();
+  };
+  PG.uploadLogo = function (inp) {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    if (f.size > 900 * 1024) say('⚠️ Логотип больше 900 КБ — сожмите файл, иначе он не сохранится');
+    const r = new FileReader();
+    r.onload = () => { const b = brand(); b.logo = r.result; b.sysLogo = false; render(); say('Логотип загружен'); };
+    r.onerror = () => say('Не удалось прочитать файл');
+    r.readAsDataURL(f);
+  };
+  PG.useSystemLogo = function () { const b = brand(); b.logo = ''; b.sysLogo = true; $('pg-file').value = ''; render(); };
+  PG.clearLogo = function () { const b = brand(); b.logo = ''; b.sysLogo = false; $('pg-file').value = ''; render(); };
+
+  // ── лист A4 ────────────────────────────────────────────
+  const SHEET_CSS = [
+    '.pgsheet{width:210mm;min-height:297mm;background:#fff;position:relative;margin:0 auto;text-align:left;box-shadow:0 6px 30px rgba(0,0,0,.18);',
+    "font-family:'DejaVu Sans','Segoe UI','Noto Sans CJK SC',Arial,sans-serif;color:#26241f;box-sizing:border-box;",
+    '--acc:#1f4030;--acc2:#2f5c44;--gold:#c79a4b;--soft:#eef3ee;--onAcc:#fff;--onGold:#3a2c0c;--goldInk:#c79a4b;--muted:#6f6a5f;',
+    '--line:color-mix(in srgb, var(--acc) 15%, #fff);--chip:color-mix(in srgb, var(--soft) 55%, #fff);',
+    '--cream:color-mix(in srgb, var(--soft) 28%, #fff);--stripe:color-mix(in srgb, var(--soft) 14%, #fff)}',
+    '.pgsheet *{box-sizing:border-box;margin:0;padding:0}',
+    '.pgsheet header{background:var(--acc);color:var(--onAcc);padding:16px 20px 14px;display:flex;justify-content:space-between;align-items:flex-start}',
+    '.pgsheet .lg{height:34px;width:auto;display:block;margin-bottom:5px}',
+    '.pgsheet .lgtx{font-weight:800;font-size:22px;letter-spacing:2.5px;line-height:1.1;margin-bottom:6px}',
+    '.pgsheet .sub{font-size:9.5px;color:color-mix(in srgb, var(--onAcc) 78%, transparent);letter-spacing:.5px}',
+    '.pgsheet .hmeta{text-align:right;font-size:9.5px;line-height:1.6;color:color-mix(in srgb, var(--onAcc) 85%, transparent)}',
+    '.pgsheet .week{display:inline-block;background:var(--gold);color:var(--onGold);font-weight:700;padding:3px 9px;border-radius:20px;font-size:10px;margin-bottom:5px}',
+    '.pgsheet .ribbon{background:var(--gold);color:var(--onGold);font-size:9.5px;font-weight:600;text-align:center;padding:5px 10px;letter-spacing:.3px}',
+    '.pgsheet .body{padding:14px 20px 96px}',
+    '.pgsheet .sec{display:flex;align-items:center;gap:8px;margin:14px 0 8px}',
+    '.pgsheet .sec .tag{font-size:13px;font-weight:700;color:var(--acc);letter-spacing:.5px}',
+    '.pgsheet .sec .rule{flex:1;height:1px;background:var(--line)}',
+    '.pgsheet .sec .cnt{font-size:8.5px;color:var(--muted)}',
+    '.pgsheet table{width:100%;border-collapse:collapse;background:transparent;font-size:9.5px}',
+    '.pgsheet thead th{background:var(--chip);color:var(--acc);font-size:8px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;padding:5px 6px;text-align:left;border:none;border-bottom:2px solid var(--line);white-space:normal}',
+    '.pgsheet thead th.pr{text-align:right}',
+    '.pgsheet tbody td{padding:7px 6px;border:none;border-bottom:1px solid var(--line);vertical-align:top;font-size:9.5px;background:transparent;color:#26241f}',
+    '.pgsheet tbody tr:nth-child(even) td{background:var(--stripe)}',
+    '.pgsheet .thumb{width:36px;height:36px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;overflow:hidden}',
+    '.pgsheet .thumb img{width:100%;height:100%;object-fit:cover}',
+    '.pgsheet .nmc b{font-size:10px}',
+    '.pgsheet .nmc .alt{color:var(--muted);font-size:8px;display:block;margin-top:1px}',
+    '.pgsheet .cmt{color:var(--acc2);font-size:8.5px;font-style:italic;display:block;margin-top:3px}',
+    ".pgsheet .cmt::before{content:'✎ ';color:var(--gold);font-style:normal}",
+    '.pgsheet .pack{color:var(--muted);font-size:8.5px;white-space:nowrap}',
+    '.pgsheet td.pr{text-align:right;font-weight:700;font-size:11px;white-space:nowrap}',
+    '.pgsheet td.pr .u{display:block;font-weight:400;font-size:7.5px;color:var(--muted)}',
+    '.pgsheet .badge{display:inline-block;font-size:7px;font-weight:700;padding:1px 5px;border-radius:10px;margin-left:4px;vertical-align:middle}',
+    '.pgsheet .b-hit{background:color-mix(in srgb, var(--gold) 24%, #fff);color:var(--goldInk)}',
+    '.pgsheet .b-rec{background:color-mix(in srgb, var(--soft) 50%, #fff);color:var(--acc)}',
+    '.pgsheet .b-new{background:color-mix(in srgb, var(--acc2) 12%, #fff);color:var(--acc2)}',
+    '.pgsheet .info{display:flex;gap:10px;margin:16px 0 10px}',
+    '.pgsheet .pgcard{flex:1;background:var(--cream);border:1px solid var(--line);border-radius:10px;padding:10px 11px}',
+    '.pgsheet .pgcard h3{font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--goldInk);margin-bottom:5px;font-weight:700}',
+    '.pgsheet .pgcard p,.pgsheet .pgcard li{font-size:8.7px;line-height:1.5}',
+    '.pgsheet .pgcard ul{list-style:none}',
+    '.pgsheet .pgcard li{padding-left:12px;position:relative;margin-bottom:2px}',
+    ".pgsheet .pgcard li::before{content:'•';color:var(--acc2);position:absolute;left:2px}",
+    '.pgsheet footer{position:absolute;bottom:0;left:0;right:0;background:var(--acc);color:var(--onAcc);padding:12px 20px;display:flex;justify-content:space-between;align-items:center}',
+    '.pgsheet .cta{font-size:12px;font-weight:700}.pgsheet .cta span{color:var(--gold)}',
+    '.pgsheet .chan{font-size:9px;line-height:1.6;text-align:right;color:color-mix(in srgb, var(--onAcc) 82%, transparent)}',
+    '.pgsheet .chan b{color:var(--onAcc)}',
+    '.pgsheet .pgempty{padding:20px;text-align:center;color:var(--muted);font-size:11px}'
+  ].join('\n');
+
+  function itemRow(f, pk) {
+    const col = COLORS[(f.id || 0) % COLORS.length];
+    const th = f.photo_url ? '<img src="' + f.photo_url + '">' : '✿';
+    const badge = pk.section === 'hit' ? '<span class="badge b-hit">ХИТ</span>'
+      : pk.section === 'new' ? '<span class="badge b-new">НОВИНКА</span>'
+        : '<span class="badge b-rec">ВЫБОР</span>';
+    return '<tr>' +
+      '<td><div class="thumb" style="background:' + col + '">' + th + '</div></td>' +
+      '<td class="nmc"><b>' + esc(f.ru || '—') + '</b>' + badge +
+      '<span class="alt">' + esc(nameAlt(f)) + '</span>' +
+      (pk.comment ? '<span class="cmt">' + esc(pk.comment) + '</span>' : '') + '</td>' +
+      '<td class="pack">' + packOf(f) + '</td>' +
+      '<td class="pr">' + fmtPrice(calcPrice(f, pk)) + ' ' + curSign() + '<span class="u">' + unitLabel() + '</span></td>' +
+      '</tr>';
+  }
+  function sectionTable(picks, map) {
+    return '<table><thead><tr><th style="width:44px"></th><th>Наименование</th><th style="width:82px">Упаковка</th><th class="pr" style="width:78px">Цена</th></tr></thead><tbody>' +
+      picks.map(pk => itemRow(map[pk.id] || { id: pk.id, ru: '#' + pk.id }, pk)).join('') + '</tbody></table>';
+  }
+  function liList(txt) { return String(txt || '').split('\n').filter(x => x.trim()).map(x => '<li>' + esc(x) + '</li>').join(''); }
+
+  function render() {
+    const sh = $('pg-sheet'); if (!sh) return;
+    const c = cfg(), b = brand(), P = palOf(b);
+    const cat = CATS.find(x => x.k === curCat);
+    const accReal = b.useCatColor ? cat.acc : P.acc;
+    const acc2 = b.useCatColor ? 'color-mix(in srgb, ' + cat.acc + ' 78%, #fff)' : P.acc2;
+    sh.style.setProperty('--acc', accReal);
+    sh.style.setProperty('--acc2', acc2);
+    sh.style.setProperty('--gold', P.gold);
+    sh.style.setProperty('--soft', P.soft);
+    sh.style.setProperty('--onAcc', cw(accReal) >= 3 ? '#fff' : '#1a1a1a');
+    sh.style.setProperty('--onGold', cw(P.gold) >= 3 ? '#fff' : (cw(accReal) >= 4.5 ? accReal : '#1a1a1a'));
+    sh.style.setProperty('--goldInk', cw(P.gold) >= 2.2 ? P.gold : (cw(P.acc2) >= 2.6 ? P.acc2 : P.acc));
+
+    const map = byId();
+    const hits = c.picks.filter(p => p.section === 'hit');
+    const recs = c.picks.filter(p => p.section !== 'hit');
+    const lg = logoSrc(b);
+
+    sh.innerHTML =
+      '<header><div>' +
+      (lg ? '<img class="lg" src="' + lg + '" alt="' + esc(b.name) + '">' : '<div class="lgtx">' + esc(b.name) + '</div>') +
+      '<div class="sub">' + esc(b.sub || '') + '</div></div>' +
+      '<div class="hmeta"><span class="week">' + esc(c.week || '') + '</span>' +
+      (b.contact ? '<br>' + esc(b.contact) : '') + '<br>Прайс актуален на дату публикации</div></header>' +
+      '<div class="ribbon">' + (b.ribbon ? esc(b.ribbon) + ' — ' : '') + cat.title + '</div>' +
+      '<div class="body">' +
+      (hits.length ? '<div class="sec"><span>🔥</span><span class="tag">Хиты продаж</span><span class="rule"></span><span class="cnt">берут каждую неделю</span></div>' + sectionTable(hits, map) : '') +
+      (recs.length ? '<div class="sec"><span>⭐</span><span class="tag">Рекомендуем</span><span class="rule"></span><span class="cnt">наш выбор недели</span></div>' + sectionTable(recs, map) : '') +
+      ((!hits.length && !recs.length) ? '<div class="pgempty">Отметьте позиции в каталоге — они появятся здесь.</div>' : '') +
+      '<div class="info">' +
+      '<div class="pgcard"><h3>Условия заказа</h3><ul>' + liList(c.conditions) + '</ul></div>' +
+      '<div class="pgcard"><h3>Сроки доставки</h3><ul>' + liList(c.delivery) + '</ul></div>' +
+      '<div class="pgcard"><h3>Совет недели</h3><p>' + esc(c.tip || '').replace(/\n/g, '<br>') + '</p></div>' +
+      '</div></div>' +
+      '<footer><div class="cta">' + (b.contact ? 'Заказать: <span>' + esc(b.contact) + '</span>' : esc(b.name)) + '</div>' +
+      '<div class="chan"><b>' + esc(b.ftitle || b.name) + '</b>' + (b.ftext ? '<br>' + esc(b.ftext).replace(/\n/g, '<br>') : '') + '</div></footer>';
+  }
+
+  PG.setZoom = function (z) {
+    zoom = Number(z) || 0.72;
+    const sc = $('pg-scale');
+    sc.style.transform = 'scale(' + zoom + ')';
+    sc.style.width = (210 * zoom) + 'mm';
+    sc.style.height = (297 * zoom) + 'mm';
+  };
+
+  PG.printPDF = function () {
+    render();
+    const b = brand();
+    const w = window.open('', '_blank');
+    if (!w) { say('⚠️ Разрешите всплывающие окна / 请允许弹出窗口'); return; }
+    const head = '<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><title>' +
+      esc(b.name || 'Прайс') + ' — прайс</title><style>' + SHEET_CSS +
+      '</style><style>@page{size:A4;margin:0}html,body{margin:0;padding:0;background:#fff}' +
+      '.pgsheet{box-shadow:none;margin:0}</style></head><body>';
+    w.document.write(head + $('pg-sheet').outerHTML + '</body></html>');
+    w.document.close();
+    setTimeout(() => { try { w.focus(); w.print(); } catch (e) { } }, 900);
+  };
+
+  function syncFields() {
+    const c = cfg();
+    $('pg-week').value = c.week || '';
+    $('pg-basis').value = c.basis || 'a_bunch';
+    $('pg-cur').value = c.cur || 'cny';
+    $('pg-rate').value = c.rate != null ? c.rate : 12;
+    $('pg-round').value = c.round || 'raw';
+    $('pg-cond').value = c.conditions || '';
+    $('pg-deliv').value = c.delivery || '';
+    $('pg-tip').value = c.tip || '';
+    renderMk();
+  }
+
+  // ── вход на страницу ───────────────────────────────────
+  PG.open = function () {
+    if (!inited) {
+      const st = document.createElement('style');
+      st.id = 'pg-sheet-css'; st.textContent = SHEET_CSS;
+      document.head.appendChild(st);
+      load();
+      inited = true;
+    }
+    if (typeof currentCatalog !== 'undefined' && currentCatalog) curCat = currentCatalog;
+    renderCats(); renderBrandSel(); syncBrandFields(); syncFields();
+    PG.renderPicker(); renderPicks(); render(); PG.setZoom(zoom);
+    if (!(typeof flowers !== 'undefined' && flowers && flowers.length)) {
+      $('pg-count').textContent = 'Каталог загружается…';
+      if (typeof loadFlowers === 'function') {
+        Promise.resolve(loadFlowers())
+          .then(() => { PG.renderPicker(); renderPicks(); render(); })
+          .catch(() => { $('pg-count').textContent = 'Каталог не загрузился — откройте вкладку «Прайс» и вернитесь сюда.'; });
+      }
+    }
+  };
+})();
+</script>
 </body>
 </html>
