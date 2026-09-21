@@ -5630,12 +5630,29 @@ async function openInvoice(orderId) {
   // Check existing invoice
   let { data: inv } = await sb.from('invoices').select('*').eq('order_id', orderId).maybeSingle();
 
-  const flowersTotal = order.order_items?.reduce((s,i) => s + i.subtotal, 0) || 0;
-  const totalBoxes = order.order_items?.reduce((s,i) => s + i.qty_boxes, 0) || 0;
+  // Диантус (клиент с журналом закупа): инвойс по фактической закупочной стоимости
+  window._invCostMode = false; window._invCostWarns = [];
+  let flowersTotal = order.order_items?.reduce((s,i) => s + i.subtotal, 0) || 0;
+  let totalBoxes = order.order_items?.reduce((s,i) => s + i.qty_boxes, 0) || 0;
+  if (await opClientTracked(order)) {
+    await opLoadSups();
+    const { lots, error } = await opFetchLots(orderId);
+    if (error) toast('⚠️ Журнал закупа недоступен — инвойс по ценам заказа: ' + (opIsMissingTable(error) ? OP_SQL_HINT : error.message));
+    else {
+      const c = opInvoiceCostItems(order, lots);
+      window._invCostMode = true;
+      window._invCostItems = c.items;
+      window._invCostWarns = c.warns;
+      flowersTotal = c.total;
+      // упаковка — по фактическим коробкам (как в накладной по факту)
+      totalBoxes = wbFactRows({ order_items: order.order_items || [], _fact: { lots, markup: 0 } }).rows
+        .reduce((s, r) => s + (parseInt(r.qty_boxes) || 0), 0);
+    }
+  }
 
   // Default values
   inv = inv || {
-    markup_pct: 15,
+    markup_pct: window._invCostMode ? 0 : 15,
     flowers_subtotal: flowersTotal,
     packing_cost: totalBoxes * PACKING_RATE,
     certificates_cost: 0,
@@ -5700,19 +5717,7 @@ function recalcInvoice() {
 
   const tbody = document.getElementById('inv-items-tbody');
   if (tbody) {
-    tbody.innerHTML = itemsCalc.map(item => `
-      <tr>
-        <td class="L" style="font-size:11px">
-          <b>${item.flower_snapshot?.ru||'—'}</b><br>
-          <span style="color:var(--mid);font-size:10px">${item.flower_snapshot?.cn||''}</span><br>
-          <span style="color:var(--light);font-size:9px">${item.price_type==='a'?'A级':'A+'}</span>
-        </td>
-        <td style="font-weight:700;color:var(--sage-d)">¥${item.bunchPriceWithMarkup.toFixed(2)}</td>
-        <td style="color:var(--mid)">${item.bunches_per_box}</td>
-        <td style="font-weight:700;color:var(--gold)">¥${item.boxPriceWithMarkup.toFixed(2)}</td>
-        <td style="font-weight:700">${item.qty_boxes}</td>
-        <td class="r" style="font-weight:700">¥${item.subtotalWithMarkup.toFixed(2)}</td>
-      </tr>`).join('');
+    tbody.innerHTML = invRowsHTML(itemsCalc);
   }
 
   const tt = document.getElementById('inv-totals-table');
@@ -5736,8 +5741,8 @@ async function applyOrderNumber(orderId) {
 
 function renderInvoiceBuilder(order, inv, flowersTotal, totalBoxes) {
   const client  = order.client?.company_name || order.client?.login || '—';
-  const items   = order.order_items || [];
-  const markup  = parseFloat(inv.markup_pct) || 15;
+  const items   = window._invCostMode ? (window._invCostItems || []) : (order.order_items || []);
+  const markup  = (inv.markup_pct != null && !isNaN(parseFloat(inv.markup_pct))) ? parseFloat(inv.markup_pct) : 15;
   const packing = (inv.packing_cost != null) ? parseFloat(inv.packing_cost) : totalBoxes * PACKING_RATE;
   const certs   = parseFloat(inv.certificates_cost) || 0;
   const ship    = parseFloat(inv.shipping_cost) || 0;
@@ -5749,7 +5754,10 @@ function renderInvoiceBuilder(order, inv, flowersTotal, totalBoxes) {
   const grandTotal = flowersWithMarkup + packing + certs + ship + other + adj;
   const invNum = inv.invoice_number || ('INV-' + new Date().getFullYear() + '-NEW');
 
-  document.getElementById('invoice-content').innerHTML = `
+  document.getElementById('invoice-content').innerHTML = (window._invCostMode
+      ? `<div style="margin-bottom:10px;padding:8px 12px;background:var(--gold-l);border-radius:8px;font-size:12px">🛒 <b>Инвойс по фактической закупочной стоимости</b> — строки взяты из журнала закупа (только принятые партии). Наценка по умолчанию 0%. / 按实际采购价开票</div>`
+        + opWarnBanner('Факт закупа', window._invCostWarns || [])
+      : '') + `
     <div style="display:grid;grid-template-columns:1fr 400px;gap:16px;align-items:start">
 
       <div class="inv-preview" id="inv-print-area">
@@ -5771,29 +5779,10 @@ function renderInvoiceBuilder(order, inv, flowersTotal, totalBoxes) {
             <b>${client}</b><br><span style="font-size:11px">${order.client?.contact||''}</span></div>
         </div>
 
+        ${window._invCostMode ? '<div style="font-size:11px;color:var(--mid);margin-top:8px">Расчёт по фактической закупочной стоимости / 按实际采购价结算</div>' : ''}
         <table class="inv-table">
-          <thead><tr>
-            <th class="L">Позиция / 品名 / Item</th>
-            <th>¥/банч<br>¥/扎</th>
-            <th>Бан/кор<br>扎/件</th>
-            <th>¥/КОРОБ<br>¥/件</th>
-            <th>Кор.<br>箱</th>
-            <th class="r">Сумма<br>金额</th>
-          </tr></thead>
-          <tbody id="inv-items-tbody">
-            ${itemsCalc.map(item => `<tr>
-              <td class="L" style="font-size:11px">
-                <b>${item.flower_snapshot?.ru||'—'}</b><br>
-                <span style="color:var(--mid);font-size:10px">${item.flower_snapshot?.cn||''}</span><br>
-                <span style="color:var(--light);font-size:9px">${item.price_type==='a'?'A级':'A+'}</span>
-              </td>
-              <td style="font-weight:700;color:var(--sage-d)">¥${item.bunchPriceWithMarkup.toFixed(2)}</td>
-              <td style="color:var(--mid)">${item.bunches_per_box}</td>
-              <td style="font-weight:700;color:var(--gold)">¥${item.boxPriceWithMarkup.toFixed(2)}</td>
-              <td style="font-weight:700">${item.qty_boxes}</td>
-              <td class="r" style="font-weight:700">¥${item.subtotalWithMarkup.toFixed(2)}</td>
-            </tr>`).join('')}
-          </tbody>
+          <thead>${invHeadHTML()}</thead>
+          <tbody id="inv-items-tbody">${invRowsHTML(itemsCalc)}</tbody>
         </table>
 
         <table class="inv-totals" id="inv-totals-table">
@@ -5833,7 +5822,7 @@ function renderInvoiceBuilder(order, inv, flowersTotal, totalBoxes) {
                 <span style="font-weight:700;font-size:16px">%</span>
               </div>
             </div>
-            <div class="inv-row"><span class="inv-label">Цветы закупка / 采购价:</span><span class="inv-value">¥${flowersTotal.toFixed(2)}</span></div>
+            <div class="inv-row"><span class="inv-label">${window._invCostMode ? 'Цветы по факту закупа / 实际采购价' : 'Цветы закупка / 采购价'}:</span><span class="inv-value">¥${flowersTotal.toFixed(2)}</span></div>
             <div class="inv-row"><span class="inv-label">Цветы с наценкой / 含加价:</span>
               <span class="inv-value" id="inv-flowers-markup" style="color:var(--sage-d);font-size:14px;font-weight:700">¥${flowersWithMarkup.toFixed(2)}</span></div>
             <div class="inv-row">
@@ -5936,14 +5925,22 @@ async function saveInvoice() {
     notes,
     updated_at: new Date().toISOString(),
   };
+  // Диантус: фиксируем строки инвойса — клиент увидит ровно их
+  if (window._invCostMode) {
+    payload.pricing_mode = 'cost';
+    payload.lines = itemsCalc.map(i => ({ ru: i.flower_snapshot?.ru || '', cn: i.flower_snapshot?.cn || '',
+      orig_ru: i._cost?.orig_ru || '', supplier: i._cost?.supplier || '', dates: i._cost?.dates || '',
+      pack: i._cost?.pack || '', bunches: i._cost?.bunches || 0,
+      price: +i.bunchPriceWithMarkup.toFixed(2), sum: +i.subtotalWithMarkup.toFixed(2) }));
+  }
 
   let savedInvId = currentInvoiceId;
   if (currentInvoiceId) {
     const { error } = await sb.from('invoices').update(payload).eq('id', currentInvoiceId);
-    if (error) { toast('❌ Ошибка сохранения: ' + error.message); return; }
+    if (error) { toast('❌ Ошибка сохранения: ' + error.message + (/pricing_mode|lines/.test(error.message) ? ' — выполните SQL-миграцию «Журнал закупа»' : '')); return; }
   } else {
     const { data, error } = await sb.from('invoices').insert(payload).select().single();
-    if (error) { toast('❌ Ошибка создания: ' + error.message); return; }
+    if (error) { toast('❌ Ошибка создания: ' + error.message + (/pricing_mode|lines/.test(error.message) ? ' — выполните SQL-миграцию «Журнал закупа»' : '')); return; }
     savedInvId = data?.id;
     currentInvoiceId = savedInvId;
   }
@@ -5969,12 +5966,27 @@ function exportInvExcel() {
   if (!el) return;
   const order  = window._invOrder;
   const flowersTotal = window._invFlowersTotal;
-  const markup  = parseFloat(document.getElementById('inv-markup')?.value) || 15;
+  const _mk = parseFloat(document.getElementById('inv-markup')?.value);
+  const markup  = isNaN(_mk) ? 15 : _mk;
   const packing = parseFloat(document.getElementById('inv-packing')?.value) || 0;
   const certs   = parseFloat(document.getElementById('inv-certs')?.value) || 0;
   const ship    = parseFloat(document.getElementById('inv-ship')?.value) || 0;
   const other   = parseFloat(document.getElementById('inv-other')?.value) || 0;
   const otherLabel = document.getElementById('inv-other-label')?.value || 'Прочее';
+  if (window._invCostMode) {
+    const itemsCalc = calcItemsWithMarkup(window._invItems || [], markup);
+    const fl = itemsCalc.reduce((s, i) => s + i.subtotalWithMarkup, 0);
+    const adj = parseFloat(document.getElementById('inv-adjust')?.value) || 0;
+    const t = [['Цветы / 花卉', fl]];
+    if (packing > 0) t.push(['Упаковка / 包装费', packing]);
+    if (certs > 0) t.push(['Сертификаты / 证书费', certs]);
+    if (ship > 0) t.push(['Перевозка / 运费', ship]);
+    if (other > 0) t.push([otherLabel + ' / 其他', other]);
+    if (adj) t.push([(document.getElementById('inv-adjust-label')?.value || 'Корректировка') + ' / 调整', adj]);
+    t.push(['ИТОГО / 合计 / TOTAL', fl + packing + certs + ship + other + adj]);
+    exportInvCostExcel(order, itemsCalc, t);
+    return;
+  }
   const flowersWithMarkup = flowersTotal * (1 + markup/100);
   const grand = flowersWithMarkup + packing + certs + ship + other;
   const client = order.client?.company_name || order.client?.login || '—';
@@ -6469,6 +6481,8 @@ async function viewClientInvoice(invId) {
   });
 
   const showMkup = false; // клиент никогда не видит разбивку наценки
+  const costLines = Array.isArray(inv.lines) && inv.lines.length ? inv.lines : null; // инвойс по закупу (Диантус)
+  if (costLines) document.getElementById('modal-content').classList.add('op-wide');
 
   document.getElementById('modal-content').innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:10px">
@@ -6486,6 +6500,19 @@ async function viewClientInvoice(invId) {
       </div>
     </div>
 
+    ${costLines ? `<div style="font-size:11px;color:var(--mid)">Расчёт по фактической закупочной стоимости / 按实际采购价结算</div>
+    <table class="inv-table" style="margin-bottom:16px;font-size:12px">
+      <thead><tr><th class="L">Позиция / 品名</th><th class="L">Производитель / 供应商</th><th>Дата закупа</th><th>Банчей</th><th>¥/банч</th><th class="r">Сумма / 金额</th></tr></thead>
+      <tbody>${costLines.map(l => `<tr>
+        <td class="L"><b>${escHtml(l.ru)}</b><br><span style="color:var(--mid);font-size:10px">${escHtml(l.cn || '')}</span>
+          ${l.orig_ru ? `<br><span style="color:#7c3aed;font-size:10px">замена позиции «${escHtml(l.orig_ru)}»</span>` : ''}
+          ${l.pack ? `<br><span style="color:var(--light);font-size:10px">${escHtml(l.pack)}/банч</span>` : ''}</td>
+        <td class="L" style="font-size:11px">${escHtml(l.supplier || '—')}</td>
+        <td style="font-size:11px;color:var(--mid)">${escHtml(l.dates || '')}</td>
+        <td style="font-weight:700">${l.bunches}</td>
+        <td>¥${(+l.price).toFixed(2)}</td>
+        <td class="r" style="font-weight:700">¥${(+l.sum).toFixed(2)}</td></tr>`).join('')}</tbody>
+    </table>` : `
     <table class="inv-table" style="margin-bottom:16px;font-size:12px">
       <thead><tr>
         <th class="L">Позиция / 品名</th>
@@ -6508,7 +6535,7 @@ async function viewClientInvoice(invId) {
           <td class="r" style="font-weight:700">¥${i.subWithMk.toFixed(2)}</td>
         </tr>`).join('')}
       </tbody>
-    </table>
+    </table>`}
 
     <table class="inv-totals" style="width:100%;margin-bottom:16px">
 
@@ -6702,6 +6729,9 @@ async function createWaybillFromOrder(orderId) {
 
   if (!order) { toast('Ошибка загрузки заказа / 订单加载失败'); return; }
   const wbNum = wbNumAuto;
+  currentWaybillId = null;
+  window._wbTracked = false;
+  await wbAttachFact(order);
   renderWaybillEditor(null, order, wbNum);
 }
 
@@ -6725,6 +6755,7 @@ async function openWaybill(waybillId) {
   if (!wb) { toast('Накладная не найдена / 出货单未找到'); return; }
   currentWaybillOrderId = wb.order_id;
   const isMgr = currentUser.role === 'manager';
+  window._wbTracked = isMgr ? await opClientTracked(wb.order || { client_id: wb.client_id }) : false;
 
   if (isMgr && (!items || items.length === 0)) {
     // No waybill_items yet — load order_items as template (only when needed)
@@ -6733,7 +6764,7 @@ async function openWaybill(waybillId) {
       client:users!orders_client_id_fkey(company_name,login,contact),
       order_items(id,qty_boxes,bunches_per_box,price_per_box,price_per_bunch,subtotal,client_name,flower_snapshot,flower_id)
     `).eq('id', wb.order_id).single();
-    if (orderFull) wb.order = orderFull;
+    if (orderFull) { wb.order = orderFull; await wbAttachFact(orderFull); }
     renderWaybillEditor(wb, wb.order, wb.waybill_number, null);
   } else if (isMgr) {
     renderWaybillEditor(wb, wb.order, wb.waybill_number, items);
@@ -6747,6 +6778,9 @@ function renderWaybillEditor(wb, order, wbNum, existingItems) {
   const isMgr = currentUser.role === 'manager';
   const client = order?.client?.company_name || order?.client?.login || '—';
   const orderItems = order?.order_items || [];
+  window._wbObj = wb;
+  const factMode = !!order?._fact && !existingItems?.length;
+  let factWarns = [];
 
   document.getElementById('wb-page-title').textContent = wbNum || 'Новая накладная / 新出货单';
   document.getElementById('wb-page-sub').textContent =
@@ -6760,6 +6794,7 @@ function renderWaybillEditor(wb, order, wbNum, existingItems) {
     actionBtns.innerHTML = isMgr ? `
       <button class="btn btn-secondary btn-sm" onclick="exportWaybillExcel()">📊 Excel</button>
       <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨 Печать</button>
+      ${(order?._fact || window._wbTracked) ? `<button class="btn btn-secondary btn-sm" onclick="wbRebuildFromFact()" title="Заполнить заново по журналу закупа">↻ По факту / 按实际</button>` : ''}
       <button class="btn btn-gold btn-sm" onclick="saveWaybill()">💾 Сохранить / 保存</button>
       <button class="btn btn-primary btn-sm" onclick="sendWaybill()" title="Сохраняет накладную, отправляет клиенту и меняет статус заказа на Отправлен">📤 Отправить клиенту / 发给客户 →「已发货」</button>
     ` : '';
@@ -6767,8 +6802,13 @@ function renderWaybillEditor(wb, order, wbNum, existingItems) {
 
   // Build rows: use existingItems if editing, else build from order_items
   let rows = [];
-  if (existingItems?.length) {
+  if (factMode) {
+    const fr = wbFactRows(order);
+    rows = fr.rows; factWarns = fr.warns;
+  } else if (existingItems?.length) {
     rows = existingItems.map(item => ({
+      ...((item.total_bunches && item.total_bunches !== (item.qty_boxes||0) * (item.bunches_per_box||0))
+        ? { fact_bunches: item.total_bunches, fact_ppb: item.total_bunches ? (item.subtotal||0) / item.total_bunches : 0 } : {}),
       order_item_id: item.order_item_id,
       flower_snapshot: item.flower_snapshot || {},
       sub_client: item.sub_client || '',
@@ -6782,19 +6822,18 @@ function renderWaybillEditor(wb, order, wbNum, existingItems) {
       subtotal: item.subtotal || 0,
     }));
   } else {
-    rows = orderItems.map(oi => ({
+    rows = orderItems.map(oi => { const [L, W, H] = wbParseBox(oi.flower_snapshot?.box_size); return {
       order_item_id: oi.id,
       flower_snapshot: oi.flower_snapshot || {},
       sub_client: oi.client_name || '',
       qty_boxes: oi.qty_boxes || 1,
       bunches_per_box: oi.bunches_per_box || oi.flower_snapshot?.boxes_per_box || 0,
-      stems_per_bunch: oi.flower_snapshot?.stems
-        ? Math.round((oi.flower_snapshot.stems / (oi.flower_snapshot.boxes_per_box||1)))
-        : 0,
-      box_length: '', box_width: '', box_height: '',
+      // стеблей (граммов) в банче — как в заказе, с учётом подтверждённых правок склада
+      stems_per_bunch: parseInt(oi.flower_snapshot?.stems) || 0,
+      box_length: L, box_width: W, box_height: H,
       price_per_box: oi.price_per_box || 0,
       subtotal: oi.subtotal || 0,
-    }));
+    }; });
   }
 
   // Store rows in window for save
@@ -6804,15 +6843,16 @@ function renderWaybillEditor(wb, order, wbNum, existingItems) {
 
   const tableRows = rows.map((row, i) => {
     const f = row.flower_snapshot || {};
-    const totalBunches = (row.qty_boxes||0) * (row.bunches_per_box||0);
-    const totalStems   = totalBunches * (row.stems_per_bunch||0);
-    const subtotal     = row.price_per_box * row.qty_boxes;
+    const totalBunches = wbRowBunches(row);
+    const totalStems   = wbRowStems(row);
+    const subtotal     = wbRowSum(row);
     return `
       <tr data-row="${i}" class="${i%2?'stripe':''}">
         <td style="font-size:10px;color:var(--light)">${i+1}</td>
         <td class="L" style="min-width:160px">
-          <div style="font-weight:700;font-size:12px">${f.ru||'—'}</div>
+          <div style="font-weight:700;font-size:12px">${f.ru||'—'}${f.fact?.uneven ? ' <span title="Банчи не делятся на целые коробки — проверьте">⚠️</span>' : ''}</div>
           <div style="font-size:10px;color:var(--mid)">${f.cn||''}</div>
+          ${wbFactNote(f)}
         </td>
         <td>
           <input class="inp" type="text" value="${row.sub_client||''}"
@@ -6835,6 +6875,7 @@ function renderWaybillEditor(wb, order, wbNum, existingItems) {
           <input class="inp" type="number" min="0" value="${row.stems_per_bunch||''}"
             style="width:52px;text-align:center;padding:4px"
             oninput="wbUpdateRow(${i},'stems_per_bunch',this.value)">
+          ${f.stems_label ? `<div style="font-size:9px;color:#c2410c">${escHtml(opFmtPack(f.stems_label, isWeightItem(f)))}</div>` : ''}
         </td>
         <td class="wb-total-bunches-${i}" style="font-weight:700">${totalBunches||'—'}</td>
         <td class="wb-total-stems-${i}" style="font-weight:700">${totalStems||'—'}</td>
@@ -6859,17 +6900,17 @@ function renderWaybillEditor(wb, order, wbNum, existingItems) {
 
   // Compute totals
   const totBoxes   = rows.reduce((s,r) => s + (parseInt(r.qty_boxes)||0), 0);
-  const totBunches = rows.reduce((s,r) => s + ((parseInt(r.qty_boxes)||0) * (parseInt(r.bunches_per_box)||0)), 0);
-  const totStems   = rows.reduce((s,r) => s + ((parseInt(r.qty_boxes)||0) * (parseInt(r.bunches_per_box)||0) * (parseInt(r.stems_per_bunch)||0)), 0);
-  const totSum     = rows.reduce((s,r) => s + ((parseFloat(r.price_per_box)||0) * (parseInt(r.qty_boxes)||0)), 0);
+  const totBunches = rows.reduce((s,r) => s + wbRowBunches(r), 0);
+  const totStems   = rows.reduce((s,r) => s + wbRowStems(r), 0);
+  const totSum     = rows.reduce((s,r) => s + wbRowSum(r), 0);
 
-  const saveBtnsHtml = isMgr ? `
+  const saveBtnsHtml = (factMode ? `<div style="margin-bottom:10px;padding:8px 12px;background:var(--gold-l);border-radius:8px;font-size:12px">🛒 <b>Накладная собрана по факту закупа</b>: принятые банчи, фактический сорт и пакинг, закупочная стоимость. / 按实际采购生成</div>` + opWarnBanner('Факт закупа', factWarns) : '') + (isMgr ? `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
       <button class="btn btn-gold" onclick="saveWaybill()">💾 Сохранить / 保存</button>
       <button class="btn btn-primary" onclick="sendWaybill()">📤 Отправить клиенту / 发给客户</button>
       <button class="btn btn-secondary" onclick="exportWaybillExcel()">📊 Excel</button>
       <button class="btn btn-secondary" onclick="window.print()">🖨 Печать</button>
-    </div>` : '';
+    </div>` : '');
 
   document.getElementById('waybill-content').innerHTML = saveBtnsHtml + `
     <div class="card" style="margin-bottom:14px">
@@ -6930,9 +6971,11 @@ function wbUpdateRow(i, field, val) {
   window._wbRows[i][field] = numFields.includes(field) ? (parseFloat(val)||0) : val;
 
   const row = window._wbRows[i];
-  const totalBunches = (parseInt(row.qty_boxes)||0) * (parseInt(row.bunches_per_box)||0);
-  const totalStems   = totalBunches * (parseInt(row.stems_per_bunch)||0);
-  const subtotal     = (parseFloat(row.price_per_box)||0) * (parseInt(row.qty_boxes)||0);
+  // ручная правка коробок/банчей — дальше считаем от них, а не от факта закупа
+  if (field === 'qty_boxes' || field === 'bunches_per_box') { row.fact_bunches = null; row.fact_ppb = null; }
+  const totalBunches = wbRowBunches(row);
+  const totalStems   = wbRowStems(row);
+  const subtotal     = wbRowSum(row);
 
   // Update cells
   const tbEl = document.querySelector(`.wb-total-bunches-${i}`);
@@ -6945,9 +6988,9 @@ function wbUpdateRow(i, field, val) {
   // Update footer totals
   const rows = window._wbRows;
   const totBoxes   = rows.reduce((s,r) => s+(parseInt(r.qty_boxes)||0), 0);
-  const totBunches = rows.reduce((s,r) => s+((parseInt(r.qty_boxes)||0)*(parseInt(r.bunches_per_box)||0)), 0);
-  const totStems   = rows.reduce((s,r) => s+((parseInt(r.qty_boxes)||0)*(parseInt(r.bunches_per_box)||0)*(parseInt(r.stems_per_bunch)||0)), 0);
-  const totSum     = rows.reduce((s,r) => s+((parseFloat(r.price_per_box)||0)*(parseInt(r.qty_boxes)||0)), 0);
+  const totBunches = rows.reduce((s,r) => s + wbRowBunches(r), 0);
+  const totStems   = rows.reduce((s,r) => s + wbRowStems(r), 0);
+  const totSum     = rows.reduce((s,r) => s + wbRowSum(r), 0);
 
   const el = (id) => document.getElementById(id);
   if (el('wb-tot-boxes'))   el('wb-tot-boxes').textContent   = totBoxes;
@@ -7062,13 +7105,13 @@ async function saveWaybill(sendToClient = false) {
     qty_boxes:       parseInt(row.qty_boxes)      || 1,
     bunches_per_box: parseInt(row.bunches_per_box) || null,
     stems_per_bunch: parseInt(row.stems_per_bunch) || null,
-    total_bunches:   (parseInt(row.qty_boxes)||0) * (parseInt(row.bunches_per_box)||0) || null,
-    total_stems:     (parseInt(row.qty_boxes)||0) * (parseInt(row.bunches_per_box)||0) * (parseInt(row.stems_per_bunch)||0) || null,
+    total_bunches:   wbRowBunches(row) || null,
+    total_stems:     wbRowStems(row) || null,
     box_length:      parseFloat(row.box_length)  || null,
     box_width:       parseFloat(row.box_width)   || null,
     box_height:      parseFloat(row.box_height)  || null,
     price_per_box:   parseFloat(row.price_per_box) || 0,
-    subtotal:        (parseFloat(row.price_per_box)||0) * (parseInt(row.qty_boxes)||1),
+    subtotal:        wbRowSum(row),
     sort_order:      i,
   }));
 
@@ -7159,23 +7202,23 @@ function exportWaybillExcel() {
 
   rows.forEach((row, i) => {
     const f = row.flower_snapshot || {};
-    const totB = (parseInt(row.qty_boxes)||0) * (parseInt(row.bunches_per_box)||0);
-    const totS = totB * (parseInt(row.stems_per_bunch)||0);
-    const sub  = (parseFloat(row.price_per_box)||0) * (parseInt(row.qty_boxes)||0);
+    const totB = wbRowBunches(row);
+    const totS = wbRowStems(row);
+    const sub  = wbRowSum(row);
     const boxSize = [row.box_length, row.box_width, row.box_height].filter(Boolean).join('×') || '—';
     aoa.push([
-      i+1, f.ru||'—', f.cn||'', row.sub_client||'',
+      i+1, (f.ru||'—') + (f.fact?.orig_ru ? ` (вместо ${f.fact.orig_ru})` : ''), f.cn||'', row.sub_client||'',
       Number(row.price_per_box)||0, parseInt(row.qty_boxes)||0,
-      parseInt(row.bunches_per_box)||'', parseInt(row.stems_per_bunch)||'',
+      parseInt(row.bunches_per_box)||'', f.stems_label || parseInt(row.stems_per_bunch)||'',
       totB||'', totS||'', boxSize, Number(sub.toFixed(2))
     ]);
   });
 
   const totalRow = dataStart + rows.length + 1; // blank row before total
   const totBoxesSum = rows.reduce((s,r)=>s+(parseInt(r.qty_boxes)||0),0);
-  const totBunchSum  = rows.reduce((s,r)=>s+((parseInt(r.qty_boxes)||0)*(parseInt(r.bunches_per_box)||0)),0);
-  const totStemSum   = rows.reduce((s,r)=>s+((parseInt(r.qty_boxes)||0)*(parseInt(r.bunches_per_box)||0)*(parseInt(r.stems_per_bunch)||0)),0);
-  const totSumAmount = rows.reduce((s,r)=>s+((parseFloat(r.price_per_box)||0)*(parseInt(r.qty_boxes)||0)),0);
+  const totBunchSum  = rows.reduce((s,r)=>s+wbRowBunches(r),0);
+  const totStemSum   = rows.reduce((s,r)=>s+wbRowStems(r),0);
+  const totSumAmount = rows.reduce((s,r)=>s+wbRowSum(r),0);
 
   aoa.push([]);
   aoa.push(['','','','ИТОГО / 合计','', totBoxesSum, '', '', totBunchSum, totStemSum, '', Number(totSumAmount.toFixed(2))]);
@@ -7258,12 +7301,12 @@ function renderWaybillClientView(wb, items) {
     const boxSize = [item.box_length, item.box_width, item.box_height].filter(Boolean).join('×') || '—';
     return `<tr class="${i%2?'stripe':''}">
       <td style="color:var(--light);font-size:10px">${i+1}</td>
-      <td class="L"><b>${f.ru||'—'}</b><div style="font-size:10px;color:var(--mid)">${f.cn||''}</div></td>
+      <td class="L"><b>${f.ru||'—'}</b><div style="font-size:10px;color:var(--mid)">${f.cn||''}</div>${wbFactNote(f)}</td>
       <td style="font-size:11px;color:var(--mid)">${item.sub_client||'—'}</td>
       <td style="font-weight:700;color:var(--sage-d)">¥${item.price_per_box?.toFixed(2)||0}</td>
       <td style="font-weight:700">${item.qty_boxes||0}</td>
       <td style="color:var(--mid)">${item.bunches_per_box||'—'}</td>
-      <td style="color:var(--mid)">${item.stems_per_bunch||'—'}</td>
+      <td style="color:var(--mid)">${f.stems_label ? escHtml(opFmtPack(f.stems_label, isWeightItem(f))) : (item.stems_per_bunch||'—')}</td>
       <td style="font-weight:700">${item.total_bunches||'—'}</td>
       <td style="font-weight:700">${item.total_stems||'—'}</td>
       <td style="font-size:11px;color:var(--mid)">${boxSize}</td>
@@ -11879,6 +11922,8 @@ async function opInitManager(order, boxId, items) {
   const el = document.getElementById(_op.box);
   if (!el) return;
   if (!opStaffAccess()) { el.innerHTML = ''; return; }
+  // Поставщики и закупочные цены — только в заказах клиентов с отслеживанием закупа (Диантус)
+  if (!(await opClientTracked(order))) { el.innerHTML = ''; return; }
   _op.order = order; _op.mode = 'manager'; _op.showPrices = true; _op.filter = 'all';
   _op.fixedItems = items || null;
   el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
@@ -12595,6 +12640,227 @@ async function impCreate() {
   toast(`✅ Заказ ${num} создан: ${items.length} поз. / 订单已创建`);
   if (typeof loadOrders === 'function') loadOrders();
   openOrder(order.id);
+}
+
+// ══════════════════════════════════════════════════════════
+//  ПО ФАКТУ ЗАКУПА (только клиенты с users.purchase_tracking — Диантус):
+//  накладная собирается из принятых партий, инвойс — по закупочной стоимости.
+// ══════════════════════════════════════════════════════════
+async function opClientTracked(order) {
+  if (order?.client && 'purchase_tracking' in order.client) return !!order.client.purchase_tracking;
+  const c = (typeof allClients !== 'undefined' ? allClients : []).find(x => String(x.id) === String(order?.client_id));
+  if (c && 'purchase_tracking' in c) return !!c.purchase_tracking;
+  if (!order?.client_id) return false;
+  const { data } = await sb.from('users').select('purchase_tracking').eq('id', order.client_id).maybeSingle();
+  return !!data?.purchase_tracking;
+}
+
+// Принятые партии → строки. bySupplier: отдельная строка на поставщика и цену (инвойс),
+// иначе — на фактический сорт (накладная).
+function opFactLines(items, lots, bySupplier) {
+  const groups = opBuildGroups(items, lots);
+  const lines = [];
+  groups.forEach(g => {
+    const acc = {};
+    g.lots.filter(l => l.status === 'received').forEach(l => {
+      const ru = String(l.lot_ru || g.ru).trim();
+      const replaced = ru.toLowerCase() !== String(g.ru).trim().toLowerCase();
+      const cn = l.lot_cn || (replaced ? '' : g.cn);
+      const k = [ru.toLowerCase(), bySupplier ? l.supplier_id : '', bySupplier ? opNum(l.price_per_bunch) : ''].join('|');
+      const a = acc[k] = acc[k] || { g, ru, cn, replaced, bunches: 0, cost: 0, noPrice: 0,
+        sups: new Set(), dates: new Set(), packs: new Set() };
+      const q = opNum(l.qty_bunches);
+      a.bunches += q;
+      a.cost += q * opNum(l.price_per_bunch);
+      if (l.price_per_bunch == null || l.price_per_bunch === '') a.noPrice++;
+      if (l.supplier_id) a.sups.add(l.supplier_id);
+      if (l.purchase_date) a.dates.add(l.purchase_date);
+      if (l.stems_per_bunch) a.packs.add(String(l.stems_per_bunch).trim());
+    });
+    Object.values(acc).forEach(a => {
+      a.pack = a.packs.size ? [...a.packs].join(' / ') : (g.pack || '');
+      a.supNames = [...a.sups].map(id => opSupName(id, true)).join(', ');
+      a.dateStr = [...a.dates].sort().map(opFmtDate).join(', ');
+      lines.push(a);
+    });
+  });
+  return { groups, lines };
+}
+
+// Что не так с фактом: для баннеров в инвойсе и накладной
+function opFactWarnings(groups, lines) {
+  const w = [];
+  const noPrice = lines.reduce((s, a) => s + a.noPrice, 0);
+  if (noPrice) w.push(`у ${noPrice} принятых партий не указана цена — они посчитаны как ¥0`);
+  const notBought = groups.filter(g => !g.orphan && g.got === 0).map(g => g.ru);
+  if (notBought.length) w.push(`не принято ни одной партии (${notBought.length}): ${notBought.slice(0, 6).join(', ')}${notBought.length > 6 ? '…' : ''}`);
+  const partial = groups.filter(g => !g.orphan && g.got > 0 && g.got < g.need);
+  if (partial.length) w.push(`принято меньше заказа (${partial.length}): ${partial.slice(0, 6).map(g => `${g.ru} ${g.got}/${g.need}`).join(', ')}${partial.length > 6 ? '…' : ''}`);
+  const wait = groups.reduce((s, g) => s + g.wait, 0);
+  if (wait) w.push(`${wait} банч. ещё «ожидается» — в расчёт не входят, пока не приняты`);
+  const openRej = groups.filter(g => g.openRej).map(g => g.ru);
+  if (openRej.length) w.push(`отказ без замены: ${openRej.join(', ')}`);
+  return w;
+}
+
+function opWarnBanner(title, warns) {
+  if (!warns.length) return `<div style="margin-bottom:12px;padding:8px 12px;background:#dcfce7;color:#166534;border-radius:8px;font-size:12px">✅ ${title}: все позиции закуплены и приняты, расхождений нет</div>`;
+  return `<div style="margin-bottom:12px;padding:10px 14px;background:#fff7ed;border-left:4px solid #f59e0b;border-radius:8px;font-size:12px">
+    <b style="color:#92400e">⚠️ ${title} — проверьте перед отправкой:</b>
+    <ul style="margin:4px 0 0 16px;padding:0">${warns.map(x => `<li>${escHtml(x)}</li>`).join('')}</ul></div>`;
+}
+
+// ── ИНВОЙС по закупочной стоимости ──
+function opInvoiceCostItems(order, lots) {
+  const { groups, lines } = opFactLines(order.order_items || [], lots, true);
+  const items = lines.map(a => ({
+    flower_snapshot: { ru: a.ru, cn: a.cn }, price_type: 'a',
+    price_per_bunch: a.bunches ? a.cost / a.bunches : 0,
+    bunches_per_box: a.bunches, qty_boxes: 1, subtotal: a.cost,
+    _cost: { orig_ru: a.replaced ? a.g.ru : '', supplier: a.supNames, dates: a.dateStr,
+      bunches: a.bunches, pack: opFmtPack(a.pack, a.g.weight) },
+  }));
+  return { items, total: lines.reduce((s, a) => s + a.cost, 0), warns: opFactWarnings(groups, lines) };
+}
+
+function invHeadHTML() {
+  return window._invCostMode
+    ? `<tr><th class="L">Позиция / 品名 / Item</th><th class="L">Производитель / 供应商</th><th>Дата закупа<br>采购日期</th>
+        <th>Банчей<br>扎数</th><th>¥/банч<br>¥/扎</th><th class="r">Сумма<br>金额</th></tr>`
+    : `<tr><th class="L">Позиция / 品名 / Item</th><th>¥/банч<br>¥/扎</th><th>Бан/кор<br>扎/件</th>
+        <th>¥/КОРОБ<br>¥/件</th><th>Кор.<br>箱</th><th class="r">Сумма<br>金额</th></tr>`;
+}
+
+function invRowsHTML(itemsCalc) {
+  if (window._invCostMode) return itemsCalc.map(item => {
+    const c = item._cost || {};
+    return `<tr>
+      <td class="L" style="font-size:11px"><b>${escHtml(item.flower_snapshot?.ru || '—')}</b><br>
+        <span style="color:var(--mid);font-size:10px">${escHtml(item.flower_snapshot?.cn || '')}</span>
+        ${c.orig_ru ? `<br><span style="color:#7c3aed;font-size:9px">замена позиции «${escHtml(c.orig_ru)}»</span>` : ''}
+        ${c.pack ? `<br><span style="color:var(--light);font-size:9px">${escHtml(c.pack)}/банч</span>` : ''}</td>
+      <td class="L" style="font-size:11px">${escHtml(c.supplier || '—')}</td>
+      <td style="font-size:11px;color:var(--mid)">${escHtml(c.dates || '')}</td>
+      <td style="font-weight:700">${c.bunches}</td>
+      <td style="font-weight:700;color:var(--sage-d)">¥${item.bunchPriceWithMarkup.toFixed(2)}</td>
+      <td class="r" style="font-weight:700">¥${item.subtotalWithMarkup.toFixed(2)}</td>
+    </tr>`; }).join('') || '<tr><td colspan="6" style="padding:12px;color:var(--light)">Нет принятых партий в журнале закупа</td></tr>';
+  return itemsCalc.map(item => `<tr>
+      <td class="L" style="font-size:11px">
+        <b>${item.flower_snapshot?.ru||'—'}</b><br>
+        <span style="color:var(--mid);font-size:10px">${item.flower_snapshot?.cn||''}</span><br>
+        <span style="color:var(--light);font-size:9px">${item.price_type==='a'?'A级':'A+'}</span>
+      </td>
+      <td style="font-weight:700;color:var(--sage-d)">¥${item.bunchPriceWithMarkup.toFixed(2)}</td>
+      <td style="color:var(--mid)">${item.bunches_per_box}</td>
+      <td style="font-weight:700;color:var(--gold)">¥${item.boxPriceWithMarkup.toFixed(2)}</td>
+      <td style="font-weight:700">${item.qty_boxes}</td>
+      <td class="r" style="font-weight:700">¥${item.subtotalWithMarkup.toFixed(2)}</td>
+    </tr>`).join('');
+}
+
+function exportInvCostExcel(order, itemsCalc, totals) {
+  const client = order.client?.company_name || order.client?.login || '—';
+  const aoa = [
+    ['AMMA FLOWERS — ИНВОЙС / 发票 / INVOICE'],
+    [`Заказ / 订单: №${order.order_number}   |   Клиент / 客户: ${client}   |   Дата / 日期: ${new Date().toLocaleDateString('ru-RU')}`],
+    ['Расчёт по фактической закупочной стоимости / 按实际采购价结算'],
+    [],
+    ['№', 'Позиция / 品名', '中文名', 'Замена позиции / 替换', 'Производитель / 供应商', 'Дата закупа / 采购日期', 'Пакинг / 包装', 'Банчей / 扎数', '¥/банч', 'Сумма ¥ / 金额'],
+  ];
+  itemsCalc.forEach((it, i) => {
+    const c = it._cost || {};
+    aoa.push([i + 1, it.flower_snapshot?.ru || '', it.flower_snapshot?.cn || '', c.orig_ru || '', c.supplier || '', c.dates || '',
+      c.pack || '', c.bunches, +it.bunchPriceWithMarkup.toFixed(2), +it.subtotalWithMarkup.toFixed(2)]);
+  });
+  aoa.push([]);
+  totals.forEach(([label, v]) => aoa.push(['', label, '', '', '', '', '', '', '', +v.toFixed(2)]));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 4 }, { wch: 28 }, { wch: 18 }, { wch: 20 }, { wch: 24 }, { wch: 14 }, { wch: 12 }, { wch: 9 }, { wch: 9 }, { wch: 12 }];
+  ws['!merges'] = [0, 1, 2].map(r => ({ s: { r, c: 0 }, e: { r, c: 9 } }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Инвойс');
+  XLSX.writeFile(wb, `Инвойс_${order.order_number}_${opToday()}.xlsx`);
+}
+
+// ── НАКЛАДНАЯ по факту ──
+function wbParseBox(s) {
+  const m = String(s || '').match(/(\d+(?:[.,]\d+)?)\s*[*xх×]\s*(\d+(?:[.,]\d+)?)\s*[*xх×]\s*(\d+(?:[.,]\d+)?)/i);
+  return m ? m.slice(1, 4).map(v => parseFloat(v.replace(',', '.'))) : ['', '', ''];
+}
+function wbFactNote(f) {
+  const x = f?.fact; if (!x) return '';
+  return `${x.orig_ru ? `<div style="font-size:10px;color:#7c3aed">🔄 вместо «${escHtml(x.orig_ru)}»</div>` : ''}${x.suppliers ? `<div style="font-size:10px;color:var(--mid)">🏭 ${escHtml(x.suppliers)}${x.dates ? ' · ' + escHtml(x.dates) : ''}</div>` : ''}`;
+}
+function wbRowBunches(r) { return r.fact_bunches != null ? opNum(r.fact_bunches) : (parseInt(r.qty_boxes) || 0) * (parseInt(r.bunches_per_box) || 0); }
+function wbRowStems(r) { return wbRowBunches(r) * (parseInt(r.stems_per_bunch) || 0); }
+function wbRowSum(r) {
+  return (r.fact_bunches != null && r.fact_ppb != null) ? +(opNum(r.fact_bunches) * opNum(r.fact_ppb)).toFixed(2)
+    : (parseFloat(r.price_per_box) || 0) * (parseInt(r.qty_boxes) || 0);
+}
+
+// Подгружает журнал закупа к заказу (если клиент с отслеживанием) → order._fact
+async function wbAttachFact(order) {
+  if (!order || !(await opClientTracked(order))) return order;
+  await opLoadSups();
+  const [{ lots, error }, { data: inv }] = await Promise.all([
+    opFetchLots(order.id),
+    sb.from('invoices').select('markup_pct').eq('order_id', order.id).maybeSingle(),
+  ]);
+  if (error) { toast('⚠️ Журнал закупа недоступен: ' + (opIsMissingTable(error) ? OP_SQL_HINT : error.message)); return order; }
+  order._fact = { lots, markup: inv?.markup_pct != null ? parseFloat(inv.markup_pct) || 0 : 0 };
+  return order;
+}
+
+function wbFactRows(order) {
+  const { lots, markup } = order._fact;
+  const k = 1 + (markup || 0) / 100;
+  const items = order.order_items || [];
+  const { groups, lines } = opFactLines(items, lots, false);
+  const rows = [];
+  lines.forEach(a => {
+    const its = items.filter(it => opItemKey(it) === a.g.key);
+    const oi = its[0] || {};
+    const snap = oi.flower_snapshot || {};
+    const bpbOrder = parseInt(oi.bunches_per_box) || 0;
+    const boxes = bpbOrder ? Math.max(1, Math.round(a.bunches / bpbOrder)) : Math.max(1, parseInt(oi.qty_boxes) || 1);
+    const bpb = Math.max(1, Math.round(a.bunches / boxes));
+    const [L, W, H] = wbParseBox(snap.box_size);
+    const ppb = a.bunches ? (a.cost / a.bunches) * k : 0;
+    const mixed = /\d\s*\/\s*\d/.test(a.pack);
+    const fs = { ...snap, ru: a.ru, cn: a.cn || snap.cn || '',
+      fact: { orig_ru: a.replaced ? a.g.ru : '', suppliers: a.supNames, dates: a.dateStr, uneven: bpb * boxes !== a.bunches } };
+    if (mixed) fs.stems_label = a.pack; else delete fs.stems_label;
+    rows.push({
+      order_item_id: oi.id || null, flower_snapshot: fs,
+      sub_client: [...new Set(its.map(x => x.client_name).filter(Boolean))].join(', '),
+      qty_boxes: boxes, bunches_per_box: bpb,
+      stems_per_bunch: parseInt(a.pack) || parseInt(snap.stems) || 0,
+      box_length: L, box_width: W, box_height: H,
+      price_per_box: +(ppb * bpb).toFixed(2),
+      fact_bunches: a.bunches, fact_ppb: ppb,
+      subtotal: +(a.cost * k).toFixed(2),
+    });
+  });
+  const warns = opFactWarnings(groups, lines);
+  if (rows.some(r => r.flower_snapshot.fact.uneven)) warns.push('банчи не делятся на целые коробки — количество коробок округлено, проверьте (строки с ⚠️)');
+  if (markup) warns.unshift(`цены взяты из закупа с наценкой ${markup}% из инвойса`);
+  return { rows, warns };
+}
+
+async function wbRebuildFromFact() {
+  const order = window._wbOrder;
+  if (!order?.id) return;
+  if (!confirm('Пересобрать накладную по журналу закупа? Ручные правки в таблице будут заменены. / 按采购记录重新生成？')) return;
+  const { data: full } = await sb.from('orders').select(`
+      id,order_number,date_order,date_ship,client_id,
+      client:users!orders_client_id_fkey(company_name,login,contact),
+      order_items(id,qty_boxes,bunches_per_box,price_per_box,price_per_bunch,subtotal,client_name,flower_snapshot,flower_id)
+    `).eq('id', order.id).single();
+  if (!full) return;
+  await wbAttachFact(full);
+  renderWaybillEditor(window._wbObj || null, full, document.getElementById('wb-number')?.value || window._wbNum, null);
+  toast('↻ Накладная пересобрана по факту / 已按实际重新生成');
 }
 
 // ══════════════════════════════════════════════════════════
