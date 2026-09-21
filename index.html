@@ -289,6 +289,7 @@ td.L{text-align:left}
 /* ═══ MODAL ═══ */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;display:none;align-items:center;justify-content:center;padding:20px}
 .modal-overlay.show{display:flex}
+.modal.op-wide{max-width:1060px}
 .modal{background:#fff;border-radius:16px;padding:28px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)}
 .modal-title{font-family:var(--font-h);font-size:22px;color:var(--sage-d);margin-bottom:16px;font-weight:600}
 .modal-btns{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;flex-wrap:wrap}
@@ -1049,7 +1050,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <option value="paid">Оплачен / 已付款</option>
           <option value="cancelled">Отменён / 已取消</option>
         </select>
-        <button class="btn btn-primary" onclick="showNewOrderModal()">+ Новый заказ / 新订单</button>
+        <button class="btn btn-primary" onclick="showNewOrderModal()">+ Новый заказ / Excel · 新订单</button>
       </div>
       <div id="orders-list"><div class="loading"><div class="spinner"></div>Загрузка...</div></div>
     </div>
@@ -1253,6 +1254,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <button class="wh-tab"        id="whtab-labels"     onclick="switchWhTab('labels',this)">🏷 Этикетки / 标签</button>
         <button class="wh-tab"        id="whtab-claims"     onclick="switchWhTab('claims',this)">⚠️ Претензии <span class="cnt" id="cnt-wh-claims" style="display:none">0</span></button>
         <button class="wh-tab"        id="whtab-stats"      onclick="switchWhTab('stats',this)">📊 Сводка / 统计</button>
+        <button class="wh-tab"        id="whtab-purchase"   onclick="switchWhTab('purchase',this)">🛒 Закуп / 采购</button>
       </div>
 
       <!-- ── PENDING / ВХОДЯЩИЕ ── -->
@@ -1308,6 +1310,13 @@ document.addEventListener('DOMContentLoaded', function(){
       </div>
 
       <!-- ── STATS / СВОДКА ── -->
+      <!-- ── ЖУРНАЛ ЗАКУПА (заказы клиентов с отслеживанием закупа) ── -->
+      <div id="whpanel-purchase" class="hidden">
+        <div class="page-sub" style="margin-bottom:10px">Закуп по заказам: дата, поставщик, цена, отказы и замены / 采购记录（按订单）</div>
+        <div id="wh-purch-orders" style="margin-bottom:12px"></div>
+        <div id="wh-purch-journal"></div>
+      </div>
+
       <div id="whpanel-stats" class="hidden">
         <div class="ctrl-bar" style="flex-wrap:wrap;gap:10px;margin-bottom:14px">
           <select class="inp" id="wh-stats-period" onchange="loadWhStats()" style="min-width:160px">
@@ -3990,6 +3999,10 @@ function renderMyOrder() {
             onclick="event.stopPropagation();repeatOrder('${o.id}')" title="Добавить те же позиции в новый заказ">
             🔁 Повторить заказ / 再次订购
           </button>
+          ${currentUser?.purchase_tracking ? `<button class="btn btn-gold btn-sm" style="margin-top:6px;white-space:nowrap"
+            onclick="event.stopPropagation();opShowClient('${o.id}')" title="Даты покупки, производители, отказы и замены">
+            🛒 Закуп / 采购进度
+          </button>` : ''}
           <button class="btn btn-secondary btn-sm" style="margin-top:8px;white-space:nowrap"
             onclick="this.closest('.card').querySelector('.order-items-detail').classList.toggle('hidden');
                      this.textContent=this.textContent.includes('▼')?'▲ Скрыть/收起':'▼ Состав/明细'">
@@ -5046,10 +5059,12 @@ function renderOrderDetail(order) {
       <button class="btn btn-danger" onclick="confirmDeleteOrder('${id}','${order.order_number}')">
         🗑 Удалить заказ / 删除订单
       </button>
-    </div>`;
+    </div>
+    <div id="od-purchase" style="margin-top:18px"></div>`;
 
   mgrRecalcFooter();
   loadOrderShipmentSelect(order);
+  opInitManager(order);
 }
 
 // ── Машина для заказа прямо из детали (до утверждения!) ──────────
@@ -6138,7 +6153,7 @@ function renderClients() {
     </tr></thead>
     <tbody>${allClients.map((c,i) => `
       <tr class="${i%2?'stripe':''}">
-        <td class="L"><b>${c.company_name||'—'}</b></td>
+        <td class="L"><b>${c.company_name||'—'}</b>${c.purchase_tracking?' <span title="Видит журнал закупа" style="font-size:10px">🛒</span>':''}</td>
         <td class="L" style="color:var(--mid);font-family:monospace">${c.login}</td>
         <td style="font-size:11px;color:var(--mid)">${c.contact||'—'}</td>
         <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?'👑 Менеджер / 经理':c.role==='warehouse'?'🏭 Склад / 仓库':'👤 Клиент / 客户'}</span></td>
@@ -6217,6 +6232,15 @@ function showEditClientModal(id) {
         <span>Да / 是</span>
       </label>
     </div>
+    ${user.role === 'client' && currentUser?.is_admin ? ('purchase_tracking' in user ? `
+    <div style="margin-top:10px;padding:10px 12px;background:var(--gold-l);border-radius:6px;font-size:12px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
+        <input type="checkbox" id="ec-purch-track" ${user.purchase_tracking?'checked':''} style="width:15px;height:15px">
+        🛒 Открыть клиенту журнал закупа (даты, производители, отказы, замены) / 向客户显示采购记录</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:6px 0 0 21px">
+        <input type="checkbox" id="ec-purch-prices" ${user.purchase_show_prices?'checked':''} style="width:14px;height:14px">
+        …и закупочные цены ¥/банч / 显示采购价</label>
+    </div>` : `<div style="margin-top:10px;font-size:11px;color:var(--mid)">🛒 Журнал закупа для клиента: выполните SQL-миграцию «Журнал закупа», чтобы появилась настройка.</div>`) : ''}
     <div class="modal-btns">
       <button class="btn btn-danger btn-sm" onclick="deleteClient('${id}','${user.login}')">🗑 Удалить</button>
       <div style="flex:1"></div>
@@ -6232,6 +6256,11 @@ async function saveClient(id) {
   const contact = document.getElementById('ec-contact').value.trim();
   const showMk = document.getElementById('ec-show-markup')?.checked || false;
   const updates = { company_name: company, contact, show_markup: showMk };
+  const ptEl = document.getElementById('ec-purch-track');
+  if (ptEl) {
+    updates.purchase_tracking = ptEl.checked;
+    updates.purchase_show_prices = !!document.getElementById('ec-purch-prices')?.checked;
+  }
   if (pass) {
     if (pass.length < 6) { toast('Пароль минимум 6 символов'); return; }
     updates.password_hash = await sha256(pass);
@@ -6604,7 +6633,7 @@ async function exportOrderExcel(orderId) {
 //  MODAL
 // ══════════════════════════════════════════════════════════
 function openModal() { document.getElementById('modal-overlay').classList.add('show'); }
-function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); }
+function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); document.getElementById('modal-content').classList.remove('op-wide'); }
 
 // ══════════════════════════════════════════════════════════
 //  TOAST
@@ -8507,7 +8536,7 @@ let _whOrders = [];
 function switchWhTab(name, btn) {
   document.querySelectorAll('.wh-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  ['pending','assembly','receiving','labels','claims','stats'].forEach(p => {
+  ['pending','assembly','receiving','labels','claims','stats','purchase'].forEach(p => {
     const el = document.getElementById('whpanel-' + p);
     if (el) el.classList.toggle('hidden', p !== name);
   });
@@ -8517,6 +8546,7 @@ function switchWhTab(name, btn) {
   if (name === 'labels')    loadWhLabelOrders();
   if (name === 'claims')    loadWhClaims();
   if (name === 'stats')     loadWhStats();
+  if (name === 'purchase')  opLoadWhOrders();
 }
 
 // ── PENDING ORDERS — заказы ожидающие подтверждения ──
@@ -11677,6 +11707,862 @@ async function deactivateSupplier(id) {
   const { error } = await sb.from('suppliers').update({active:false}).eq('id', id);
   if (error) { toast('❌ ' + error.message); return; }
   showSuppliersModal();
+}
+
+// ══════════════════════════════════════════════════════════
+//  ЖУРНАЛ ЗАКУПА ПО ЗАКАЗУ (order_purchases)
+//  Каждая строка = партия: дата покупки, поставщик, банчи, ¥/банч, статус.
+//  Отказ (цена/качество) + замена (тот же или другой поставщик / другой сорт)
+//  связаны через replaces_id. Клиент видит журнал, если у него включён
+//  users.purchase_tracking (цены — только при users.purchase_show_prices).
+// ══════════════════════════════════════════════════════════
+const OP_STATUS = {
+  received:         { ru:'Принято на склад', cn:'已入库',    icon:'✅', color:'#15803d' },
+  awaiting:         { ru:'Ожидается',        cn:'待到货',    icon:'⏳', color:'#b45309' },
+  rejected_quality: { ru:'Отказ: качество',  cn:'拒收：质量', icon:'❌', color:'#dc2626', rej:true },
+  rejected_price:   { ru:'Отказ: цена',      cn:'拒收：价格', icon:'💸', color:'#dc2626', rej:true },
+  rejected_other:   { ru:'Отказ: другое',    cn:'拒收：其他', icon:'🚫', color:'#dc2626', rej:true },
+};
+const OP_SQL_HINT = 'Таблица order_purchases ещё не создана — выполните SQL-миграцию «Журнал закупа» в Supabase / 请先执行SQL迁移';
+let _op = { order: null, items: [], lots: [], groups: [], sups: [], filter: 'all', mode: 'manager', showPrices: true, box: 'od-purchase' };
+
+// Доступ к журналу закупа: админ (менеджер с is_admin), склад, и клиент с включённым purchase_tracking (только просмотр).
+// Остальные менеджеры журнал не видят.
+function opStaffAccess() {
+  return (currentUser?.role === 'manager' && !!currentUser?.is_admin) || currentUser?.role === 'warehouse';
+}
+
+function opToday() { return new Date().toLocaleDateString('sv-SE'); } // YYYY-MM-DD, локальная дата
+function opFmtDate(d) { if (!d) return '—'; const [y, m, dd] = String(d).slice(0, 10).split('-'); return `${dd}.${m}`; }
+function opFmtDateFull(d) { if (!d) return ''; const [y, m, dd] = String(d).slice(0, 10).split('-'); return `${dd}.${m}.${y}`; }
+function opNum(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function opMoney(v) { return '¥' + opNum(v).toFixed(2).replace(/\.00$/, ''); }
+function opItemRu(it) { return it.flower?.ru || it.flower_snapshot?.ru || '—'; }
+function opItemCn(it) { return it.flower?.cn || it.flower_snapshot?.cn || ''; }
+function opItemKey(it) {
+  const fid = it.flower_id || it.flower?.id;
+  return fid ? 'f:' + fid : 'n:' + opItemRu(it).trim().toLowerCase();
+}
+function opSupName(id, withCn) {
+  const sp = _op.sups.find(x => String(x.id) === String(id));
+  if (!sp) return id ? '(поставщик #' + id + ')' : '(не указан / 未指定)';
+  return sp.name_ru + (withCn && sp.name_cn ? ' / ' + sp.name_cn : '');
+}
+function opIsMissingTable(err) {
+  return err && (err.code === '42P01' || err.code === 'PGRST205' || /order_purchases/.test(err.message || ''));
+}
+
+async function opLoadSups() {
+  const { data } = await sb.from('suppliers').select('id, name_ru, name_cn, phone, active').order('name_ru');
+  _op.sups = data || [];
+  suppliersData = _op.sups.filter(s => s.active !== false);
+}
+
+async function opFetchLots(orderId) {
+  const { data, error } = await sb.from('order_purchases').select('*')
+    .eq('order_id', orderId).order('purchase_date', { ascending: true }).order('id', { ascending: true });
+  return { lots: data || [], error };
+}
+
+// Позиции заказа + партии → группы по позиции (одинаковые цветы разных субклиентов складываются)
+function opBuildGroups(items, lots) {
+  const map = {}, order = [];
+  items.forEach(it => {
+    const k = opItemKey(it);
+    if (!map[k]) { map[k] = { key: k, ru: opItemRu(it), cn: opItemCn(it), need: 0, lots: [], orphan: false }; order.push(map[k]); }
+    map[k].need += (parseInt(it.qty_boxes) || 0) * (parseInt(it.bunches_per_box) || 0);
+  });
+  lots.forEach(l => {
+    let g = map[l.item_key];
+    if (!g) { // позицию убрали из заказа, а партия осталась
+      g = map[l.item_key] = { key: l.item_key, ru: l.item_ru || '—', cn: l.item_cn || '', need: 0, lots: [], orphan: true };
+      order.push(g);
+    }
+    g.lots.push(l);
+  });
+  order.forEach(g => {
+    g.got = 0; g.wait = 0; g.rej = 0; g.spent = 0;
+    const replaced = new Set(g.lots.filter(l => l.replaces_id).map(l => String(l.replaces_id)));
+    g.openRej = 0; // отказы, на которые ещё не оформлена замена
+    g.lots.forEach(l => {
+      const q = opNum(l.qty_bunches), st = OP_STATUS[l.status] || OP_STATUS.received;
+      if (l.status === 'received') { g.got += q; g.spent += q * opNum(l.price_per_bunch); }
+      else if (l.status === 'awaiting') { g.wait += q; g.spent += q * opNum(l.price_per_bunch); }
+      else if (st.rej) { g.rej += q; if (!replaced.has(String(l.id))) g.openRej++; }
+    });
+    g.left = Math.max(0, g.need - g.got - g.wait);
+    g.state = g.orphan ? 'orphan'
+      : (g.need > 0 && g.got >= g.need) ? 'done'
+      : g.openRej ? 'problem'
+      : (g.got + g.wait) > 0 ? 'partial' : 'none';
+  });
+  return order;
+}
+
+function opSummary(groups) {
+  const real = groups.filter(g => !g.orphan);
+  return {
+    pos: real.length,
+    done: real.filter(g => g.state === 'done').length,
+    need: real.reduce((s, g) => s + g.need, 0),
+    got: real.reduce((s, g) => s + Math.min(g.got, g.need || g.got), 0),
+    wait: real.reduce((s, g) => s + g.wait, 0),
+    problems: groups.filter(g => g.openRej).length,
+    spent: groups.reduce((s, g) => s + g.spent, 0),
+    days: [...new Set(groups.flatMap(g => g.lots.map(l => l.purchase_date)).filter(Boolean))].sort(),
+  };
+}
+
+const OP_STATE_BADGE = {
+  done:    ['✅ Закуплено', '#15803d', '#dcfce7'],
+  partial: ['◐ Частично', '#b45309', '#fef3c7'],
+  none:    ['○ Не начато', 'var(--mid)', 'var(--bg)'],
+  problem: ['⚠️ Отказ — нужна замена', '#dc2626', '#fee2e2'],
+  orphan:  ['— нет в заказе', 'var(--mid)', 'var(--bg)'],
+};
+function opStateBadge(state) {
+  const [t, c, bg] = OP_STATE_BADGE[state] || OP_STATE_BADGE.none;
+  return `<span style="font-size:10px;font-weight:700;color:${c};background:${bg};border-radius:10px;padding:2px 8px;white-space:nowrap">${t}</span>`;
+}
+
+// Одна строка партии (используется и менеджером, и клиентом)
+function opLotLine(l, g, gi, editable) {
+  const st = OP_STATUS[l.status] || OP_STATUS.received;
+  const repl = l.replaces_id ? g.lots.find(x => String(x.id) === String(l.replaces_id)) : null;
+  const hasRepl = g.lots.some(x => String(x.replaces_id) === String(l.id));
+  const asName = (l.lot_ru && l.lot_ru.trim().toLowerCase() !== (g.ru || '').trim().toLowerCase())
+    ? ` <span style="color:#7c3aed;font-weight:600">→ ${escHtml(l.lot_ru)}${l.lot_cn ? ' ' + escHtml(l.lot_cn) : ''}</span>` : '';
+  const price = _op.showPrices && l.price_per_bunch != null
+    ? ` · <b>${opMoney(l.price_per_bunch)}</b>/банч <span style="color:var(--light)">(= ${opMoney(opNum(l.price_per_bunch) * opNum(l.qty_bunches))})</span>` : '';
+  const strike = st.rej ? 'text-decoration:line-through;text-decoration-color:#dc262680;' : '';
+  const reason = l.reason ? `<div style="font-size:10px;color:${st.rej ? '#dc2626' : 'var(--mid)'};margin-left:18px">↳ ${escHtml(l.reason)}</div>` : '';
+  const note = l.note ? `<div style="font-size:10px;color:var(--mid);margin-left:18px">💬 ${escHtml(l.note)}</div>` : '';
+  const btns = editable ? `
+      <button class="rbtn" style="font-size:11px" title="Изменить / 修改" onclick="opLotForm(${gi}, ${l.id})">✏️</button>
+      ${st.rej && !hasRepl ? `<button class="btn btn-secondary btn-sm" style="font-size:10px;padding:1px 7px" onclick="opLotForm(${gi}, null, ${l.id})">🔄 Замена / 替换</button>` : ''}` : '';
+  return `<div style="padding:3px 0;border-bottom:1px dashed var(--border)">
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px">
+      <span title="${st.ru} / ${st.cn}">${st.icon}</span>
+      <span style="${strike}">
+        <b>${opFmtDate(l.purchase_date)}</b> · ${escHtml(opSupName(l.supplier_id, true))} · <b>${opNum(l.qty_bunches)}</b> банч${price}${asName}
+      </span>
+      <span style="font-size:10px;color:${st.color}">${st.ru}</span>
+      ${repl ? `<span style="font-size:10px;color:#7c3aed;background:#f3e8ff;border-radius:8px;padding:0 6px">🔄 замена за ${opFmtDate(repl.purchase_date)}</span>` : ''}
+      ${btns}
+    </div>${reason}${note}
+  </div>`;
+}
+
+// ═════ МЕНЕДЖЕР: блок в карточке заказа ═════
+async function opInitManager(order, boxId, items) {
+  _op.box = boxId || 'od-purchase';
+  const el = document.getElementById(_op.box);
+  if (!el) return;
+  if (!opStaffAccess()) { el.innerHTML = ''; return; }
+  _op.order = order; _op.mode = 'manager'; _op.showPrices = true; _op.filter = 'all';
+  _op.fixedItems = items || null;
+  el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  await opLoadSups();
+  const { lots, error } = await opFetchLots(order.id);
+  if (error) {
+    el.innerHTML = `<div class="card" style="border-left:4px solid var(--gold);font-size:12px">🛒 <b>Журнал закупа</b> — ${opIsMissingTable(error) ? OP_SQL_HINT : '❌ ' + escHtml(error.message)}</div>`;
+    return;
+  }
+  _op.lots = lots;
+  opRenderManager();
+}
+
+async function opReload() {
+  if (!_op.order) return;
+  const { lots, error } = await opFetchLots(_op.order.id);
+  if (error) { toast('❌ ' + error.message); return; }
+  _op.lots = lots;
+  if (_op.mode === 'manager') opRenderManager(); else opRenderClient();
+}
+
+function opFilterBtn(f, label, n) {
+  const on = _op.filter === f;
+  return `<button class="btn btn-sm ${on ? 'btn-primary' : 'btn-secondary'}" style="font-size:10px;padding:2px 9px" onclick="_op.filter='${f}';opRenderManager()">${label}${n != null ? ' (' + n + ')' : ''}</button>`;
+}
+
+function opRenderManager() {
+  const el = document.getElementById(_op.box);
+  if (!el) return;
+  _op.items = _op.fixedItems || _mgrOrderItems || [];
+  _op.groups = opBuildGroups(_op.items, _op.lots);
+  const s = opSummary(_op.groups);
+  const cnt = st => _op.groups.filter(g => g.state === st).length;
+  const shown = _op.groups.map((g, gi) => ({ g, gi })).filter(({ g }) =>
+    _op.filter === 'all' || g.state === _op.filter || (_op.filter === 'todo' && ['none', 'partial'].includes(g.state)));
+  const pct = s.need ? Math.round(s.got / s.need * 100) : 0;
+  const trackOn = _op.order.client?.purchase_tracking ?? !!(typeof allClients !== 'undefined' && allClients.find(c => String(c.id) === String(_op.order.client_id))?.purchase_tracking);
+
+  const rows = shown.map(({ g, gi }, i) => `
+    <tr class="${i % 2 ? 'stripe' : ''}" style="vertical-align:top">
+      <td style="color:var(--light);font-size:10px">${gi + 1}</td>
+      <td class="L" style="min-width:150px"><b style="font-size:12px">${escHtml(g.ru)}</b>
+        <div style="font-size:10px;color:var(--mid)">${escHtml(g.cn)}</div>
+        <div style="margin-top:3px">${opStateBadge(g.state)}</div></td>
+      <td style="font-weight:700">${g.need || '—'}</td>
+      <td style="font-weight:700;color:${g.got >= g.need && g.need ? '#15803d' : 'var(--charcoal)'}">${g.got}${g.wait ? `<div style="font-size:10px;color:#b45309;font-weight:400">+${g.wait} ждём</div>` : ''}</td>
+      <td style="font-size:11px;color:${g.left ? '#b45309' : 'var(--light)'}">${g.left || '—'}</td>
+      <td class="L" style="min-width:380px">${g.lots.map(l => opLotLine(l, g, gi, true)).join('') || '<span style="font-size:11px;color:var(--light)">партий нет / 暂无记录</span>'}</td>
+      <td style="font-size:11px;white-space:nowrap">${g.spent ? opMoney(g.spent) : '—'}</td>
+      <td><button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px;white-space:nowrap" onclick="opLotForm(${gi})">＋ Партия</button></td>
+    </tr>`).join('');
+
+  el.innerHTML = `
+    <div class="card" style="border-left:4px solid var(--gold)">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <b style="font-size:14px">🛒 Журнал закупа / 采购记录</b>
+        <span style="font-size:11px;color:${trackOn ? '#15803d' : 'var(--light)'}">${trackOn ? '👁 клиент видит этот журнал / 客户可见' : '🔒 клиенту не виден (включается в карточке клиента) / 客户不可见'}</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-gold btn-sm" onclick="opBulkForm()">⚡ Приход от поставщика / 批量入库</button>
+        <button class="btn btn-secondary btn-sm" onclick="opExportExcel()">📊 Excel</button>
+        <button class="btn btn-secondary btn-sm" onclick="opReload()" title="Обновить">↻</button>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:8px">
+        <span>Позиции: <b>${s.done}</b> из ${s.pos} закуплено</span>
+        <span>Банчи: <b>${s.got}</b> / ${s.need} (${pct}%)${s.wait ? ` · ⏳ ждём ${s.wait}` : ''}</span>
+        <span>Сумма закупа: <b>${opMoney(s.spent)}</b></span>
+        ${s.problems ? `<span style="color:#dc2626;font-weight:700">⚠️ Отказов без замены: ${s.problems}</span>` : ''}
+        ${s.days.length ? `<span style="color:var(--mid)">📅 Дни закупа: ${s.days.map(opFmtDate).join(', ')}</span>` : ''}
+      </div>
+      <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:10px">
+        <div style="height:100%;width:${pct}%;background:var(--sage-m, #6B8F62)"></div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        ${opFilterBtn('all', 'Все', _op.groups.length)}
+        ${opFilterBtn('todo', 'Докупить', cnt('none') + cnt('partial'))}
+        ${opFilterBtn('problem', '⚠️ Отказы', cnt('problem'))}
+        ${opFilterBtn('done', '✅ Готово', cnt('done'))}
+        ${cnt('orphan') ? opFilterBtn('orphan', 'Нет в заказе', cnt('orphan')) : ''}
+      </div>
+      <div class="tbl-wrap"><table style="min-width:1000px">
+        <thead><tr>
+          <th style="width:26px">№</th><th class="L">Позиция / 品名</th>
+          <th>Нужно<br>банч</th><th>Принято<br>已入库</th><th>Осталось<br>待采</th>
+          <th class="L">Партии: дата · поставщик · кол-во · цена · статус / 采购批次</th>
+          <th>Сумма<br>金额</th><th></th>
+        </tr></thead>
+        <tbody>${rows || '<tr><td colspan="8" style="padding:14px;color:var(--light)">Нет позиций под этот фильтр</td></tr>'}</tbody>
+      </table></div>
+      <div style="font-size:10px;color:var(--light);margin-top:6px">
+        «Нужно» = коробки × банч/кор из заказа. Отказ оставляет запись в истории; кнопка «🔄 Замена» создаёт новую партию, связанную с отказом (можно другого поставщика или другой сорт).
+      </div>
+    </div>`;
+}
+
+// ── Форма партии: новая / редактирование / замена отказа ──
+async function opLotForm(gi, lotId, replacesId) {
+  const g = _op.groups[gi]; if (!g) return;
+  const lot = lotId ? _op.lots.find(l => String(l.id) === String(lotId)) : null;
+  const base = replacesId ? _op.lots.find(l => String(l.id) === String(replacesId)) : null;
+  const v = lot || {
+    purchase_date: opToday(),
+    supplier_id: base?.supplier_id || null,
+    qty_bunches: base ? base.qty_bunches : (g.left || g.need || ''),
+    price_per_bunch: base?.price_per_bunch ?? '',
+    status: 'received',
+    lot_ru: base?.lot_ru || g.ru, lot_cn: base?.lot_cn || g.cn,
+    reason: '', note: '',
+  };
+  const title = lot ? '✏️ Партия' : replacesId ? '🔄 Замена отказа' : '＋ Новая партия';
+  const stOpts = Object.entries(OP_STATUS).map(([k, s]) =>
+    `<option value="${k}" ${v.status === k ? 'selected' : ''}>${s.icon} ${s.ru} / ${s.cn}</option>`).join('');
+
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">${title}: ${escHtml(g.ru)}</div>
+    <div style="font-size:11px;color:var(--mid);margin:-6px 0 10px">${escHtml(g.cn)} · нужно ${g.need} банч · принято ${g.got}${g.wait ? ' · ждём ' + g.wait : ''}</div>
+    ${base ? `<div style="font-size:11px;background:#fee2e2;color:#991b1b;border-radius:6px;padding:6px 10px;margin-bottom:10px">
+      Заменяем: ${opFmtDate(base.purchase_date)} · ${escHtml(opSupName(base.supplier_id))} · ${opNum(base.qty_bunches)} банч · ${(OP_STATUS[base.status] || {}).ru || ''}${base.reason ? ' — ' + escHtml(base.reason) : ''}</div>` : ''}
+    <div id="op-hist" style="margin-bottom:8px"></div>
+    <div class="field-row">
+      <div class="field"><label>Дата покупки / 采购日期</label>
+        <input class="inp" type="date" id="op-date" value="${(v.purchase_date || opToday()).slice(0, 10)}"></div>
+      <div class="field"><label>Поставщик / 供应商</label>
+        <select class="inp" id="op-sup" onchange="if(this.value==='__new')opQuickSupplier(this)">
+          ${supplierOpts(v.supplier_id)}<option value="__new">＋ Новый поставщик / 新增…</option></select></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Банчей / 扎数</label>
+        <input class="inp" type="number" min="0" step="1" id="op-qty" value="${v.qty_bunches ?? ''}"></div>
+      <div class="field"><label>Цена закупа ¥/банч / 采购价</label>
+        <input class="inp" type="number" min="0" step="0.1" id="op-price" value="${v.price_per_bunch ?? ''}" placeholder="¥"></div>
+      <div class="field"><label>Статус / 状态</label>
+        <select class="inp" id="op-status">${stOpts}</select></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Фактически куплено (если другой сорт) / 实际品种</label>
+        <input class="inp" id="op-lot-ru" value="${escHtml(v.lot_ru || g.ru)}"></div>
+      <div class="field"><label>中文名</label>
+        <input class="inp" id="op-lot-cn" value="${escHtml(v.lot_cn || g.cn)}"></div>
+    </div>
+    <div class="field"><label>Причина отказа / замены / 原因</label>
+      <input class="inp" id="op-reason" value="${escHtml(v.reason || '')}" placeholder="Напр.: мелкий бутон, поставщик поднял цену до ¥6 / 例：花头小，涨价"></div>
+    <div class="field"><label>Комментарий / 备注 <span style="color:var(--gold)">(видит клиент, если журнал ему открыт)</span></label>
+      <input class="inp" id="op-note" value="${escHtml(v.note || '')}"></div>
+    <div class="modal-btns">
+      ${lot ? `<button class="btn btn-danger btn-sm" onclick="opLotDelete(${lot.id})">🗑 Удалить</button>` : ''}
+      <div style="flex:1"></div>
+      <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+      <button class="btn btn-primary" onclick="opLotSave(${gi}, ${lot ? lot.id : 'null'}, ${replacesId || 'null'})">💾 Сохранить / 保存</button>
+    </div>`;
+  openModal();
+  opShowHistory(g.key);
+}
+
+// Последние закупки этой позиции (по всем заказам) — клик подставляет поставщика и цену
+async function opShowHistory(itemKey) {
+  const box = document.getElementById('op-hist'); if (!box) return;
+  const { data } = await sb.from('order_purchases').select('supplier_id, price_per_bunch, purchase_date, status')
+    .eq('item_key', itemKey).in('status', ['received', 'awaiting'])
+    .order('purchase_date', { ascending: false }).limit(30);
+  const seen = new Set(), chips = [];
+  (data || []).forEach(r => {
+    if (seen.has(r.supplier_id) || chips.length >= 4) return;
+    seen.add(r.supplier_id);
+    chips.push(`<button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px"
+      onclick="document.getElementById('op-sup').value='${r.supplier_id || ''}';document.getElementById('op-price').value='${r.price_per_bunch ?? ''}'">
+      ${escHtml(opSupName(r.supplier_id))} · ${r.price_per_bunch != null ? opMoney(r.price_per_bunch) : '—'} · ${opFmtDate(r.purchase_date)}</button>`);
+  });
+  box.innerHTML = chips.length ? `<div style="font-size:10px;color:var(--mid);margin-bottom:4px">Раньше покупали / 历史采购:</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">${chips.join('')}</div>` : '';
+}
+
+async function opQuickSupplier(sel) {
+  const ru = (prompt('Название поставщика (RU) / 供应商名称:') || '').trim();
+  if (!ru) { sel.value = ''; return; }
+  const cn = (prompt('Название по-китайски (можно пусто) / 中文名:') || '').trim();
+  const { data, error } = await sb.from('suppliers').insert({ name_ru: ru, name_cn: cn || null }).select().single();
+  if (error) { toast('❌ ' + error.message); sel.value = ''; return; }
+  await opLoadSups();
+  sel.innerHTML = supplierOpts(data.id) + '<option value="__new">＋ Новый поставщик / 新增…</option>';
+  toast('✅ Поставщик добавлен / 已添加');
+}
+
+async function opLotSave(gi, lotId, replacesId) {
+  if (!opStaffAccess()) { toast('Нет доступа / 无权限'); return; }
+  const g = _op.groups[gi]; if (!g) return;
+  const val = id => document.getElementById(id)?.value ?? '';
+  const qty = parseFloat(val('op-qty'));
+  const sup = val('op-sup');
+  const status = val('op-status');
+  if (!val('op-date')) { toast('Укажите дату / 请填写日期'); return; }
+  if (!(qty > 0)) { toast('Укажите количество банчей / 请填写扎数'); return; }
+  if (!sup || sup === '__new') { toast('Выберите поставщика / 请选择供应商'); return; }
+  if (OP_STATUS[status]?.rej && !val('op-reason').trim()) { toast('Укажите причину отказа / 请填写拒收原因'); return; }
+  const row = {
+    order_id: _op.order.id,
+    item_key: g.key, item_ru: g.ru, item_cn: g.cn || null,
+    lot_ru: val('op-lot-ru').trim() || g.ru,
+    // сменили сорт, а китайское название осталось от исходной позиции — не выдаём его за новое
+    lot_cn: ((val('op-lot-ru').trim() || g.ru) !== g.ru && val('op-lot-cn').trim() === (g.cn || '')) ? null : (val('op-lot-cn').trim() || null),
+    purchase_date: val('op-date'),
+    supplier_id: parseInt(sup),
+    qty_bunches: qty,
+    price_per_bunch: val('op-price') === '' ? null : parseFloat(val('op-price')),
+    status,
+    reason: val('op-reason').trim() || null,
+    note: val('op-note').trim() || null,
+    updated_at: new Date().toISOString(),
+  };
+  let error;
+  if (lotId) ({ error } = await sb.from('order_purchases').update(row).eq('id', lotId));
+  else {
+    row.replaces_id = replacesId || null;
+    row.created_by = currentUser?.company_name || currentUser?.login || null;
+    ({ error } = await sb.from('order_purchases').insert(row));
+  }
+  if (error) { toast('❌ ' + (opIsMissingTable(error) ? OP_SQL_HINT : error.message)); return; }
+  const st = OP_STATUS[status];
+  logActivity('order_purchase', 'order', _op.order.id, _op.order.order_number,
+    `${lotId ? 'Изменена' : replacesId ? 'Замена' : 'Партия'}: ${g.ru} · ${opSupName(row.supplier_id)} · ${qty} банч · ${st.ru}`);
+  closeModal();
+  toast('✅ Сохранено / 已保存');
+  opReload();
+}
+
+async function opLotDelete(lotId) {
+  if (!opStaffAccess()) { toast('Нет доступа / 无权限'); return; }
+  if (!confirm('Удалить партию из журнала? / 删除该批次?')) return;
+  await sb.from('order_purchases').update({ replaces_id: null }).eq('replaces_id', lotId);
+  const { error } = await sb.from('order_purchases').delete().eq('id', lotId);
+  if (error) { toast('❌ ' + error.message); return; }
+  closeModal(); toast('✅ Удалено / 已删除'); opReload();
+}
+
+// ── Массовый приход: один поставщик, одна дата, много позиций ──
+function opBulkForm() {
+  const rows = _op.groups.map((g, gi) => ({ g, gi })).filter(({ g }) => !g.orphan);
+  document.getElementById('modal-content').classList.add('op-wide');
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">⚡ Приход от поставщика / 批量入库</div>
+    <div class="field-row">
+      <div class="field"><label>Дата покупки / 采购日期</label><input class="inp" type="date" id="opb-date" value="${opToday()}"></div>
+      <div class="field"><label>Поставщик / 供应商</label>
+        <select class="inp" id="op-sup" onchange="if(this.value==='__new')opQuickSupplier(this)">${supplierOpts(null)}<option value="__new">＋ Новый поставщик / 新增…</option></select></div>
+      <div class="field"><label>Статус / 状态</label>
+        <select class="inp" id="opb-status">
+          <option value="received">✅ Принято на склад / 已入库</option>
+          <option value="awaiting">⏳ Заказано, ждём / 待到货</option>
+        </select></div>
+    </div>
+    <input class="inp" id="opb-search" placeholder="🔍 Поиск позиции / 搜索…" style="margin-bottom:8px"
+      oninput="const q=this.value.toLowerCase();document.querySelectorAll('#opb-tbody tr').forEach(tr=>tr.style.display=tr.dataset.s.includes(q)?'':'none')">
+    <label style="font-size:11px;display:flex;gap:6px;align-items:center;margin-bottom:6px;cursor:pointer">
+      <input type="checkbox" id="opb-onlyleft" checked onchange="document.querySelectorAll('#opb-tbody tr[data-left=\\'0\\']').forEach(tr=>tr.classList.toggle('hidden',this.checked))">
+      Только то, что ещё не докуплено / 只显示未采完</label>
+    <div class="tbl-wrap" style="max-height:48vh;overflow-y:auto"><table style="min-width:640px">
+      <thead><tr><th class="L">Позиция / 品名</th><th>Нужно</th><th>Осталось</th><th>Банчей / 扎数</th><th>¥/банч</th><th></th></tr></thead>
+      <tbody id="opb-tbody">${rows.map(({ g, gi }) => `
+        <tr data-gi="${gi}" data-left="${g.left}" data-s="${escHtml((g.ru + ' ' + g.cn).toLowerCase())}" class="${g.left ? '' : 'hidden'}">
+          <td class="L"><b style="font-size:12px">${escHtml(g.ru)}</b> <span style="font-size:10px;color:var(--mid)">${escHtml(g.cn)}</span></td>
+          <td>${g.need}</td><td style="color:${g.left ? '#b45309' : 'var(--light)'}">${g.left}</td>
+          <td><input class="inp opb-qty" type="number" min="0" style="width:70px;padding:3px 5px;text-align:center" placeholder="${g.left || ''}"></td>
+          <td><input class="inp opb-price" type="number" min="0" step="0.1" style="width:70px;padding:3px 5px;text-align:center" placeholder="¥"></td>
+          <td><button class="rbtn" style="font-size:10px" title="Всё оставшееся" onclick="this.closest('tr').querySelector('.opb-qty').value='${g.left}'">=${g.left}</button></td>
+        </tr>`).join('')}</tbody>
+    </table></div>
+    <div style="font-size:10px;color:var(--light);margin-top:6px">Сохранятся только строки, где указаны банчи. Отказы и замены оформляются по одной партии в журнале.</div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+      <button class="btn btn-primary" onclick="opBulkSave()">💾 Сохранить приход / 保存</button>
+    </div>`;
+  openModal();
+}
+
+async function opBulkSave() {
+  if (!opStaffAccess()) { toast('Нет доступа / 无权限'); return; }
+  const date = document.getElementById('opb-date').value;
+  const sup = document.getElementById('op-sup').value;
+  const status = document.getElementById('opb-status').value;
+  if (!date) { toast('Укажите дату / 请填写日期'); return; }
+  if (!sup || sup === '__new') { toast('Выберите поставщика / 请选择供应商'); return; }
+  const who = currentUser?.company_name || currentUser?.login || null;
+  const rows = [];
+  document.querySelectorAll('#opb-tbody tr').forEach(tr => {
+    const qty = parseFloat(tr.querySelector('.opb-qty').value);
+    if (!(qty > 0)) return;
+    const g = _op.groups[parseInt(tr.dataset.gi)];
+    const pr = tr.querySelector('.opb-price').value;
+    rows.push({
+      order_id: _op.order.id, item_key: g.key, item_ru: g.ru, item_cn: g.cn || null,
+      lot_ru: g.ru, lot_cn: g.cn || null, purchase_date: date, supplier_id: parseInt(sup),
+      qty_bunches: qty, price_per_bunch: pr === '' ? null : parseFloat(pr), status, created_by: who,
+    });
+  });
+  if (!rows.length) { toast('Не заполнено ни одной строки / 未填写'); return; }
+  const { error } = await sb.from('order_purchases').insert(rows);
+  if (error) { toast('❌ ' + (opIsMissingTable(error) ? OP_SQL_HINT : error.message)); return; }
+  logActivity('order_purchase', 'order', _op.order.id, _op.order.order_number,
+    `Приход от ${opSupName(parseInt(sup))} ${opFmtDate(date)}: ${rows.length} поз.`);
+  closeModal();
+  toast(`✅ Приход сохранён: ${rows.length} поз. / 已保存`);
+  opReload();
+}
+
+// ── Excel журнала (менеджер — с ценами; клиент — по настройке) ──
+function opExportExcel() {
+  const o = _op.order; if (!o) return;
+  const P = _op.showPrices;
+  const head = ['№', 'Позиция / 品名', '中文名', 'Нужно банч / 需求', 'Дата покупки / 采购日期', 'Поставщик / 供应商',
+    'Куплено как / 实际品种', 'Банчей / 扎数'].concat(P ? ['¥/банч / 单价', 'Сумма ¥ / 金额'] : [])
+    .concat(['Статус / 状态', 'Причина / 原因', 'Замена для / 替换', 'Комментарий / 备注']);
+  const aoa = [[`AMMA FLOWERS · Журнал закупа / 采购记录 · ${o.order_number}`], [], head];
+  _op.groups.forEach((g, gi) => {
+    if (!g.lots.length) {
+      aoa.push([gi + 1, g.ru, g.cn, g.need, '', '', '', ''].concat(P ? ['', ''] : []).concat(['не закуплено / 未采购', '', '', '']));
+      return;
+    }
+    g.lots.forEach((l, j) => {
+      const st = OP_STATUS[l.status] || OP_STATUS.received;
+      const repl = l.replaces_id ? g.lots.find(x => String(x.id) === String(l.replaces_id)) : null;
+      aoa.push([j ? '' : gi + 1, j ? '' : g.ru, j ? '' : g.cn, j ? '' : g.need,
+        opFmtDateFull(l.purchase_date), opSupName(l.supplier_id, true),
+        (l.lot_ru || g.ru) + (l.lot_cn ? ' / ' + l.lot_cn : ''), opNum(l.qty_bunches)]
+        .concat(P ? [l.price_per_bunch ?? '', l.price_per_bunch != null ? +(opNum(l.price_per_bunch) * opNum(l.qty_bunches)).toFixed(2) : ''] : [])
+        .concat([`${st.ru} / ${st.cn}`, l.reason || '',
+          repl ? `${opFmtDateFull(repl.purchase_date)} · ${opSupName(repl.supplier_id)}` : '', l.note || '']));
+    });
+  });
+  const s = opSummary(_op.groups);
+  aoa.push([]);
+  aoa.push(['', 'ИТОГО / 合计', '', s.need, '', '', 'Принято / 已入库:', s.got].concat(P ? ['', +s.spent.toFixed(2)] : []));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 4 }, { wch: 28 }, { wch: 18 }, { wch: 9 }, { wch: 12 }, { wch: 22 }, { wch: 26 }, { wch: 8 }]
+    .concat(P ? [{ wch: 8 }, { wch: 10 }] : []).concat([{ wch: 18 }, { wch: 28 }, { wch: 22 }, { wch: 26 }]);
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: head.length - 1 } }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Закуп');
+  XLSX.writeFile(wb, `Закуп_${o.order_number}_${opToday()}.xlsx`);
+}
+
+// ═════ КЛИЕНТ: просмотр журнала по своему заказу ═════
+async function opShowClient(orderId) {
+  const o = myOrders.find(x => String(x.id) === String(orderId));
+  if (!o || !currentUser?.purchase_tracking) return;
+  _op.order = o; _op.mode = 'client'; _op.items = o.order_items || [];
+  _op.showPrices = !!currentUser?.purchase_show_prices;
+  const mc = document.getElementById('modal-content');
+  mc.classList.add('op-wide');
+  mc.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  openModal();
+  await opLoadSups();
+  const { lots, error } = await opFetchLots(o.id);
+  if (error) { mc.innerHTML = `<div style="padding:12px">❌ ${escHtml(error.message)}</div><div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Закрыть</button></div>`; return; }
+  _op.lots = lots;
+  opRenderClient();
+}
+
+function opRenderClient() {
+  const mc = document.getElementById('modal-content');
+  const o = _op.order;
+  _op.groups = opBuildGroups(_op.items, _op.lots);
+  const s = opSummary(_op.groups);
+  const pct = s.need ? Math.round(s.got / s.need * 100) : 0;
+  const rows = _op.groups.map((g, gi) => `
+    <tr class="${gi % 2 ? 'stripe' : ''}" style="vertical-align:top">
+      <td style="color:var(--light);font-size:10px">${gi + 1}</td>
+      <td class="L" style="min-width:140px"><b style="font-size:12px">${escHtml(g.ru)}</b>
+        <div style="font-size:10px;color:var(--mid)">${escHtml(g.cn)}</div>
+        <div style="margin-top:3px">${opStateBadge(g.state === 'problem' ? 'partial' : g.state)}</div></td>
+      <td style="font-weight:700">${g.need || '—'}</td>
+      <td style="font-weight:700;color:${g.got >= g.need && g.need ? '#15803d' : 'var(--charcoal)'}">${g.got}${g.wait ? `<div style="font-size:10px;color:#b45309;font-weight:400">+${g.wait} в пути</div>` : ''}</td>
+      <td class="L" style="min-width:340px">${g.lots.map(l => opLotLine(l, g, gi, false)).join('') || '<span style="font-size:11px;color:var(--light)">закуп ещё не начат / 尚未采购</span>'}</td>
+    </tr>`).join('');
+  mc.innerHTML = `
+    <div class="modal-title">🛒 Закуп по заказу ${escHtml(o.order_number)} / 采购进度</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:6px">
+      <span>Позиции: <b>${s.done}</b> из ${s.pos} закуплено</span>
+      <span>Банчи: <b>${s.got}</b> / ${s.need} (${pct}%)</span>
+      ${_op.showPrices ? `<span>Сумма закупа: <b>${opMoney(s.spent)}</b></span>` : ''}
+      ${s.days.length ? `<span style="color:var(--mid)">📅 ${s.days.map(opFmtDate).join(', ')}</span>` : ''}
+    </div>
+    <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:10px">
+      <div style="height:100%;width:${pct}%;background:var(--sage-m, #6B8F62)"></div></div>
+    <div style="font-size:10px;color:var(--mid);margin-bottom:6px">
+      ✅ принято на склад · ⏳ ожидается · ❌💸🚫 отказ (качество / цена / другое) · 🔄 замена отказанной партии</div>
+    <div class="tbl-wrap" style="max-height:58vh;overflow-y:auto"><table style="min-width:700px">
+      <thead><tr><th style="width:26px">№</th><th class="L">Позиция / 品名</th><th>Заказано<br>банч</th><th>Закуплено<br>已采</th>
+        <th class="L">История закупа: дата · производитель · кол-во${_op.showPrices ? ' · цена' : ''} / 采购记录</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="opExportExcel()">📊 Excel</button>
+      <button class="btn btn-secondary" onclick="opReload()">↻ Обновить</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-primary" onclick="closeModal()">Закрыть / 关闭</button>
+    </div>`;
+}
+
+// ── СКЛАД: список заказов клиентов с журналом закупа ──
+async function opLoadWhOrders() {
+  const box = document.getElementById('wh-purch-orders');
+  if (!box) return;
+  if (!opStaffAccess()) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const { data: cls, error: ce } = await sb.from('users').select('id, company_name, login').eq('purchase_tracking', true);
+  if (ce) { box.innerHTML = `<div style="font-size:12px;color:var(--mid)">${OP_SQL_HINT}</div>`; return; }
+  if (!cls?.length) { box.innerHTML = '<div style="font-size:12px;color:var(--mid)">Нет клиентов с включённым журналом закупа / 暂无客户</div>'; return; }
+  const { data: orders } = await sb.from('orders')
+    .select('id, order_number, status, date_order, date_ship, client_id, shipment:shipments(ship_number, ship_date)')
+    .in('client_id', cls.map(c => c.id)).neq('status', 'cancelled')
+    .order('created_at', { ascending: false }).limit(40);
+  const ids = (orders || []).map(o => o.id);
+  const { data: lots } = ids.length ? await sb.from('order_purchases').select('order_id, status').in('order_id', ids) : { data: [] };
+  const cnt = {};
+  (lots || []).forEach(l => { const c = cnt[l.order_id] = cnt[l.order_id] || { n: 0, rej: 0 }; c.n++; if (OP_STATUS[l.status]?.rej) c.rej++; });
+  if (!orders?.length) { box.innerHTML = '<div style="font-size:12px;color:var(--mid)">Заказов пока нет / 暂无订单</div>'; return; }
+  box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">${orders.map(o => {
+    const cl = cls.find(c => String(c.id) === String(o.client_id));
+    const c = cnt[o.id] || { n: 0, rej: 0 };
+    return `<button class="btn btn-secondary wh-purch-ord" data-id="${o.id}" style="text-align:left;padding:8px 12px;line-height:1.35" onclick="opWhOpen('${o.id}')">
+      <b>${escHtml(o.order_number)}</b> · ${escHtml(cl?.company_name || cl?.login || '')}
+      <div style="font-size:10px;color:var(--mid);font-weight:400">${statusLabel(o.status).split('/')[0].trim()}${o.date_ship ? ' · 🚚 ' + opFmtDate(o.date_ship) : ''}${o.shipment?.ship_number ? ' · ' + escHtml(o.shipment.ship_number) : ''}</div>
+      <div style="font-size:10px;font-weight:400">${c.n ? `🛒 партий: ${c.n}` : '<span style="color:var(--light)">закуп не начат</span>'}</div>
+    </button>`; }).join('')}</div>`;
+}
+
+async function opWhOpen(orderId) {
+  document.querySelectorAll('.wh-purch-ord').forEach(b => b.classList.toggle('btn-primary', b.dataset.id === String(orderId)));
+  const box = document.getElementById('wh-purch-journal');
+  if (box) box.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const { data: order, error } = await sb.from('orders').select(`*,
+      client:users!orders_client_id_fkey(company_name, login, purchase_tracking),
+      order_items(*, flower:flowers(ru, cn))`).eq('id', orderId).single();
+  if (error || !order) { if (box) box.innerHTML = '❌ ' + escHtml(error?.message || 'не найден'); return; }
+  await opInitManager(order, 'wh-purch-journal', order.order_items || []);
+  box?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ══════════════════════════════════════════════════════════
+//  НОВЫЙ ЗАКАЗ ВРУЧНУЮ / ИЗ EXCEL (менеджер)
+//  Формат файла — как у выгрузки заказа из системы:
+//  Название RU | 中文 | Кор. | Размер короба | … | Банч/кор | Ст(г)/банч | ¥/банч | … | Комментарий
+// ══════════════════════════════════════════════════════════
+let _imp = { rows: [], file: '', meta: {}, clientId: '', dup: null };
+let _impFlowers = null;
+
+function impNorm(v) { return String(v || '').toLowerCase().replace(/ё/g, 'е').replace(/[\s\-–—·.,:;()（）"«»]/g, ''); }
+
+async function impLoadFlowers() {
+  if (typeof flowers !== 'undefined' && flowers.length) return (_impFlowers = flowers);
+  if (_impFlowers) return _impFlowers;
+  const out = [];
+  for (let from = 0; from < 20000; from += 1000) {
+    const { data, error } = await sb.from('flowers')
+      .select('id, ru, cn, en, stems, boxes_per_box, pack, cat_ru, price_a, price_ap').order('id').range(from, from + 999);
+    if (error || !data?.length) break;
+    out.push(...data);
+    if (data.length < 1000) break;
+  }
+  return (_impFlowers = out);
+}
+
+function impMatch(ru, cn) {
+  const list = _impFlowers || [];
+  const r = impNorm(ru), c = impNorm(cn);
+  return (r && list.find(f => impNorm(f.ru) === r)) || (c && list.find(f => impNorm(f.cn) === c)) || null;
+}
+
+// «1000g», «500 г», «0.5кг», 10 → {v, w}
+function impParseStems(v) {
+  if (v == null || v === '') return { v: null, w: false };
+  if (typeof v === 'number') return { v, w: false };
+  const s = String(v).toLowerCase().replace(',', '.');
+  const n = parseFloat(s);
+  if (isNaN(n)) return { v: null, w: false };
+  if (/кг|kg/.test(s)) return { v: Math.round(n * 1000), w: true };
+  if (/г|g|克/.test(s)) return { v: n, w: true };
+  return { v: n, w: false };
+}
+
+function impBlankRow() { return { ru: '', cn: '', boxes: '', bpb: '', stems: '', weight: false, price: '', box_size: '', comment: '', fid: null }; }
+
+async function showNewOrderModal() {
+  _imp = { rows: [impBlankRow()], file: '', meta: {}, clientId: '', dup: null };
+  if (typeof allClients === 'undefined' || !allClients.length) await loadClients();
+  const tracked = allClients.find(c => c.role === 'client' && c.purchase_tracking);
+  _imp.clientId = tracked?.id || '';
+  impRender();
+  openModal();
+  impLoadFlowers();
+}
+
+function impRender() {
+  const mc = document.getElementById('modal-content');
+  mc.classList.add('op-wide');
+  const cls = (allClients || []).filter(c => c.role === 'client');
+  const valid = _imp.rows.filter(r => (r.ru || r.cn) && opNum(r.boxes) > 0);
+  const totBoxes = valid.reduce((s, r) => s + opNum(r.boxes), 0);
+  const inp = (i, f, w, extra = '') =>
+    `<input class="inp" value="${escHtml(_imp.rows[i][f] ?? '')}" style="width:${w}px;padding:3px 5px;font-size:11px" ${extra} oninput="_imp.rows[${i}]['${f}']=this.value;impFooter()">`;
+  const rows = _imp.rows.map((r, i) => `
+    <tr class="${i % 2 ? 'stripe' : ''}">
+      <td style="color:var(--light);font-size:10px">${i + 1}</td>
+      <td class="L">${inp(i, 'ru', 170)}</td>
+      <td>${inp(i, 'cn', 120)}</td>
+      <td>${inp(i, 'boxes', 50, 'type="number" min="0"')}</td>
+      <td>${inp(i, 'bpb', 50, 'type="number" min="0"')}</td>
+      <td>${inp(i, 'stems', 56, 'title="Стеблей в банче или граммов (для веса допишите g: 500g)"')}</td>
+      <td>${inp(i, 'price', 56, 'type="number" min="0" step="0.1"')}</td>
+      <td>${inp(i, 'box_size', 80, 'placeholder="100*40*20"')}</td>
+      <td>${inp(i, 'comment', 120)}</td>
+      <td style="font-size:10px;white-space:nowrap">${r.fid ? '<span style="color:#15803d" title="Найдено в прайсе">🔗 прайс</span>' : '<span style="color:var(--light)" title="Не найдено в прайсе — позиция сохранится по названию">— вне прайса</span>'}</td>
+      <td><button class="rbtn" onclick="_imp.rows.splice(${i},1);if(!_imp.rows.length)_imp.rows.push(impBlankRow());impRender()">×</button></td>
+    </tr>`).join('');
+
+  mc.innerHTML = `
+    <div class="modal-title">📝 Новый заказ — вручную или из Excel / 新建订单</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <label class="btn btn-gold btn-sm" style="cursor:pointer">📂 Загрузить из Excel / 导入
+        <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="impLoadFile(this)"></label>
+      <button class="btn btn-secondary btn-sm" onclick="impTemplate()">📄 Пустой шаблон / 模板</button>
+      <span style="font-size:10px;color:var(--mid)">${_imp.file ? '📎 ' + escHtml(_imp.file) + ' · ' : ''}Можно загрузить таблицу и поправить, или заполнить строки вручную</span>
+    </div>
+    ${_imp.dup ? `<div style="font-size:12px;background:#fef3c7;color:#92400e;border-radius:6px;padding:8px 10px;margin-bottom:10px">
+      ⚠️ Заказ <b>${escHtml(_imp.dup.order_number)}</b> из этого файла уже есть в системе.
+      <button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="closeModal();openOrder('${_imp.dup.id}')">Открыть его</button>
+      — или создайте новый заказ (получит новый номер).</div>` : ''}
+    <div class="field-row">
+      <div class="field"><label>Клиент / 客户</label>
+        <select class="inp" onchange="_imp.clientId=this.value">
+          <option value="">— выбрать / 选择 —</option>
+          ${cls.map(c => `<option value="${c.id}" ${String(c.id) === String(_imp.clientId) ? 'selected' : ''}>${escHtml(c.company_name || c.login)}${c.purchase_tracking ? ' 🛒' : ''}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Дата отгрузки / 出货日期</label>
+        <input class="inp" type="date" value="${_imp.meta.ship || ''}" onchange="_imp.meta.ship=this.value"></div>
+      <div class="field"><label>Статус / 状态</label>
+        <select class="inp" onchange="_imp.meta.status=this.value">
+          ${['confirmed', 'pending_review', 'draft'].map(st => `<option value="${st}" ${(_imp.meta.status || 'confirmed') === st ? 'selected' : ''}>${statusLabel(st)}</option>`).join('')}
+        </select></div>
+    </div>
+    <div class="tbl-wrap" style="max-height:46vh;overflow-y:auto"><table style="min-width:980px">
+      <thead><tr><th style="width:24px">№</th><th class="L">Название RU</th><th>中文名</th><th>Кор.<br>箱数</th><th>Банч/кор<br>扎/箱</th>
+        <th>Ст(г)/банч<br>枝(克)/扎</th><th>¥/банч<br>单价</th><th>Короб, см<br>箱规</th><th>Комментарий<br>备注</th><th></th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" onclick="_imp.rows.push(impBlankRow());impRender()">＋ Строка / 添加</button>
+      <span id="imp-foot" style="font-size:12px;color:var(--mid)">${valid.length} поз. · ${totBoxes} кор.</span>
+      <span style="font-size:10px;color:var(--light)">Строки без коробок не попадут в заказ. Пустая цена = цена A из прайса (если позиция найдена).</span>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+      <button class="btn btn-primary" onclick="impCreate()">✅ Создать заказ / 创建订单</button>
+    </div>`;
+}
+
+function impFooter() {
+  const valid = _imp.rows.filter(r => (r.ru || r.cn) && opNum(r.boxes) > 0);
+  const el = document.getElementById('imp-foot');
+  if (el) el.textContent = `${valid.length} поз. · ${valid.reduce((s, r) => s + opNum(r.boxes), 0)} кор.`;
+}
+
+async function impLoadFile(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  try {
+    await impLoadFlowers();
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: null });
+    const txt = v => String(v ?? '').toLowerCase();
+    // строка заголовков: есть «название/品名» и что-то про коробки
+    let h = aoa.findIndex(r => r && r.some(c => /назван|品名|наимен/.test(txt(c))) && r.some(c => /кор|箱/.test(txt(c))));
+    const col = { names: [] };
+    if (h >= 0) {
+      aoa[h].forEach((c, j) => {
+        const t = txt(c);
+        if (!t) return;
+        if (/сумма|金额/.test(t)) return;
+        if (/объ[её]м|体积|кубы/.test(t)) return;
+        if (/размер|箱规/.test(t)) col.size = j;
+        else if (/банч\s*\/\s*кор|扎\s*\/\s*箱/.test(t)) col.bpb = j;
+        else if (/ст.*\/\s*банч|枝|克/.test(t)) col.stems = j;
+        else if (/¥|价|цена/.test(t)) col.price = j;
+        else if (/коммент|备注/.test(t)) col.comment = j;
+        else if (/поставщик|供应商/.test(t)) { /* поставщиков заносим в журнал закупа */ }
+        else if (/назван|品名|наимен/.test(t)) col.names.push(j);
+        else if (/кор|箱/.test(t) && col.boxes == null) col.boxes = j;
+      });
+    } else { // без заголовков — раскладка как у выгрузки из системы
+      h = -1; Object.assign(col, { names: [0, 1], boxes: 2, size: 3, bpb: 6, stems: 7, price: 8, comment: 12 });
+    }
+    const cRu = col.names[0] ?? 0, cCn = col.names[1];
+    // шапка: номер и дата отгрузки
+    const meta = {};
+    aoa.slice(0, Math.max(h, 0)).forEach(r => (r || []).forEach((c, j) => {
+      const t = txt(c), next = () => (r.slice(j + 1).find(x => x != null && x !== '') ?? null);
+      if (/номер|单号/.test(t)) meta.orig = String(next() || '').trim();
+      if (/отгрузка|出货/.test(t)) {
+        const v = next();
+        const d = v instanceof Date ? v.toLocaleDateString('sv-SE') : (String(v || '').match(/\d{4}-\d{2}-\d{2}/) || [])[0];
+        if (d) meta.ship = d;
+      }
+    }));
+    const rows = [];
+    aoa.slice(h + 1).forEach(r => {
+      if (!r) return;
+      let ru = String(r[cRu] ?? '').trim(), cn = cCn != null ? String(r[cCn] ?? '').trim() : '';
+      if (!ru && !cn) return;                       // пустые строки и строка «итого»
+      if (/^итого|^合计|^total/i.test(ru)) return;
+      if (!ru) ru = cn;
+      const st = impParseStems(col.stems != null ? r[col.stems] : null);
+      const f = impMatch(ru, cn);
+      const num = v => (v == null || v === '' || isNaN(parseFloat(v))) ? '' : parseFloat(v);
+      rows.push({
+        ru, cn: cn || f?.cn || '',
+        boxes: num(col.boxes != null ? r[col.boxes] : ''),
+        bpb: num(col.bpb != null ? r[col.bpb] : '') || f?.boxes_per_box || '',
+        stems: st.v != null ? (st.w ? st.v + 'g' : st.v) : (f?.stems || ''),
+        weight: st.w,
+        price: num(col.price != null ? r[col.price] : ''),
+        box_size: String((col.size != null ? r[col.size] : '') || f?.box_size || '').trim(),
+        comment: String((col.comment != null ? r[col.comment] : '') || '').trim(),
+        fid: f?.id || null,
+      });
+    });
+    if (!rows.length) { toast('В файле не нашлось позиций / 未找到商品'); return; }
+    _imp.rows = rows;
+    _imp.file = file.name;
+    _imp.meta = { ..._imp.meta, ...(meta.ship ? { ship: meta.ship } : {}), orig: meta.orig || '' };
+    _imp.dup = null;
+    if (meta.orig) {
+      const { data } = await sb.from('orders').select('id, order_number').eq('order_number', meta.orig).limit(1);
+      _imp.dup = data?.[0] || null;
+    }
+    impRender();
+    toast(`📥 Загружено ${rows.length} поз., из прайса найдено ${rows.filter(r => r.fid).length} / 已导入`);
+  } catch (e) {
+    toast('❌ Не удалось прочитать файл: ' + (e.message || e));
+  } finally { input.value = ''; }
+}
+
+function impTemplate() {
+  const aoa = [
+    ['AMMA FLOWERS · Заказ / 订单'],
+    ['Номер / 单号:', '', '', '', '', '', '', 'Дата / 日期:', ''],
+    ['Статус / 状态:', '', '', '', '', '', '', 'Отгрузка / 出货:', ''],
+    ['Название / Name\n品名', 'Название / Name\n品名', 'Кор.\n箱数', 'Размер короба, см\n箱规 (厘米)', 'Объём кор., м³\n单箱体积 m³',
+      'Кубы, м³\n总体积 m³', 'Банч/кор\n扎/箱', 'Ст(г)/банч\n枝(克)/扎', '¥/банч\n件价', 'Сумма, ¥\n金额', 'Поставщик\n供应商', '', 'Комментарий\n备注'],
+    ['Роза 40 см', '玫瑰 40cm', 10, '100*40*30', '', '', 30, 10, '', '', '', '', ''],
+    ['Эвкалипт цинерия', '银叶桉', 5, '100*40*30', '', '', 12, '1000g', '', '', '', '', 'вес — пишите g'],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 26 }, { wch: 20 }, { wch: 7 }, { wch: 13 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 10 }, { wch: 8 }, { wch: 9 }, { wch: 14 }, { wch: 4 }, { wch: 24 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Заказ');
+  XLSX.writeFile(wb, 'Шаблон_заказа_AMMA.xlsx');
+}
+
+async function impCreate() {
+  if (!_imp.clientId) { toast('Выберите клиента / 请选择客户'); return; }
+  const rows = _imp.rows.filter(r => (String(r.ru).trim() || String(r.cn).trim()) && opNum(r.boxes) > 0);
+  const skipped = _imp.rows.filter(r => (String(r.ru).trim() || String(r.cn).trim()) && !(opNum(r.boxes) > 0));
+  if (!rows.length) { toast('Нет позиций с количеством коробок / 请填写箱数'); return; }
+  if (skipped.length && !confirm(`${skipped.length} поз. без коробок не попадут в заказ:\n${skipped.slice(0, 8).map(r => r.ru || r.cn).join(', ')}${skipped.length > 8 ? '…' : ''}\n\nПродолжить? / 继续?`)) return;
+  await impLoadFlowers();
+  const num = await nextDocNumber('orders', 'order_number', 'ORD');
+  const note = `Внесён вручную${_imp.file ? ' из Excel: ' + _imp.file : ''}${_imp.meta.orig ? ' (в файле ' + _imp.meta.orig + ')' : ''}`;
+  const { data: order, error: oErr } = await sb.from('orders').insert({
+    order_number: num, client_id: _imp.clientId,
+    status: _imp.meta.status || 'confirmed',
+    date_order: opToday(), date_ship: _imp.meta.ship || null,
+    manager_comment: note,
+  }).select().single();
+  if (oErr) { toast('❌ ' + oErr.message); return; }
+  const items = rows.map(r => {
+    const ru = String(r.ru || r.cn).trim(), cn = String(r.cn || '').trim();
+    const f = r.fid ? (_impFlowers || []).find(x => String(x.id) === String(r.fid)) : null;
+    const st = impParseStems(r.stems);
+    const bpb = parseInt(r.bpb) || parseInt(f?.boxes_per_box) || 0;
+    const price = r.price !== '' && r.price != null ? opNum(r.price) : opNum(f?.price_a);
+    const { photo_url, ...fLight } = f || {};
+    const snap = {
+      ...(f ? fLight : {}), ru, cn: cn || f?.cn || '',
+      boxes_per_box: bpb, stems: st.v, box_size: String(r.box_size || '').trim() || null,
+      pack: bpb ? `${bpb} банч/кор` : (f?.pack || ''),
+      imported: true,
+    };
+    if (st.w || r.weight) snap.is_weight = true;
+    const ppb = +(price * bpb).toFixed(2);
+    return {
+      order_id: order.id, flower_id: f ? f.id : null, flower_snapshot: snap,
+      price_type: 'a', price_per_bunch: price, bunches_per_box: bpb, price_per_box: ppb,
+      qty_boxes: parseInt(r.boxes) || 0, subtotal: +(ppb * (parseInt(r.boxes) || 0)).toFixed(2),
+      client_name: null, item_comment: String(r.comment || '').trim() || null,
+    };
+  });
+  const { error: itErr } = await sb.from('order_items').insert(items);
+  if (itErr) {
+    await sb.from('orders').delete().eq('id', order.id);
+    toast('❌ Заказ не создан: ' + itErr.message); return;
+  }
+  logActivity('order_import', 'order', order.id, num, `${note}: ${items.length} поз.`);
+  closeModal();
+  toast(`✅ Заказ ${num} создан: ${items.length} поз. / 订单已创建`);
+  if (typeof loadOrders === 'function') loadOrders();
+  openOrder(order.id);
 }
 
 // ══════════════════════════════════════════════════════════
