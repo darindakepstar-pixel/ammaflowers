@@ -3921,7 +3921,7 @@ function renderMyOrder() {
           <div style="font-size:10px;color:var(--mid)">${snap.cn||item.flower?.cn||''}</div>
           ${mixLine}${customLine}${whChangeLine}</td>
         <td style="font-size:10px;color:${chBpb?'#d97706':'var(--mid)'}">${bpb||'—'}</td>
-        <td style="font-size:10px;color:${chSpb?'#d97706':'var(--mid)'}">${per?fmtStems(per,wgt):'—'}</td>
+        <td style="font-size:10px;color:${chSpb?'#d97706':'var(--mid)'}">${snap.stems_label?escHtml(opFmtPack(snap.stems_label,wgt)):(per?fmtStems(per,wgt):'—')}</td>
         <td><b>${q}</b></td>
         <td style="color:var(--mid);font-size:11px">${bn||'—'}</td>
         <td style="color:var(--mid);font-size:11px">${un?fmtStems(un,wgt):'—'}</td>
@@ -11737,6 +11737,18 @@ function opFmtDate(d) { if (!d) return '—'; const [y, m, dd] = String(d).slice
 function opFmtDateFull(d) { if (!d) return ''; const [y, m, dd] = String(d).slice(0, 10).split('-'); return `${dd}.${m}.${y}`; }
 function opNum(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
 function opMoney(v) { return '¥' + opNum(v).toFixed(2).replace(/\.00$/, ''); }
+// Пакинг: «10» → «10 ст», «1000» (вес) → «1000 г», «500/1000г» → «500/1000 г»
+function opFmtPack(v, weight) {
+  if (v == null || String(v).trim() === '') return '';
+  const s = String(v).trim().replace(/\s+/g, ' ');
+  if (/кг|kg/i.test(s)) return s.replace(/\s*(кг|kg)\s*$/i, ' кг');
+  if (/г|g|克/i.test(s)) return s.replace(/\s*(г|g|克)\s*$/i, ' г');
+  if (/ст|шт|枝/i.test(s)) return s;
+  return s + (weight ? ' г' : ' ст');
+}
+function opPackKey(v) { return String(v ?? '').toLowerCase().replace(/кг|kg/g, '000').replace(/[^\d\/.]/g, ''); }
+function opItemPack(it) { const sn = it.flower_snapshot || {}; return sn.stems_label || (sn.stems != null && sn.stems !== '' ? String(sn.stems) : ''); }
+function opItemWeight(it) { try { return isWeightItem(it.flower_snapshot || {}) || itemWeightBased(it); } catch (e) { return false; } }
 function opItemRu(it) { return it.flower?.ru || it.flower_snapshot?.ru || '—'; }
 function opItemCn(it) { return it.flower?.cn || it.flower_snapshot?.cn || ''; }
 function opItemKey(it) {
@@ -11769,13 +11781,14 @@ function opBuildGroups(items, lots) {
   const map = {}, order = [];
   items.forEach(it => {
     const k = opItemKey(it);
-    if (!map[k]) { map[k] = { key: k, ru: opItemRu(it), cn: opItemCn(it), need: 0, lots: [], orphan: false }; order.push(map[k]); }
+    if (!map[k]) { map[k] = { key: k, ru: opItemRu(it), cn: opItemCn(it), need: 0, lots: [], orphan: false,
+      pack: opItemPack(it), weight: opItemWeight(it), bpb: parseInt(it.bunches_per_box) || 0 }; order.push(map[k]); }
     map[k].need += (parseInt(it.qty_boxes) || 0) * (parseInt(it.bunches_per_box) || 0);
   });
   lots.forEach(l => {
     let g = map[l.item_key];
     if (!g) { // позицию убрали из заказа, а партия осталась
-      g = map[l.item_key] = { key: l.item_key, ru: l.item_ru || '—', cn: l.item_cn || '', need: 0, lots: [], orphan: true };
+      g = map[l.item_key] = { key: l.item_key, ru: l.item_ru || '—', cn: l.item_cn || '', need: 0, lots: [], orphan: true, pack: '', weight: /г|g/i.test(l.stems_per_bunch || ''), bpb: 0 };
       order.push(g);
     }
     g.lots.push(l);
@@ -11820,6 +11833,10 @@ const OP_STATE_BADGE = {
   problem: ['⚠️ Отказ — нужна замена', '#dc2626', '#fee2e2'],
   orphan:  ['— нет в заказе', 'var(--mid)', 'var(--bg)'],
 };
+function opPackLine(g) {
+  if (!g.bpb && !g.pack) return '';
+  return `<div style="font-size:10px;color:var(--mid);margin-top:2px">📦 ${g.bpb ? g.bpb + ' банч/кор' : ''}${g.bpb && g.pack ? ' · ' : ''}${g.pack ? opFmtPack(g.pack, g.weight) + '/банч' : ''}</div>`;
+}
 function opStateBadge(state) {
   const [t, c, bg] = OP_STATE_BADGE[state] || OP_STATE_BADGE.none;
   return `<span style="font-size:10px;font-weight:700;color:${c};background:${bg};border-radius:10px;padding:2px 8px;white-space:nowrap">${t}</span>`;
@@ -11835,6 +11852,9 @@ function opLotLine(l, g, gi, editable) {
   const price = _op.showPrices && l.price_per_bunch != null
     ? ` · <b>${opMoney(l.price_per_bunch)}</b>/банч <span style="color:var(--light)">(= ${opMoney(opNum(l.price_per_bunch) * opNum(l.qty_bunches))})</span>` : '';
   const strike = st.rej ? 'text-decoration:line-through;text-decoration-color:#dc262680;' : '';
+  const packDiff = l.stems_per_bunch && g.pack && opPackKey(l.stems_per_bunch) !== opPackKey(g.pack);
+  const pack = l.stems_per_bunch
+    ? ` · <b style="${packDiff ? 'color:#c2410c' : ''}">${escHtml(opFmtPack(l.stems_per_bunch, g.weight))}</b>/банч${packDiff ? ` <span style="font-size:10px;color:#c2410c">(в заказе ${escHtml(opFmtPack(g.pack, g.weight))})</span>` : ''}` : '';
   const reason = l.reason ? `<div style="font-size:10px;color:${st.rej ? '#dc2626' : 'var(--mid)'};margin-left:18px">↳ ${escHtml(l.reason)}</div>` : '';
   const note = l.note ? `<div style="font-size:10px;color:var(--mid);margin-left:18px">💬 ${escHtml(l.note)}</div>` : '';
   const btns = editable ? `
@@ -11844,7 +11864,7 @@ function opLotLine(l, g, gi, editable) {
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px">
       <span title="${st.ru} / ${st.cn}">${st.icon}</span>
       <span style="${strike}">
-        <b>${opFmtDate(l.purchase_date)}</b> · ${escHtml(opSupName(l.supplier_id, true))} · <b>${opNum(l.qty_bunches)}</b> банч${price}${asName}
+        <b>${opFmtDate(l.purchase_date)}</b> · ${escHtml(opSupName(l.supplier_id, true))} · <b>${opNum(l.qty_bunches)}</b> банч${pack}${price}${asName}
       </span>
       <span style="font-size:10px;color:${st.color}">${st.ru}</span>
       ${repl ? `<span style="font-size:10px;color:#7c3aed;background:#f3e8ff;border-radius:8px;padding:0 6px">🔄 замена за ${opFmtDate(repl.purchase_date)}</span>` : ''}
@@ -11901,7 +11921,7 @@ function opRenderManager() {
     <tr class="${i % 2 ? 'stripe' : ''}" style="vertical-align:top">
       <td style="color:var(--light);font-size:10px">${gi + 1}</td>
       <td class="L" style="min-width:150px"><b style="font-size:12px">${escHtml(g.ru)}</b>
-        <div style="font-size:10px;color:var(--mid)">${escHtml(g.cn)}</div>
+        <div style="font-size:10px;color:var(--mid)">${escHtml(g.cn)}</div>${opPackLine(g)}
         <div style="margin-top:3px">${opStateBadge(g.state)}</div></td>
       <td style="font-weight:700">${g.need || '—'}</td>
       <td style="font-weight:700;color:${g.got >= g.need && g.need ? '#15803d' : 'var(--charcoal)'}">${g.got}${g.wait ? `<div style="font-size:10px;color:#b45309;font-weight:400">+${g.wait} ждём</div>` : ''}</td>
@@ -11962,6 +11982,7 @@ async function opLotForm(gi, lotId, replacesId) {
     supplier_id: base?.supplier_id || null,
     qty_bunches: base ? base.qty_bunches : (g.left || g.need || ''),
     price_per_bunch: base?.price_per_bunch ?? '',
+    stems_per_bunch: base?.stems_per_bunch || g.pack || '',
     status: 'received',
     lot_ru: base?.lot_ru || g.ru, lot_cn: base?.lot_cn || g.cn,
     reason: '', note: '',
@@ -11972,7 +11993,7 @@ async function opLotForm(gi, lotId, replacesId) {
 
   document.getElementById('modal-content').innerHTML = `
     <div class="modal-title">${title}: ${escHtml(g.ru)}</div>
-    <div style="font-size:11px;color:var(--mid);margin:-6px 0 10px">${escHtml(g.cn)} · нужно ${g.need} банч · принято ${g.got}${g.wait ? ' · ждём ' + g.wait : ''}</div>
+    <div style="font-size:11px;color:var(--mid);margin:-6px 0 10px">${escHtml(g.cn)} · нужно ${g.need} банч · принято ${g.got}${g.wait ? ' · ждём ' + g.wait : ''}${g.pack ? ' · в заказе ' + escHtml(opFmtPack(g.pack, g.weight)) + '/банч' : ''}</div>
     ${base ? `<div style="font-size:11px;background:#fee2e2;color:#991b1b;border-radius:6px;padding:6px 10px;margin-bottom:10px">
       Заменяем: ${opFmtDate(base.purchase_date)} · ${escHtml(opSupName(base.supplier_id))} · ${opNum(base.qty_bunches)} банч · ${(OP_STATUS[base.status] || {}).ru || ''}${base.reason ? ' — ' + escHtml(base.reason) : ''}</div>` : ''}
     <div id="op-hist" style="margin-bottom:8px"></div>
@@ -11986,8 +12007,13 @@ async function opLotForm(gi, lotId, replacesId) {
     <div class="field-row">
       <div class="field"><label>Банчей / 扎数</label>
         <input class="inp" type="number" min="0" step="1" id="op-qty" value="${v.qty_bunches ?? ''}"></div>
+      <div class="field"><label>${g.weight ? 'Граммов' : 'Стеблей'} в банче / 每扎${g.weight ? '克数' : '枝数'}</label>
+        <input class="inp" id="op-stems" value="${escHtml(v.stems_per_bunch ?? '')}" placeholder="${g.weight ? '500 или 500/1000' : '10'}"
+          title="Фактический пакинг. Для веса можно «500», «1000г» или «500/1000» / 实际包装"></div>
       <div class="field"><label>Цена закупа ¥/банч / 采购价</label>
         <input class="inp" type="number" min="0" step="0.1" id="op-price" value="${v.price_per_bunch ?? ''}" placeholder="¥"></div>
+    </div>
+    <div class="field-row">
       <div class="field"><label>Статус / 状态</label>
         <select class="inp" id="op-status">${stOpts}</select></div>
     </div>
@@ -12061,6 +12087,7 @@ async function opLotSave(gi, lotId, replacesId) {
     supplier_id: parseInt(sup),
     qty_bunches: qty,
     price_per_bunch: val('op-price') === '' ? null : parseFloat(val('op-price')),
+    stems_per_bunch: val('op-stems').trim() || null,
     status,
     reason: val('op-reason').trim() || null,
     note: val('op-note').trim() || null,
@@ -12112,13 +12139,14 @@ function opBulkForm() {
     <label style="font-size:11px;display:flex;gap:6px;align-items:center;margin-bottom:6px;cursor:pointer">
       <input type="checkbox" id="opb-onlyleft" checked onchange="document.querySelectorAll('#opb-tbody tr[data-left=\\'0\\']').forEach(tr=>tr.classList.toggle('hidden',this.checked))">
       Только то, что ещё не докуплено / 只显示未采完</label>
-    <div class="tbl-wrap" style="max-height:48vh;overflow-y:auto"><table style="min-width:640px">
-      <thead><tr><th class="L">Позиция / 品名</th><th>Нужно</th><th>Осталось</th><th>Банчей / 扎数</th><th>¥/банч</th><th></th></tr></thead>
+    <div class="tbl-wrap" style="max-height:48vh;overflow-y:auto"><table style="min-width:720px">
+      <thead><tr><th class="L">Позиция / 品名</th><th>Нужно</th><th>Осталось</th><th>Банчей / 扎数</th><th>Ст(г)/банч<br>枝(克)/扎</th><th>¥/банч</th><th></th></tr></thead>
       <tbody id="opb-tbody">${rows.map(({ g, gi }) => `
         <tr data-gi="${gi}" data-left="${g.left}" data-s="${escHtml((g.ru + ' ' + g.cn).toLowerCase())}" class="${g.left ? '' : 'hidden'}">
           <td class="L"><b style="font-size:12px">${escHtml(g.ru)}</b> <span style="font-size:10px;color:var(--mid)">${escHtml(g.cn)}</span></td>
           <td>${g.need}</td><td style="color:${g.left ? '#b45309' : 'var(--light)'}">${g.left}</td>
           <td><input class="inp opb-qty" type="number" min="0" style="width:70px;padding:3px 5px;text-align:center" placeholder="${g.left || ''}"></td>
+          <td><input class="inp opb-stems" style="width:78px;padding:3px 5px;text-align:center" value="${escHtml(g.pack || '')}" placeholder="${g.weight ? 'г' : 'ст'}" title="${g.weight ? 'граммов' : 'стеблей'} в банче"></td>
           <td><input class="inp opb-price" type="number" min="0" step="0.1" style="width:70px;padding:3px 5px;text-align:center" placeholder="¥"></td>
           <td><button class="rbtn" style="font-size:10px" title="Всё оставшееся" onclick="this.closest('tr').querySelector('.opb-qty').value='${g.left}'">=${g.left}</button></td>
         </tr>`).join('')}</tbody>
@@ -12145,10 +12173,11 @@ async function opBulkSave() {
     if (!(qty > 0)) return;
     const g = _op.groups[parseInt(tr.dataset.gi)];
     const pr = tr.querySelector('.opb-price').value;
+    const stm = tr.querySelector('.opb-stems').value.trim();
     rows.push({
       order_id: _op.order.id, item_key: g.key, item_ru: g.ru, item_cn: g.cn || null,
       lot_ru: g.ru, lot_cn: g.cn || null, purchase_date: date, supplier_id: parseInt(sup),
-      qty_bunches: qty, price_per_bunch: pr === '' ? null : parseFloat(pr), status, created_by: who,
+      qty_bunches: qty, stems_per_bunch: stm || null, price_per_bunch: pr === '' ? null : parseFloat(pr), status, created_by: who,
     });
   });
   if (!rows.length) { toast('Не заполнено ни одной строки / 未填写'); return; }
@@ -12165,21 +12194,21 @@ async function opBulkSave() {
 function opExportExcel() {
   const o = _op.order; if (!o) return;
   const P = _op.showPrices;
-  const head = ['№', 'Позиция / 品名', '中文名', 'Нужно банч / 需求', 'Дата покупки / 采购日期', 'Поставщик / 供应商',
-    'Куплено как / 实际品种', 'Банчей / 扎数'].concat(P ? ['¥/банч / 单价', 'Сумма ¥ / 金额'] : [])
+  const head = ['№', 'Позиция / 品名', '中文名', 'Нужно банч / 需求', 'Пакинг в заказе / 订单包装', 'Дата покупки / 采购日期', 'Поставщик / 供应商',
+    'Куплено как / 实际品种', 'Банчей / 扎数', 'Ст(г)/банч факт / 实际枝(克)/扎'].concat(P ? ['¥/банч / 单价', 'Сумма ¥ / 金额'] : [])
     .concat(['Статус / 状态', 'Причина / 原因', 'Замена для / 替换', 'Комментарий / 备注']);
   const aoa = [[`AMMA FLOWERS · Журнал закупа / 采购记录 · ${o.order_number}`], [], head];
   _op.groups.forEach((g, gi) => {
     if (!g.lots.length) {
-      aoa.push([gi + 1, g.ru, g.cn, g.need, '', '', '', ''].concat(P ? ['', ''] : []).concat(['не закуплено / 未采购', '', '', '']));
+      aoa.push([gi + 1, g.ru, g.cn, g.need, opFmtPack(g.pack, g.weight), '', '', '', '', ''].concat(P ? ['', ''] : []).concat(['не закуплено / 未采购', '', '', '']));
       return;
     }
     g.lots.forEach((l, j) => {
       const st = OP_STATUS[l.status] || OP_STATUS.received;
       const repl = l.replaces_id ? g.lots.find(x => String(x.id) === String(l.replaces_id)) : null;
-      aoa.push([j ? '' : gi + 1, j ? '' : g.ru, j ? '' : g.cn, j ? '' : g.need,
+      aoa.push([j ? '' : gi + 1, j ? '' : g.ru, j ? '' : g.cn, j ? '' : g.need, j ? '' : opFmtPack(g.pack, g.weight),
         opFmtDateFull(l.purchase_date), opSupName(l.supplier_id, true),
-        (l.lot_ru || g.ru) + (l.lot_cn ? ' / ' + l.lot_cn : ''), opNum(l.qty_bunches)]
+        (l.lot_ru || g.ru) + (l.lot_cn ? ' / ' + l.lot_cn : ''), opNum(l.qty_bunches), opFmtPack(l.stems_per_bunch, g.weight)]
         .concat(P ? [l.price_per_bunch ?? '', l.price_per_bunch != null ? +(opNum(l.price_per_bunch) * opNum(l.qty_bunches)).toFixed(2) : ''] : [])
         .concat([`${st.ru} / ${st.cn}`, l.reason || '',
           repl ? `${opFmtDateFull(repl.purchase_date)} · ${opSupName(repl.supplier_id)}` : '', l.note || '']));
@@ -12187,9 +12216,9 @@ function opExportExcel() {
   });
   const s = opSummary(_op.groups);
   aoa.push([]);
-  aoa.push(['', 'ИТОГО / 合计', '', s.need, '', '', 'Принято / 已入库:', s.got].concat(P ? ['', +s.spent.toFixed(2)] : []));
+  aoa.push(['', 'ИТОГО / 合计', '', s.need, '', '', '', 'Принято / 已入库:', s.got, ''].concat(P ? ['', +s.spent.toFixed(2)] : []));
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 4 }, { wch: 28 }, { wch: 18 }, { wch: 9 }, { wch: 12 }, { wch: 22 }, { wch: 26 }, { wch: 8 }]
+  ws['!cols'] = [{ wch: 4 }, { wch: 28 }, { wch: 18 }, { wch: 9 }, { wch: 12 }, { wch: 12 }, { wch: 22 }, { wch: 26 }, { wch: 8 }, { wch: 12 }]
     .concat(P ? [{ wch: 8 }, { wch: 10 }] : []).concat([{ wch: 18 }, { wch: 28 }, { wch: 22 }, { wch: 26 }]);
   ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: head.length - 1 } }];
   const wb = XLSX.utils.book_new();
@@ -12224,7 +12253,7 @@ function opRenderClient() {
     <tr class="${gi % 2 ? 'stripe' : ''}" style="vertical-align:top">
       <td style="color:var(--light);font-size:10px">${gi + 1}</td>
       <td class="L" style="min-width:140px"><b style="font-size:12px">${escHtml(g.ru)}</b>
-        <div style="font-size:10px;color:var(--mid)">${escHtml(g.cn)}</div>
+        <div style="font-size:10px;color:var(--mid)">${escHtml(g.cn)}</div>${opPackLine(g)}
         <div style="margin-top:3px">${opStateBadge(g.state === 'problem' ? 'partial' : g.state)}</div></td>
       <td style="font-weight:700">${g.need || '—'}</td>
       <td style="font-weight:700;color:${g.got >= g.need && g.need ? '#15803d' : 'var(--charcoal)'}">${g.got}${g.wait ? `<div style="font-size:10px;color:#b45309;font-weight:400">+${g.wait} в пути</div>` : ''}</td>
@@ -12474,7 +12503,9 @@ async function impLoadFile(input) {
         ru, cn: cn || f?.cn || '',
         boxes: num(col.boxes != null ? r[col.boxes] : ''),
         bpb: num(col.bpb != null ? r[col.bpb] : '') || f?.boxes_per_box || '',
-        stems: st.v != null ? (st.w ? st.v + 'g' : st.v) : (f?.stems || ''),
+        stems: (() => { const raw = col.stems != null ? r[col.stems] : null;
+          if (raw != null && /\d\s*[\/\\-]\s*\d/.test(String(raw))) return String(raw).trim();   // «500/1000г» оставляем как есть
+          return st.v != null ? (st.w ? st.v + 'g' : st.v) : (f?.stems || ''); })(),
         weight: st.w,
         price: num(col.price != null ? r[col.price] : ''),
         box_size: String((col.size != null ? r[col.size] : '') || f?.box_size || '').trim(),
@@ -12545,6 +12576,7 @@ async function impCreate() {
       imported: true,
     };
     if (st.w || r.weight) snap.is_weight = true;
+    if (/\d\s*[\/\\-]\s*\d/.test(String(r.stems || ''))) snap.stems_label = String(r.stems).trim(); // «500/1000г» — смешанный пакинг
     const ppb = +(price * bpb).toFixed(2);
     return {
       order_id: order.id, flower_id: f ? f.id : null, flower_snapshot: snap,
