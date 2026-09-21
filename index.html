@@ -1382,6 +1382,7 @@ document.addEventListener('DOMContentLoaded', function(){
     <div class="page-inner">
       <div class="page-title">Уведомления / 通知 / Notifications</div>
       <div class="page-sub">Системные уведомления / 系统通知</div>
+      <div id="tg-card"></div>
       <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
         <button class="btn btn-secondary btn-sm" onclick="markAllNotifRead()">✓ Отметить все / 全部已读</button>
       </div>
@@ -1783,7 +1784,7 @@ function showPage(name, tabEl) {
   if (name === 'my-waybills') loadMyWaybills();
   if (name === 'my-invoices') loadMyInvoices();
   if (name === 'warehouse') loadWarehouseOrders();
-  if (name === 'notifications') loadNotifications();
+  if (name === 'notifications') { loadNotifications(); tgRenderCard(); }
   if (name === 'reference') renderReference();
   if (name === 'chat') {
     initChat();
@@ -6248,7 +6249,7 @@ function renderClients() {
     </tr></thead>
     <tbody>${allClients.map((c,i) => `
       <tr class="${i%2?'stripe':''}">
-        <td class="L"><b>${c.company_name||'—'}</b>${c.purchase_tracking?' <span title="Видит журнал закупа" style="font-size:10px">🛒</span>':''}</td>
+        <td class="L"><b>${c.company_name||'—'}</b>${c.purchase_tracking?' <span title="Видит журнал закупа" style="font-size:10px">🛒</span>':''}${c.tg_chat_id?' <span title="Telegram подключён" style="font-size:10px">📲</span>':''}</td>
         <td class="L" style="color:var(--mid);font-family:monospace">${c.login}</td>
         <td style="font-size:11px;color:var(--mid)">${c.contact||'—'}</td>
         <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?(c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':'👑 Менеджер / 经理'):c.role==='warehouse'?'🏭 Склад / 仓库':'👤 Клиент / 客户'}</span></td>
@@ -13586,6 +13587,93 @@ function invSetCurrency(cur) {
 }
 
 // ══════════════════════════════════════════════════════════
+//  TELEGRAM: привязка чата к учётной записи. Отправку делает функция Supabase tg-notify
+//  (каждое уведомление из таблицы notifications уходит и в Telegram).
+// ══════════════════════════════════════════════════════════
+let _tgBot = null, _tgPoll = null;
+async function tgLoadBot() {
+  if (_tgBot !== null) return _tgBot;
+  const { data } = await sb.from('app_settings').select('*').eq('key', 'tg').maybeSingle();
+  _tgBot = data?.value?.bot || '';
+  return _tgBot;
+}
+async function tgRefreshMe() {
+  const { data } = await sb.from('users').select('*').eq('id', currentUser.id).maybeSingle();
+  if (data) { currentUser = data; try { sessionStorage.setItem('amma_user', JSON.stringify(data)); } catch (e) {} }
+}
+async function tgRenderCard() {
+  const el = document.getElementById('tg-card');
+  if (!el || !currentUser || currentUser.role === 'guest') return;
+  const isAdmin = currentUser.role === 'manager' && currentUser.is_admin;
+  if (!('tg_chat_id' in currentUser)) {
+    el.innerHTML = isAdmin ? `<div class="card" style="margin-bottom:12px;font-size:12px">📲 Telegram-уведомления: выполните <b>sql_telegram.sql</b> в Supabase (см. инструкцию).</div>` : '';
+    return;
+  }
+  const bot = await tgLoadBot();
+  const linked = !!currentUser.tg_chat_id;
+  el.innerHTML = `<div class="card" style="margin-bottom:12px;border-left:4px solid ${linked ? '#229ED9' : 'var(--gold)'}">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <b style="font-size:14px">📲 Telegram</b>
+      ${linked ? `<span style="font-size:12px;color:#15803d">✅ Подключён — уведомления приходят в Telegram / 已绑定</span>`
+               : `<span style="font-size:12px;color:var(--mid)">Получайте уведомления о заказах, машине и счетах прямо в Telegram / 在 Telegram 接收通知</span>`}
+      <span style="flex:1"></span>
+      ${!bot ? `<span style="font-size:11px;color:var(--light)">Бот ещё не настроен администратором</span>`
+        : linked ? `<button class="btn btn-secondary btn-sm" onclick="tgTest()">✉️ Тест</button>
+                    <button class="btn btn-secondary btn-sm" onclick="tgUnlink()">Отключить / 取消</button>`
+                 : `<button class="btn btn-primary btn-sm" style="background:#229ED9;border-color:#229ED9" onclick="tgLink()">Подключить Telegram / 绑定</button>`}
+    </div>
+    <div id="tg-wait" style="font-size:11px;color:var(--mid);margin-top:6px"></div>
+    ${isAdmin ? `<div style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:11px;color:var(--mid);flex-wrap:wrap">
+      Бот (для админа): @<input class="inp" id="tg-bot-name" value="${escHtml(bot)}" placeholder="amma_flowers_bot" style="width:190px;padding:3px 6px;font-size:11px">
+      <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px" onclick="tgSaveBot()">Сохранить</button></div>` : ''}
+  </div>`;
+}
+async function tgSaveBot() {
+  const bot = (document.getElementById('tg-bot-name')?.value || '').trim().replace(/^@/, '').replace(/^https?:\/\/t\.me\//, '');
+  const { error } = await sb.from('app_settings').upsert({ key: 'tg', value: { bot }, updated_at: new Date().toISOString() });
+  if (error) { toast('❌ ' + error.message); return; }
+  _tgBot = bot; toast('✅ Бот сохранён'); tgRenderCard();
+}
+async function tgLink() {
+  const code = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => 'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('');
+  const { error } = await sb.from('users').update({ tg_link_code: code }).eq('id', currentUser.id);
+  if (error) { toast('❌ ' + error.message); return; }
+  window.open(`https://t.me/${_tgBot}?start=${code}`, '_blank');
+  const w = document.getElementById('tg-wait');
+  if (w) w.innerHTML = `Откроется Telegram — нажмите там <b>«Запустить / Start»</b>. Если не открылось: <a href="https://t.me/${_tgBot}?start=${code}" target="_blank">t.me/${escHtml(_tgBot)}</a>`;
+  clearInterval(_tgPoll);
+  let n = 0;
+  _tgPoll = setInterval(async () => {
+    if (++n > 60) { clearInterval(_tgPoll); return; }   // ждём до 3 минут
+    await tgRefreshMe();
+    if (currentUser.tg_chat_id) { clearInterval(_tgPoll); toast('✅ Telegram подключён / 已绑定'); tgRenderCard(); }
+  }, 3000);
+}
+async function tgUnlink() {
+  if (!confirm('Отключить уведомления в Telegram? / 取消 Telegram 通知？')) return;
+  await sb.from('users').update({ tg_chat_id: null, tg_link_code: null }).eq('id', currentUser.id);
+  await tgRefreshMe(); tgRenderCard(); toast('🔕 Отключено');
+}
+async function tgTest() {
+  await sendNotification(currentUser.id, 'Тестовое уведомление / 测试通知', 'Если вы видите это в Telegram — всё работает 🌸', '✅');
+  toast('✉️ Отправлено — проверьте Telegram');
+}
+
+// Чекпоинт машины → уведомление клиентам, чьи заказы в этой машине
+async function notifyShipmentClients(shipmentId, title, note) {
+  try {
+    const { data: ords } = await sb.from('orders').select('client_id, order_number').eq('shipment_id', shipmentId);
+    const byClient = {};
+    (ords || []).forEach(o => { if (o.client_id) (byClient[o.client_id] = byClient[o.client_id] || []).push(o.order_number); });
+    const shp = (typeof shipmentsData !== 'undefined' ? shipmentsData : []).find(x => x.id === shipmentId);
+    for (const [cid, nums] of Object.entries(byClient)) {
+      await sendNotification(cid, `🚚 ${title}`,
+        `Машина ${shp?.ship_number || ''} · заказ ${nums.join(', ')}${note ? ' · ' + note : ''}`, '📍');
+    }
+  } catch (e) {}
+}
+
+// ══════════════════════════════════════════════════════════
 //  ПРИЁМКА ОТ ПОСТАВЩИКОВ: график поставок, форма приёмки, акты
 // ══════════════════════════════════════════════════════════
 let _supDeliv = { shipment: null, groups: [] };
@@ -13961,6 +14049,7 @@ async function addCheckpoint() {
   if (error) { toast('❌ ' + error.message); return; }
   const shp = shipmentsData.find(x => x.id === _trkShipmentId);
   logActivity('tracking', 'shipment', _trkShipmentId, shp?.ship_number || '', '📍 ' + title);
+  notifyShipmentClients(_trkShipmentId, title, note);   // клиенты машины узнают сразу (и в Telegram)
   document.getElementById('trk-note').value = '';
   toast('✅ Чекпоинт отмечен / 已打点');
   renderTracking();
