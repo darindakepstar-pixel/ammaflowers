@@ -1102,8 +1102,8 @@ document.addEventListener('DOMContentLoaded', function(){
       <div class="page-sub">Управление аккаунтами / 账户管理 / Account management</div>
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="showAddClientModal()">+ Клиент / 客户</button>
-        <button class="btn btn-secondary" onclick="showAddManagerModal()">+ Менеджер / 经理</button>
-        <button class="btn btn-secondary" style="background:var(--gold);color:#fff" onclick="showAddWarehouseModal()">🏭 + Склад / 仓库</button>
+        <button class="btn btn-secondary" id="btn-add-manager" onclick="showAddManagerModal()">+ Менеджер / 经理</button>
+        <button class="btn btn-secondary" id="btn-add-warehouse" style="background:var(--gold);color:#fff" onclick="showAddWarehouseModal()">🏭 + Склад / 仓库</button>
       </div>
       <div id="clients-list"><div class="loading"><div class="spinner"></div></div></div>
     </div>
@@ -1399,6 +1399,15 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 
   <!-- PAGE: DASHBOARD (manager) -->
+  <div class="page" id="page-crm">
+    <div class="page-inner">
+      <div class="page-title">CRM · Лиды и клиенты / 客户管理</div>
+      <div class="page-sub">Поиск и ведение клиентов: воронка, задачи, история контактов / 线索、待办、联系记录</div>
+      <div id="crm-tabs" style="display:flex;gap:6px;margin-bottom:14px;border-bottom:2px solid var(--border);flex-wrap:wrap"></div>
+      <div id="crm-content"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
   <div class="page" id="page-dashboard">
     <div class="page-inner">
       <div class="page-title">Дашборд / 数据看板 / Dashboard</div>
@@ -1481,6 +1490,42 @@ let currentOrderId = null;
 let currentInvoiceId = null;
 let pendingPriceChanges = {}; // flower_id -> {price_a, price_ap}
 let allClients = [];
+
+// ══ Клиентский менеджер: видит только закреплённых за ним клиентов ══
+// users.client_scope = 'own' у менеджера → ограниченный доступ; users.manager_id у клиента → ответственный.
+// Админ (is_admin) и менеджеры без client_scope видят всё, как раньше.
+function isScopedMgr() {
+  return currentUser?.role === 'manager' && !currentUser?.is_admin && currentUser?.client_scope === 'own';
+}
+// Перед запросами: у клиентского менеджера должен быть загружен список его клиентов
+async function ensureScope() {
+  if (isScopedMgr() && !allClients.length) await loadClients();
+}
+// Добавляет к запросу фильтр по своим клиентам (для остальных — без изменений).
+// Синхронная: запрос Supabase нельзя возвращать из async-функции — await его сразу выполнит.
+function scopeQ(q, col = 'client_id') {
+  if (!isScopedMgr()) return q;
+  return q.in(col, allClients.filter(c => c.role === 'client').map(c => c.id));
+}
+// Кому из менеджеров слать уведомление по клиенту: всем «полным» + ответственному клиентскому менеджеру
+async function mgrsFor(clientId) {
+  const { data } = await sb.from('users').select('*').eq('role', 'manager');
+  let resp = null;
+  if (clientId) {
+    const { data: c } = await sb.from('users').select('*').eq('id', clientId).maybeSingle();
+    resp = c?.manager_id || null;
+  }
+  return { data: (data || []).filter(m => m.client_scope !== 'own' || (resp && String(m.id) === String(resp))) };
+}
+function mgrOptions(sel) {
+  const mgrs = allClients.filter(u => u.role === 'manager');
+  return '<option value="">— не закреплён / 未分配 —</option>' + mgrs.map(m =>
+    `<option value="${m.id}" ${String(m.id) === String(sel) ? 'selected' : ''}>${escHtml(m.company_name || m.login)}${m.client_scope === 'own' ? ' 💼' : ''}</option>`).join('');
+}
+function mgrName(id) {
+  const m = allClients.find(u => String(u.id) === String(id));
+  return m ? (m.company_name || m.login) : '';
+}
 
 const PACKING_RATE = 30; // ¥ per box
 
@@ -1613,6 +1658,7 @@ async function initApp() {
       <div class="nav-tab" onclick="showPage('shipments',this)">🚚 Отгрузки / 车次</div>
       <div class="nav-tab" onclick="showPage('labels',this)">🏷 Этикетки / 标签</div>
       <div class="nav-tab" onclick="showPage('clients',this)">👥 Клиенты / 客户</div>
+      <div class="nav-tab" onclick="showPage('crm',this)">🤝 CRM <span class="cnt" id="cnt-crm" style="display:none">0</span></div>
       <div class="nav-tab" onclick="showPage('claims',this)">⚠️ Претензии <span class="cnt" id="cnt-claims" style="display:none">0</span></div>
       <div class="nav-tab" onclick="showPage('dashboard',this)">📊 Дашборд</div>
       <div class="nav-tab" onclick="showPage('reference',this)">📖 Справка / 参考</div>
@@ -1620,12 +1666,15 @@ async function initApp() {
       <div class="nav-tab" onclick="showPage('pricepdf',this)">📄 Прайс-PDF / 宣传单</div>
       <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
     `;
-    document.getElementById('btn-save-prices').style.display = 'inline-flex';
-    document.getElementById('btn-import-prices').style.display = 'inline-flex';
-    document.getElementById('markup-controls').style.display = 'flex';
-    document.getElementById('btn-add-flower').style.display = 'inline-flex';
-    document.getElementById('btn-manage-cats').style.display = 'inline-flex';
-    loadClients();
+    const full = !isScopedMgr();   // клиентский менеджер не правит прайс и общие наценки
+    document.getElementById('btn-save-prices').style.display = full ? 'inline-flex' : 'none';
+    document.getElementById('btn-import-prices').style.display = full ? 'inline-flex' : 'none';
+    document.getElementById('markup-controls').style.display = full ? 'flex' : 'none';
+    document.getElementById('btn-add-flower').style.display = full ? 'inline-flex' : 'none';
+    document.getElementById('btn-manage-cats').style.display = full ? 'inline-flex' : 'none';
+    ['btn-add-manager', 'btn-add-warehouse'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = full ? '' : 'none'; });
+    if (!full) document.getElementById('top-role').textContent = '💼 Клиентский менеджер / 客户经理';
+    loadClients().then(() => crmBadge()).catch(() => {});
   } else if (isWh) {
     tabs.innerHTML = `
       <div class="nav-tab active" onclick="showPage('warehouse',this)">🏭 Сборка / 备货 <span class="cnt" id="cnt-wh-orders">0</span></div>
@@ -1738,6 +1787,7 @@ function showPage(name, tabEl) {
     if (el) { el.textContent = '0'; el.style.display = 'none'; }
   }
   if (name === 'dashboard') loadDashboard();
+  if (name === 'crm') crmOpen();
   if (name === 'claims') loadClaims();
   if (name === 'my-claims') loadMyClaims();
 }
@@ -4491,7 +4541,7 @@ async function submitOrder(existingOrderId = null) {
 
     // Notify managers
     try {
-      const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+      const { data: mgrs } = await mgrsFor(currentUser?.id);
       const clientName = currentUser?.company_name || currentUser?.login || '';
       const orderNum = existingOrder?.order_number || '';
       for (const m of (mgrs||[])) {
@@ -4533,7 +4583,7 @@ async function submitOrder(existingOrderId = null) {
 
     // Notify managers about new order
     try {
-      const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+      const { data: mgrs } = await mgrsFor(currentUser?.id);
       const clientName = currentUser?.company_name || currentUser?.login || '';
       for (const m of (mgrs||[])) {
         await sendNotification(m.id, `📦 Новый заказ ${num} от ${clientName}`,
@@ -4674,6 +4724,7 @@ async function loadOrders() {
   `).order('created_at', {ascending: false});
 
   if (cf) q = q.eq('client_id', cf);
+  await ensureScope(); q = scopeQ(q);
   if (sf) q = q.eq('status', sf);
 
   const { data } = await q;
@@ -6091,10 +6142,11 @@ function exportInvExcel() {
 //  INVOICES LIST (manager)
 // ══════════════════════════════════════════════════════════
 async function loadInvoices() {
-  const { data } = await sb.from('invoices').select(`
+  await ensureScope();
+  const { data } = await scopeQ(sb.from('invoices').select(`
     *, client:users!invoices_client_id_fkey(company_name,login),
     order:orders(order_number)
-  `).order('created_at', {ascending:false});
+  `).order('created_at', {ascending:false}));
 
   const list = document.getElementById('invoices-list');
   if (!data?.length) {
@@ -6117,7 +6169,11 @@ async function loadInvoices() {
 //  CLIENTS (manager)
 // ══════════════════════════════════════════════════════════
 async function loadClients() {
-  const { data } = await sb.from('users').select('*').order('role').order('company_name');
+  const { data: raw } = await sb.from('users').select('*').order('role').order('company_name');
+  // клиентский менеджер видит только своих клиентов (и себя)
+  const data = raw && isScopedMgr()
+    ? raw.filter(c => (c.role === 'client' && String(c.manager_id) === String(currentUser.id)) || String(c.id) === String(currentUser.id))
+    : raw;
   if (data) {
     allClients = data;
     // Sync global markup checkbox with DB state (all clients have show_markup => on)
@@ -6161,6 +6217,7 @@ function renderClients() {
       <th class="L">Логин / 账号</th>
       <th>Контакт / 联系方式</th>
       <th>Роль / 角色</th>
+      <th>Менеджер / 负责经理</th>
       <th></th>
     </tr></thead>
     <tbody>${allClients.map((c,i) => `
@@ -6168,7 +6225,8 @@ function renderClients() {
         <td class="L"><b>${c.company_name||'—'}</b>${c.purchase_tracking?' <span title="Видит журнал закупа" style="font-size:10px">🛒</span>':''}</td>
         <td class="L" style="color:var(--mid);font-family:monospace">${c.login}</td>
         <td style="font-size:11px;color:var(--mid)">${c.contact||'—'}</td>
-        <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?'👑 Менеджер / 经理':c.role==='warehouse'?'🏭 Склад / 仓库':'👤 Клиент / 客户'}</span></td>
+        <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?(c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':'👑 Менеджер / 经理'):c.role==='warehouse'?'🏭 Склад / 仓库':'👤 Клиент / 客户'}</span></td>
+        <td style="font-size:11px;color:var(--mid)">${c.role==='client' ? (escHtml(mgrName(c.manager_id)) || '<span style="color:var(--light)">— не закреплён</span>') : ''}</td>
         <td><button class="btn btn-secondary btn-sm" onclick="showEditClientModal('${c.id}')">✏️ Изменить / 修改</button></td>
       </tr>`).join('')}
     </tbody>
@@ -6186,6 +6244,8 @@ function showAddClientModal() {
       <div class="field"><label>Пароль / 密码</label><input class="inp" id="nc-pass" type="password" placeholder="Мин. 6 символов / 至少6位"></div>
       <div class="field"><label>Контакт / 联系方式</label><input class="inp" id="nc-contact" placeholder="+7 / email..."></div>
     </div>
+    ${isScopedMgr() ? '' : `<div class="field"><label>Ответственный менеджер / 负责经理</label>
+      <select class="inp" id="nc-manager">${mgrOptions(null)}</select></div>`}
     <div class="modal-btns">
       <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
       <button class="btn btn-primary" onclick="addClient()">Создать / 创建客户</button>
@@ -6202,10 +6262,10 @@ async function addClient() {
   if (pass.length < 6) { toast('Пароль минимум 6 символов'); return; }
   const hash = await sha256(pass);
   const showMk = document.getElementById('nc-show-markup')?.checked || false;
-  const { error } = await sb.from('users').insert({
-    login, password_hash: hash, role: 'client', company_name: company, contact,
-    show_markup: showMk
-  });
+  const row = { login, password_hash: hash, role: 'client', company_name: company, contact, show_markup: showMk };
+  const mgrSel = isScopedMgr() ? currentUser.id : (document.getElementById('nc-manager')?.value || null);
+  if (mgrSel) row.manager_id = mgrSel;   // требует SQL-миграции «Клиентские менеджеры»
+  const { error } = await sb.from('users').insert(row);
   if (error) { toast('Ошибка: ' + error.message); return; }
   closeModal();
   await loadClients();
@@ -6237,13 +6297,23 @@ function showEditClientModal(id) {
     <div style="margin-top:8px;padding:10px;background:#FFF3E0;border-radius:6px;font-size:12px;color:#E65100">
       ⚠ Логин нельзя изменить / 账号不可修改. Для нового — удалите и создайте заново / 如需新账号请删除后重新创建.
     </div>
-    <div style="margin-top:10px;padding:10px 12px;background:var(--sage-l);border-radius:6px;display:flex;align-items:center;gap:10px">
+    <div style="margin-top:10px;padding:10px 12px;background:var(--sage-l);border-radius:6px;display:${isScopedMgr()||user.role!=='client'?'none':'flex'};align-items:center;gap:10px">
       <label style="font-weight:600;font-size:12px;color:var(--sage-d)">💰 Показывать цены с 15% наценкой / 显示加价15%价格:</label>
       <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px">
         <input type="checkbox" id="ec-show-markup" ${user.show_markup?'checked':''} style="width:15px;height:15px;accent-color:var(--sage-d)">
         <span>Да / 是</span>
       </label>
     </div>
+    ${user.role === 'client' && !isScopedMgr() ? ('manager_id' in user ? `
+    <div class="field" style="margin-top:10px"><label>Ответственный менеджер / 负责经理</label>
+      <select class="inp" id="ec-manager">${mgrOptions(user.manager_id)}</select></div>` : `<div style="margin-top:10px;font-size:11px;color:var(--mid)">💼 Закрепление за менеджером: выполните SQL-миграцию «Клиентские менеджеры».</div>`) : ''}
+    ${user.role === 'manager' && currentUser?.is_admin && String(user.id) !== String(currentUser.id) ? ('client_scope' in user ? `
+    <div style="margin-top:10px;padding:10px 12px;background:var(--sage-l);border-radius:6px;font-size:12px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
+        <input type="checkbox" id="ec-scope-own" ${user.client_scope==='own'?'checked':''} style="width:15px;height:15px">
+        💼 Клиентский менеджер — видит только закреплённых клиентов / 只看自己的客户</label>
+      <div style="font-size:11px;color:var(--mid);margin:4px 0 0 21px">Без доступа к прайсу, закупу, поставщикам и чужим клиентам</div>
+    </div>` : '') : ''}
     ${user.role === 'client' && currentUser?.is_admin ? ('purchase_tracking' in user ? `
     <div style="margin-top:10px;padding:10px 12px;background:var(--gold-l);border-radius:6px;font-size:12px">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
@@ -6267,7 +6337,12 @@ async function saveClient(id) {
   const pass    = document.getElementById('ec-pass').value;
   const contact = document.getElementById('ec-contact').value.trim();
   const showMk = document.getElementById('ec-show-markup')?.checked || false;
-  const updates = { company_name: company, contact, show_markup: showMk };
+  const updates = { company_name: company, contact };
+  if (!isScopedMgr()) updates.show_markup = showMk;
+  const mgEl = document.getElementById('ec-manager');
+  if (mgEl) updates.manager_id = mgEl.value || null;
+  const scEl = document.getElementById('ec-scope-own');
+  if (scEl) updates.client_scope = scEl.checked ? 'own' : null;
   const ptEl = document.getElementById('ec-purch-track');
   if (ptEl) {
     updates.purchase_tracking = ptEl.checked;
@@ -6297,7 +6372,7 @@ function showAddManagerModal() {
   document.getElementById('modal-content').innerHTML = `
     <div class="modal-title">+ Новый менеджер / 新经理</div>
     <p style="font-size:12px;color:var(--mid);margin-bottom:16px">
-      Менеджер имеет полный доступ: прайс, заказы, инвойсы, клиенты.
+      Полный менеджер: прайс, заказы, инвойсы, все клиенты.<br>Клиентский менеджер: только свои клиенты, их заказы, инвойсы, накладные и претензии.
     </p>
     <div class="field-row">
       <div class="field"><label>Имя менеджера / 经理姓名</label>
@@ -6311,6 +6386,10 @@ function showAddManagerModal() {
       <div class="field"><label>Контакт / 联系方式</label>
         <input class="inp" id="nm-contact" placeholder="+7 / email..."></div>
     </div>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:600;margin-top:6px">
+      <input type="checkbox" id="nm-scope-own" checked style="width:16px;height:16px">
+      💼 Клиентский менеджер — видит только закреплённых за ним клиентов / 只看自己的客户</label>
+    <div style="font-size:11px;color:var(--mid);margin:2px 0 0 24px">Снимите галочку для менеджера с полным доступом</div>
     <div class="modal-btns">
       <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
       <button class="btn btn-primary" onclick="addManager()">Создать / 创建经理</button>
@@ -6326,11 +6405,12 @@ async function addManager() {
   if (!login || !pass) { toast('Заполните логин и пароль'); return; }
   if (pass.length < 6) { toast('Пароль минимум 6 символов'); return; }
   const hash = await sha256(pass);
-  const { error } = await sb.from('users').insert({
-    login, password_hash: hash, role: 'manager', company_name: company, contact
-  });
+  const mrow = { login, password_hash: hash, role: 'manager', company_name: company, contact };
+  if (document.getElementById('nm-scope-own')?.checked) mrow.client_scope = 'own';
+  const { error } = await sb.from('users').insert(mrow);
   if (error) { toast('Ошибка: ' + (error.message.includes('unique') ? 'Логин уже занят' : error.message)); return; }
   closeModal();
+  await loadClients(); renderClients();
   toast('✅ Менеджер создан: ' + (company||login));
 }
 
@@ -7163,7 +7243,7 @@ async function sendWaybill() {
     }
 
     // Notify managers
-    const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+    const { data: mgrs } = await mgrsFor(order?.client_id);
     for (const m of (mgrs || [])) {
       if (m.id !== currentUser.id) {
         await sendNotification(
@@ -7478,8 +7558,9 @@ async function loadWaybills() {
     }
 
     // Test 3: find confirmed/invoiced/paid orders (all relevant statuses)
-    const { data: paidOrders, error: pErr } = await sb.from('orders')
-      .select('id,order_number,status,client_id,date_order,client:users!orders_client_id_fkey(company_name,login)')
+    await ensureScope();
+    const { data: paidOrders, error: pErr } = await scopeQ(sb.from('orders')
+      .select('id,order_number,status,client_id,date_order,client:users!orders_client_id_fkey(company_name,login)'))
       .in('status', ['confirmed','invoiced','paid','needs_revision'])
       .order('created_at', {ascending:false});
 
@@ -7756,6 +7837,7 @@ async function loadLabelOrders() {
   `).in('status', ['confirmed','invoiced','paid','sent'])
     .order('created_at', {ascending: false});
   if (cf) q = q.eq('client_id', cf);
+  await ensureScope(); q = scopeQ(q);
   const { data } = await q;
   _labelsAllOrders = data || [];
 
@@ -8397,7 +8479,7 @@ async function notifyChat(msg) {
   const role = currentUser?.role;
   // Warehouse → notify all managers
   if (role === 'warehouse') {
-    const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+    const { data: mgrs } = await mgrsFor(null);
     for (const m of (mgrs||[])) {
       await sendNotification(m.id, `🏭 Сообщение от склада / 仓库消息`, msg.body.slice(0,80), '💬');
     }
@@ -8423,7 +8505,7 @@ async function notifyChat(msg) {
   }
   // Client → notify all managers
   if (role === 'client') {
-    const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+    const { data: mgrs } = await mgrsFor(currentUser?.id);
     for (const m of (mgrs||[])) {
       const name = currentUser.company_name || currentUser.login;
       await sendNotification(m.id, `👤 ${name}: новое сообщение`, msg.body.slice(0,80), '💬');
@@ -8857,10 +8939,10 @@ async function saveWhPackingNotes(orderId) {
 
   // Notify managers
   try {
-    const { data: order } = await sb.from('orders').select('order_number').eq('id', orderId).single();
+    const { data: order } = await sb.from('orders').select('order_number,client_id').eq('id', orderId).single();
     logActivity('wh_pack_notes', 'order', orderId, order?.order_number || '',
       `Заметок: ${Object.keys(notes).length}`);
-    const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+    const { data: mgrs } = await mgrsFor(order?.client_id);
     const hasNotes = Object.keys(notes).length > 0;
     if (changedItems.length) {
       for (const m of (mgrs||[])) {
@@ -9017,7 +9099,7 @@ async function toggleAssembled(orderId, isAssembled) {
   // Notify managers when assembled
   if (newVal) {
     const { data: order } = await sb.from('orders').select('order_number,client_id').eq('id', orderId).single();
-    const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+    const { data: mgrs } = await mgrsFor(order?.client_id);
     for (const m of (mgrs||[])) {
       await sendNotification(m.id,
         `✅ Заказ ${order?.order_number} собран / 已备货`,
@@ -9983,10 +10065,10 @@ async function saveReceiving(orderId) {
 
   // 3. Notify managers with detailed diff
   try {
-    const { data: orderInfo } = await sb.from('orders').select('order_number').eq('id', orderId).single();
+    const { data: orderInfo } = await sb.from('orders').select('order_number,client_id').eq('id', orderId).single();
     logActivity('wh_receiving', 'order', orderId, orderInfo?.order_number || '',
       `Позиций с изменениями: ${packChanges.length}`);
-    const { data: mgrs } = await sb.from('users').select('id').eq('role','manager');
+    const { data: mgrs } = await mgrsFor(orderInfo?.client_id);
     const num = orderInfo?.order_number || '';
 
     if (packChanges.length) {
@@ -10222,10 +10304,11 @@ async function loadDashboard() {
   const since = new Date(Date.now() - days * 86400000).toISOString().slice(0,10);
 
   // Load all data in parallel
+  await ensureScope();
   const [ordersRes, itemsRes, claimsRes] = await Promise.all([
-    sb.from('orders').select('id,order_number,status,date_order,client_id,client:users!orders_client_id_fkey(company_name,login)').gte('date_order', since),
+    scopeQ(sb.from('orders').select('id,order_number,status,date_order,client_id,client:users!orders_client_id_fkey(company_name,login)')).gte('date_order', since),
     sb.from('order_items').select('order_id,qty_boxes,subtotal,flower_snapshot,flower:flowers(ru,cn)'),
-    sb.from('claims').select('id,status,created_at').gte('created_at', since + 'T00:00:00')
+    scopeQ(sb.from('claims').select('id,status,created_at')).gte('created_at', since + 'T00:00:00')
   ]);
 
   const orders = ordersRes.data || [];
@@ -11105,7 +11188,7 @@ async function submitClaim() {
 
   // Notify managers
   try {
-    const { data: mgrs } = await sb.from('users').select('id').eq('role','manager');
+    const { data: mgrs } = await mgrsFor(currentUser?.id);
     const clientName = currentUser.company_name || currentUser.login;
     for (const m of (mgrs||[])) {
       await sendNotification(m.id,
@@ -11137,7 +11220,7 @@ async function loadShipments() {
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   // Кнопка создания — только менеджеру
   const btn = document.getElementById('btn-new-shipment');
-  if (btn) btn.style.display = (currentUser?.role === 'manager') ? 'inline-flex' : 'none';
+  if (btn) btn.style.display = (currentUser?.role === 'manager' && !isScopedMgr()) ? 'inline-flex' : 'none';
   const gpsBtn = document.getElementById('btn-gps-report');
   if (gpsBtn) gpsBtn.style.display = (currentUser?.role === 'manager') ? 'inline-flex' : 'none';
 
@@ -11151,11 +11234,12 @@ async function loadShipments() {
   const ids = shipments.map(x => x.id);
   let orders = [];
   if (ids.length) {
-    const { data } = await sb.from('orders').select(`
+    await ensureScope();
+    const { data } = await scopeQ(sb.from('orders').select(`
       id, order_number, status, shipment_id, date_ship, client_comment,
       client:users!orders_client_id_fkey(company_name,login),
       order_items(qty_boxes, flower_snapshot)
-    `).in('shipment_id', ids);
+    `)).in('shipment_id', ids);
     orders = data || [];
   }
   // Счётчик актов приёмки по машинам
@@ -11259,7 +11343,7 @@ function renderShipments() {
             ${Object.entries(SHP_STATUS).map(([k,v]) => `<option value="${k}" ${shp.status===k?'selected':''}>${v.icon} ${v.ru}</option>`).join('')}
           </select>
           ${shp.status === 'forming' ? `<button class="btn btn-primary btn-sm" onclick="showAttachOrdersModal(${shp.id})">+ Заказы / 挂单</button>` : ''}
-          <button class="btn btn-gold btn-sm" onclick="openPurchase(${shp.id})">🛒 Закуп / 采购</button>
+          ${isScopedMgr() ? '' : `<button class="btn btn-gold btn-sm" onclick="openPurchase(${shp.id})">🛒 Закуп / 采购</button>`}
           ${!(shp._orders||[]).length ? `<button class="btn btn-danger btn-sm" onclick="deleteShipment(${shp.id})">🗑</button>` : ''}
         ` : ''}
       </div>
@@ -12864,6 +12948,435 @@ async function wbRebuildFromFact() {
 }
 
 // ══════════════════════════════════════════════════════════
+//  CRM: воронка лидов, карточка клиента, журнал контактов, задачи, «спящие» клиенты
+//  Таблицы: crm_leads, crm_activities, crm_tasks (sql_crm.sql).
+//  Клиентский менеджер видит только своё; админ и полные менеджеры — всё.
+// ══════════════════════════════════════════════════════════
+const CRM_STAGES = [
+  ['new', '🆕 Новый', '新线索'], ['contacted', '📞 Первый контакт', '已联系'], ['negotiation', '💬 Переговоры', '洽谈中'],
+  ['trial', '📦 Пробный заказ', '试订单'], ['won', '✅ Стал клиентом', '已成交'], ['lost', '✖ Отказ', '已流失'],
+];
+const CRM_SEGMENTS = ['Цветочный салон', 'Оптовик', 'Сеть магазинов', 'Ивент / декор', 'Частный флорист', 'Другое'];
+const CRM_SOURCES = ['Выставка', 'Рекомендация', 'Сайт', 'Соцсети', 'Холодный поиск', 'Входящее обращение', 'Другое'];
+const CRM_KINDS = { call: '📞 Звонок', msg: '💬 Переписка', meet: '🤝 Встреча', offer: '📄 Отправлено КП / прайс', note: '📝 Заметка' };
+const CRM_SQL_HINT = 'Таблицы CRM ещё не созданы — выполните sql_crm.sql в Supabase / 请先执行 sql_crm.sql';
+let _crm = { tab: 'today', leads: [], tasks: [], stats: {}, q: '', ok: true };
+
+function crmToday() { return opToday(); }
+function crmDays(d) { return d ? Math.floor((new Date(crmToday()) - new Date(String(d).slice(0, 10))) / 86400000) : null; }
+function crmStage(k) { return CRM_STAGES.find(s => s[0] === k) || CRM_STAGES[0]; }
+function crmMgrSel(id, sel) {
+  return `<select class="inp" id="${id}">${mgrOptions(sel)}</select>`;
+}
+function crmScopeMgr(q) { return isScopedMgr() ? q.eq('manager_id', currentUser.id) : q; }
+function crmWho() { return currentUser?.company_name || currentUser?.login || ''; }
+function crmMissing(err) { return err && (err.code === '42P01' || err.code === 'PGRST205' || /crm_/.test(err.message || '')); }
+
+async function crmLoad() {
+  await ensureScope();
+  if (!allClients.length) await loadClients();
+  const [L, T, O] = await Promise.all([
+    crmScopeMgr(sb.from('crm_leads').select('*')).order('updated_at', { ascending: false }),
+    crmScopeMgr(sb.from('crm_tasks').select('*')).eq('done', false).order('due_date', { ascending: true }),
+    scopeQ(sb.from('orders').select('id, order_number, client_id, status, date_order, order_items(subtotal, qty_boxes, flower_snapshot)'))
+      .neq('status', 'cancelled'),
+  ]);
+  _crm.ok = !(crmMissing(L.error) || crmMissing(T.error));
+  _crm.leads = L.data || [];
+  _crm.tasks = T.data || [];
+  _crm.stats = crmCalcStats(O.data || []);
+}
+
+// Сводка по клиентам: заказы, оборот, средний заказ, давность, обычная частота, топ позиций
+function crmCalcStats(orders) {
+  const st = {};
+  orders.filter(o => o.status !== 'draft').forEach(o => {
+    const s = st[o.client_id] = st[o.client_id] || { n: 0, total: 0, dates: [], items: {}, orders: [] };
+    const sum = (o.order_items || []).reduce((a, i) => a + (parseFloat(i.subtotal) || 0), 0);
+    s.n++; s.total += sum; if (o.date_order) s.dates.push(o.date_order);
+    s.orders.push({ id: o.id, num: o.order_number, date: o.date_order, sum, status: o.status });
+    (o.order_items || []).forEach(i => {
+      const k = i.flower_snapshot?.ru || '—';
+      s.items[k] = (s.items[k] || 0) + (parseInt(i.qty_boxes) || 0);
+    });
+  });
+  Object.values(st).forEach(s => {
+    s.dates.sort();
+    s.last = s.dates[s.dates.length - 1] || null;
+    s.since = crmDays(s.last);
+    const gaps = s.dates.slice(1).map((d, i) => (new Date(d) - new Date(s.dates[i])) / 86400000).filter(g => g > 0);
+    s.every = gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : null;
+    s.avg = s.n ? s.total / s.n : 0;
+    // «спящий»: не заказывал заметно дольше обычного
+    s.sleeping = s.since != null && (s.every ? s.since > Math.max(s.every * 1.5, 21) : s.since > 45);
+    s.top = Object.entries(s.items).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    s.orders.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  });
+  return st;
+}
+
+async function crmOpen(tab) {
+  if (tab) _crm.tab = tab;
+  const c = document.getElementById('crm-content');
+  if (!c) return;
+  c.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  await crmLoad();
+  crmRender();
+  crmBadge();
+}
+
+function crmRender() {
+  const tabs = [['today', '📅 Сегодня / 今日'], ['pipeline', '🎯 Воронка / 销售漏斗'], ['clients', '👥 Клиенты / 客户']];
+  document.getElementById('crm-tabs').innerHTML = tabs.map(([k, l]) =>
+    `<button class="wh-tab ${_crm.tab === k ? 'active' : ''}" onclick="_crm.tab='${k}';crmRender()">${l}</button>`).join('');
+  const c = document.getElementById('crm-content');
+  if (!_crm.ok) { c.innerHTML = `<div class="card" style="border-left:4px solid var(--gold)">${CRM_SQL_HINT}</div>`; return; }
+  c.innerHTML = _crm.tab === 'pipeline' ? crmPipelineHTML() : _crm.tab === 'clients' ? crmClientsHTML() : crmTodayHTML();
+}
+
+async function crmBadge() {
+  const el = document.getElementById('cnt-crm');
+  if (!el) return;
+  const { data, error } = await crmScopeMgr(sb.from('crm_tasks').select('id, due_date')).eq('done', false).lte('due_date', crmToday());
+  const leadsDue = error ? [] : (await crmScopeMgr(sb.from('crm_leads').select('id, next_date, stage')).lte('next_date', crmToday())).data || [];
+  const n = (data || []).length + leadsDue.filter(l => !['won', 'lost'].includes(l.stage)).length;
+  el.textContent = n; el.style.display = n ? '' : 'none';
+}
+
+// ── Вкладка «Сегодня» ──
+function crmTile(label, value, color) {
+  return `<div class="card" style="flex:1;min-width:150px;padding:12px 14px"><div style="font-size:11px;color:var(--mid)">${label}</div>
+    <div style="font-size:22px;font-weight:700;color:${color || 'var(--sage-d)'};font-family:var(--font-h)">${value}</div></div>`;
+}
+function crmTodayHTML() {
+  const t = crmToday();
+  const open = _crm.leads.filter(l => !['won', 'lost'].includes(l.stage));
+  const won = _crm.leads.filter(l => l.stage === 'won').length, lost = _crm.leads.filter(l => l.stage === 'lost').length;
+  const due = [
+    ..._crm.tasks.map(x => ({ type: 'task', date: x.due_date, text: x.text, x })),
+    ...open.filter(l => l.next_date).map(l => ({ type: 'lead', date: l.next_date, text: l.next_action || 'следующий шаг', x: l })),
+  ].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const late = due.filter(d => d.date <= t), week = due.filter(d => d.date > t && crmDays(d.date) >= -7);
+  const sleeping = allClients.filter(c => c.role === 'client' && _crm.stats[c.id]?.sleeping)
+    .map(c => ({ c, s: _crm.stats[c.id] })).sort((a, b) => b.s.total - a.s.total);
+  const noLeadStep = open.filter(l => !l.next_date);
+  const row = d => {
+    const who = d.type === 'task' ? crmTargetName(d.x) : escHtml(d.x.company || '—');
+    const overdue = d.date < t;
+    return `<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;flex-wrap:wrap">
+      <span style="min-width:52px;font-weight:700;color:${overdue ? '#dc2626' : 'var(--sage-d)'}">${opFmtDate(d.date)}</span>
+      <span>${d.type === 'task' ? '☑️' : '🎯'} <b>${who}</b> — ${escHtml(d.text)}</span>
+      ${!isScopedMgr() && d.x.manager_id ? `<span style="font-size:10px;color:var(--light)">${escHtml(mgrName(d.x.manager_id))}</span>` : ''}
+      <span style="flex:1"></span>
+      ${d.type === 'task' ? `<button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px" onclick="crmTaskDone(${d.x.id})">✓ Сделано</button>` : ''}
+      <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px" onclick="${d.type === 'task' ? (d.x.lead_id ? `crmLeadModal(${d.x.lead_id})` : `crmClientCard('${d.x.client_id}')`) : `crmLeadModal(${d.x.id})`}">Открыть</button>
+    </div>`;
+  };
+  return `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      ${crmTile('Задач на сегодня и просрочено / 今日待办', late.length, late.length ? '#dc2626' : '')}
+      ${crmTile('Лидов в работе / 跟进中线索', open.length)}
+      ${crmTile('Конверсия лидов / 转化率', won + lost ? Math.round(won / (won + lost) * 100) + '%' : '—')}
+      ${crmTile('😴 Спящих клиентов / 沉睡客户', sleeping.length, sleeping.length ? '#b45309' : '')}
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="crmLeadModal()">＋ Новый лид / 新线索</button>
+      <button class="btn btn-secondary btn-sm" onclick="crmOpen()">↻ Обновить</button>
+    </div>
+    <div class="card" style="margin-bottom:12px"><b style="font-size:13px">🔥 Сегодня и просрочено / 今日及逾期</b>
+      ${late.map(row).join('') || '<div style="font-size:12px;color:var(--light);padding:6px 0">Ничего срочного 🌿</div>'}</div>
+    <div class="card" style="margin-bottom:12px"><b style="font-size:13px">📆 Ближайшие 7 дней / 未来7天</b>
+      ${week.map(row).join('') || '<div style="font-size:12px;color:var(--light);padding:6px 0">Пусто</div>'}</div>
+    ${noLeadStep.length ? `<div class="card" style="margin-bottom:12px;border-left:4px solid var(--gold)"><b style="font-size:13px">⚠️ Лиды без следующего шага (${noLeadStep.length})</b>
+      <div style="font-size:11px;color:var(--mid);margin:2px 0 6px">У каждого лида в работе должен быть следующий шаг с датой — иначе он «теряется»</div>
+      ${noLeadStep.map(l => `<span class="badge" style="cursor:pointer;margin:2px;background:var(--gold-l);color:#7a5f2a" onclick="crmLeadModal(${l.id})">${escHtml(l.company || '—')}</span>`).join('')}</div>` : ''}
+    <div class="card"><b style="font-size:13px">😴 Спящие клиенты / 沉睡客户</b>
+      <div style="font-size:11px;color:var(--mid);margin:2px 0 6px">Не заказывали заметно дольше, чем обычно. Самые крупные — сверху.</div>
+      ${sleeping.map(({ c, s }) => `<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;flex-wrap:wrap">
+        <b>${escHtml(c.company_name || c.login)}</b>
+        <span style="color:#b45309">${s.since} дн. без заказа</span>
+        <span style="color:var(--mid)">${s.every ? 'обычно раз в ' + s.every + ' дн.' : 'был 1 заказ'} · оборот ${opMoney(s.total)}</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px" onclick="crmClientCard('${c.id}')">Карточка</button>
+      </div>`).join('') || '<div style="font-size:12px;color:var(--light);padding:6px 0">Все клиенты заказывают в своём ритме</div>'}</div>`;
+}
+function crmTargetName(t) {
+  if (t.lead_id) return escHtml(_crm.leads.find(l => String(l.id) === String(t.lead_id))?.company || 'лид');
+  const c = allClients.find(x => String(x.id) === String(t.client_id));
+  return escHtml(c ? (c.company_name || c.login) : 'клиент');
+}
+
+// ── Вкладка «Воронка» ──
+function crmPipelineHTML() {
+  const t = crmToday(), q = _crm.q.toLowerCase();
+  const leads = _crm.leads.filter(l => !q || [l.company, l.contact_name, l.city, l.phone].join(' ').toLowerCase().includes(q));
+  const col = ([k, ru, cn]) => {
+    const ls = leads.filter(l => (l.stage || 'new') === k);
+    return `<div style="min-width:220px;flex:1;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px">
+      <div style="font-size:12px;font-weight:700;color:var(--sage-d);margin-bottom:6px">${ru} <span style="color:var(--light);font-weight:400">${cn} · ${ls.length}</span></div>
+      ${ls.map(l => `<div class="card" style="padding:8px 10px;margin-bottom:6px;cursor:pointer" onclick="crmLeadModal(${l.id})">
+        <div style="font-weight:700;font-size:12px">${escHtml(l.company || '—')}</div>
+        <div style="font-size:10px;color:var(--mid)">${[l.city, l.segment].filter(Boolean).map(escHtml).join(' · ')}</div>
+        ${l.next_date && !['won', 'lost'].includes(k) ? `<div style="font-size:10px;margin-top:3px;color:${l.next_date < t ? '#dc2626' : l.next_date === t ? '#b45309' : 'var(--sage-d)'}">⏰ ${opFmtDate(l.next_date)} · ${escHtml(l.next_action || '')}</div>` : ''}
+        ${k === 'lost' && l.lost_reason ? `<div style="font-size:10px;color:#dc2626">${escHtml(l.lost_reason)}</div>` : ''}
+        ${!isScopedMgr() && l.manager_id ? `<div style="font-size:9px;color:var(--light);margin-top:2px">💼 ${escHtml(mgrName(l.manager_id))}</div>` : ''}
+      </div>`).join('') || '<div style="font-size:11px;color:var(--light)">—</div>'}
+    </div>`;
+  };
+  return `<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="crmLeadModal()">＋ Новый лид / 新线索</button>
+      <input class="inp" placeholder="🔍 Компания, город, телефон…" value="${escHtml(_crm.q)}" style="max-width:260px"
+        oninput="_crm.q=this.value;clearTimeout(window._crmT);window._crmT=setTimeout(()=>{crmRender();const i=document.querySelector('#crm-content input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},300)">
+    </div>
+    <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;align-items:flex-start">${CRM_STAGES.map(col).join('')}</div>`;
+}
+
+// ── Карточка лида ──
+async function crmLeadModal(id) {
+  const l = id ? (_crm.leads.find(x => String(x.id) === String(id)) || (await sb.from('crm_leads').select('*').eq('id', id).maybeSingle()).data) : {};
+  if (id && !l) { toast('Лид не найден'); return; }
+  const opt = (arr, v) => '<option value=""></option>' + arr.map(x => `<option ${x === v ? 'selected' : ''}>${escHtml(x)}</option>`).join('');
+  const mc = document.getElementById('modal-content');
+  mc.classList.add('op-wide');
+  mc.innerHTML = `
+    <div class="modal-title">${id ? '🎯 ' + escHtml(l.company || 'Лид') : '＋ Новый лид / 新线索'}</div>
+    <div style="display:grid;grid-template-columns:${id ? '1.1fr 1fr' : '1fr'};gap:16px">
+      <div>
+        <div class="field-row">
+          <div class="field"><label>Компания / 公司 *</label><input class="inp" id="cl-company" value="${escHtml(l.company || '')}"></div>
+          <div class="field"><label>Контактное лицо / 联系人</label><input class="inp" id="cl-contact" value="${escHtml(l.contact_name || '')}"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Телефон / 电话</label><input class="inp" id="cl-phone" value="${escHtml(l.phone || '')}" placeholder="+7…"></div>
+          <div class="field"><label>Telegram / WhatsApp / email</label><input class="inp" id="cl-msg" value="${escHtml(l.messenger || '')}"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Город / 城市</label><input class="inp" id="cl-city" value="${escHtml(l.city || '')}"></div>
+          <div class="field"><label>Тип / 类型</label><select class="inp" id="cl-seg">${opt(CRM_SEGMENTS, l.segment)}</select></div>
+          <div class="field"><label>Откуда / 来源</label><select class="inp" id="cl-src">${opt(CRM_SOURCES, l.source)}</select></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Этап / 阶段</label><select class="inp" id="cl-stage" onchange="document.getElementById('cl-lost-wrap').style.display=this.value==='lost'?'':'none'">
+            ${CRM_STAGES.map(([k, ru, cn]) => `<option value="${k}" ${(l.stage || 'new') === k ? 'selected' : ''}>${ru} / ${cn}</option>`).join('')}</select></div>
+          ${isScopedMgr() ? '' : `<div class="field"><label>Менеджер / 负责经理</label>${crmMgrSel('cl-mgr', l.manager_id ?? (currentUser.role === 'manager' ? currentUser.id : ''))}</div>`}
+        </div>
+        <div class="field" id="cl-lost-wrap" style="display:${l.stage === 'lost' ? '' : 'none'}"><label>Причина отказа / 流失原因</label>
+          <input class="inp" id="cl-lost" value="${escHtml(l.lost_reason || '')}" placeholder="Дорого, уже есть поставщик, не сезон…"></div>
+        <div class="field-row" style="background:var(--gold-l);border-radius:8px;padding:8px">
+          <div class="field" style="flex:2"><label>⏰ Следующий шаг / 下一步</label><input class="inp" id="cl-next" value="${escHtml(l.next_action || '')}" placeholder="Позвонить, отправить прайс к 8 марта…"></div>
+          <div class="field"><label>Когда / 日期</label><input class="inp" type="date" id="cl-next-date" value="${l.next_date || ''}"></div>
+        </div>
+        <div class="field"><label>Заметки / 备注</label><textarea class="inp" id="cl-notes" style="min-height:60px">${escHtml(l.notes || '').replace(/<br>/g, '\n')}</textarea></div>
+        ${l.client_id ? `<div style="font-size:12px;margin-top:6px">✅ Стал клиентом: <a href="#" onclick="event.preventDefault();crmClientCard('${l.client_id}')">открыть карточку клиента</a></div>` : ''}
+      </div>
+      ${id ? `<div><b style="font-size:13px">🗂 История контактов / 联系记录</b>${crmActFormHTML()}
+        <div id="crm-acts" style="max-height:44vh;overflow-y:auto;margin-top:8px"><div class="spinner"></div></div></div>` : ''}
+    </div>
+    <div class="modal-btns">
+      ${id && !l.client_id ? `<button class="btn btn-gold btn-sm" onclick="crmConvert(${l.id})">✅ Сделать клиентом / 转为客户</button>` : ''}
+      ${id && !isScopedMgr() ? `<button class="btn btn-danger btn-sm" onclick="crmLeadDelete(${l.id})">🗑</button>` : ''}
+      <div style="flex:1"></div>
+      <button class="btn btn-secondary" onclick="closeModal()">Закрыть / 关闭</button>
+      <button class="btn btn-primary" onclick="crmLeadSave(${id || 'null'})">💾 Сохранить / 保存</button>
+    </div>`;
+  openModal();
+  if (id) crmLoadActs({ lead_id: id });
+}
+
+async function crmLeadSave(id) {
+  const v = x => document.getElementById(x)?.value?.trim() ?? '';
+  if (!v('cl-company')) { toast('Укажите компанию / 请填写公司'); return; }
+  const stage = v('cl-stage') || 'new';
+  if (!['won', 'lost'].includes(stage) && !v('cl-next-date') && !confirm('У лида нет следующего шага с датой — он может «потеряться». Сохранить так? / 没有下一步，确定保存？')) return;
+  const row = {
+    company: v('cl-company'), contact_name: v('cl-contact') || null, phone: v('cl-phone') || null, messenger: v('cl-msg') || null,
+    city: v('cl-city') || null, segment: v('cl-seg') || null, source: v('cl-src') || null, stage,
+    lost_reason: stage === 'lost' ? (v('cl-lost') || null) : null,
+    next_action: v('cl-next') || null, next_date: v('cl-next-date') || null, notes: v('cl-notes') || null,
+    manager_id: isScopedMgr() ? currentUser.id : (v('cl-mgr') || null), updated_at: new Date().toISOString(),
+  };
+  const prev = id ? _crm.leads.find(x => String(x.id) === String(id)) : null;
+  let res;
+  if (id) res = await sb.from('crm_leads').update(row).eq('id', id);
+  else res = await sb.from('crm_leads').insert({ ...row, created_by: crmWho() }).select().single();
+  if (res.error) { toast('❌ ' + (crmMissing(res.error) ? CRM_SQL_HINT : res.error.message)); return; }
+  const leadId = id || res.data?.id;
+  if (prev && prev.stage !== stage) await crmAct({ lead_id: leadId }, 'note', `Этап: ${crmStage(prev.stage)[1]} → ${crmStage(stage)[1]}`);
+  logActivity('crm_lead', 'lead', leadId, row.company, id ? 'Лид обновлён' : 'Новый лид');
+  toast('✅ Сохранено / 已保存');
+  await crmLoad(); crmRender(); crmBadge();
+  if (!id) crmLeadModal(leadId); else closeModal();
+}
+
+async function crmLeadDelete(id) {
+  if (!confirm('Удалить лид вместе с историей? / 删除线索？')) return;
+  await sb.from('crm_activities').delete().eq('lead_id', id);
+  await sb.from('crm_tasks').delete().eq('lead_id', id);
+  const { error } = await sb.from('crm_leads').delete().eq('id', id);
+  if (error) { toast('❌ ' + error.message); return; }
+  closeModal(); toast('✅ Удалено'); crmOpen();
+}
+
+// Лид → клиент: создаём учётную запись клиента, закреплённую за тем же менеджером
+async function crmConvert(id) {
+  const l = _crm.leads.find(x => String(x.id) === String(id)); if (!l) return;
+  const login = (prompt('Логин для входа клиента (латиницей) / 客户账号:', (l.company || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16)) || '').trim();
+  if (!login) return;
+  const pass = prompt('Пароль клиента (мин. 6 символов) / 密码:') || '';
+  if (pass.length < 6) { toast('Пароль минимум 6 символов'); return; }
+  const { data: u, error } = await sb.from('users').insert({
+    login, password_hash: await sha256(pass), role: 'client', company_name: l.company,
+    contact: [l.contact_name, l.phone, l.messenger].filter(Boolean).join(', ') || null,
+    manager_id: l.manager_id || (isScopedMgr() ? currentUser.id : null),
+  }).select().single();
+  if (error) { toast('❌ ' + (/unique|duplicate/.test(error.message) ? 'Логин уже занят' : error.message)); return; }
+  await sb.from('crm_leads').update({ stage: 'won', client_id: u.id, next_date: null, updated_at: new Date().toISOString() }).eq('id', id);
+  await sb.from('crm_activities').update({ client_id: u.id }).eq('lead_id', id);   // история переходит в карточку клиента
+  await crmAct({ lead_id: id, client_id: u.id }, 'note', `Стал клиентом, логин ${login}`);
+  logActivity('crm_convert', 'user', u.id, l.company, 'Лид стал клиентом');
+  await loadClients();
+  toast(`✅ ${l.company} теперь клиент. Логин: ${login} / 已转为客户`);
+  await crmLoad(); crmRender(); crmClientCard(u.id);
+}
+
+// ── Журнал контактов и задачи ──
+function crmActFormHTML() {
+  return `<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
+    <select class="inp" id="ca-kind" style="width:auto;padding:4px 6px;font-size:11px">${Object.entries(CRM_KINDS).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select>
+    <input class="inp" id="ca-body" placeholder="Что обсудили / 沟通内容…" style="flex:1;min-width:140px;padding:4px 8px;font-size:12px">
+    <button class="btn btn-primary btn-sm" onclick="crmActAdd()">＋</button></div>
+    <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
+    <input class="inp" id="ct-text" placeholder="☑️ Задача: что сделать / 待办…" style="flex:1;min-width:140px;padding:4px 8px;font-size:12px">
+    <input class="inp" type="date" id="ct-date" style="width:auto;padding:4px 6px;font-size:11px">
+    <button class="btn btn-secondary btn-sm" onclick="crmTaskAdd()">＋ Задача</button></div>`;
+}
+let _crmTarget = {};
+async function crmAct(target, kind, body) {
+  const { error } = await sb.from('crm_activities').insert({ ...target, kind, body,
+    manager_id: currentUser.role === 'manager' ? currentUser.id : null, created_by: crmWho() });
+  return error;
+}
+async function crmActAdd() {
+  const body = document.getElementById('ca-body')?.value.trim();
+  if (!body) return;
+  const err = await crmAct(_crmTarget, document.getElementById('ca-kind').value, body);
+  if (err) { toast('❌ ' + (crmMissing(err) ? CRM_SQL_HINT : err.message)); return; }
+  document.getElementById('ca-body').value = '';
+  crmLoadActs(_crmTarget);
+}
+async function crmTaskAdd() {
+  const text = document.getElementById('ct-text')?.value.trim(), due = document.getElementById('ct-date')?.value;
+  if (!text || !due) { toast('Укажите задачу и дату / 请填写待办和日期'); return; }
+  const lead = _crmTarget.lead_id ? _crm.leads.find(l => String(l.id) === String(_crmTarget.lead_id)) : null;
+  const cl = _crmTarget.client_id ? allClients.find(c => String(c.id) === String(_crmTarget.client_id)) : null;
+  const { error } = await sb.from('crm_tasks').insert({ ..._crmTarget, text, due_date: due, done: false,
+    manager_id: (lead?.manager_id || cl?.manager_id || (currentUser.role === 'manager' ? currentUser.id : null)), created_by: crmWho() });
+  if (error) { toast('❌ ' + (crmMissing(error) ? CRM_SQL_HINT : error.message)); return; }
+  document.getElementById('ct-text').value = '';
+  toast('✅ Задача добавлена / 已添加');
+  await crmLoad(); crmLoadActs(_crmTarget); crmBadge();
+}
+async function crmTaskDone(id) {
+  const t = _crm.tasks.find(x => String(x.id) === String(id));
+  const { error } = await sb.from('crm_tasks').update({ done: true, done_at: new Date().toISOString() }).eq('id', id);
+  if (error) { toast('❌ ' + error.message); return; }
+  if (t) await crmAct({ lead_id: t.lead_id || null, client_id: t.client_id || null }, 'note', '☑️ Выполнено: ' + t.text);
+  toast('✅ Готово');
+  await crmLoad();
+  if (document.getElementById('crm-acts')) crmLoadActs(_crmTarget);
+  if (document.getElementById('page-crm')?.classList.contains('active')) crmRender();
+  crmBadge();
+}
+async function crmLoadActs(target) {
+  _crmTarget = target;
+  const box = document.getElementById('crm-acts'); if (!box) return;
+  const col = target.client_id ? 'client_id' : 'lead_id', val = target.client_id || target.lead_id;
+  const [{ data: acts, error }, { data: tasks }] = await Promise.all([
+    sb.from('crm_activities').select('*').eq(col, val).order('created_at', { ascending: false }).limit(100),
+    sb.from('crm_tasks').select('*').eq(col, val).eq('done', false).order('due_date', { ascending: true }),
+  ]);
+  if (error) { box.innerHTML = `<div style="font-size:12px;color:var(--mid)">${crmMissing(error) ? CRM_SQL_HINT : escHtml(error.message)}</div>`; return; }
+  const t = crmToday();
+  box.innerHTML = (tasks || []).map(x => `<div style="display:flex;gap:6px;align-items:center;font-size:12px;padding:5px 8px;background:var(--gold-l);border-radius:6px;margin-bottom:4px">
+      ☑️ <b style="color:${x.due_date < t ? '#dc2626' : 'inherit'}">${opFmtDate(x.due_date)}</b> ${escHtml(x.text)}
+      <span style="flex:1"></span><button class="rbtn" title="Сделано" onclick="crmTaskDone(${x.id})">✓</button></div>`).join('')
+    + ((acts || []).map(a => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <div style="font-size:10px;color:var(--light)">${new Date(a.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })} · ${escHtml(a.created_by || '')}</div>
+      ${CRM_KINDS[a.kind] || '📝'} ${escHtml(a.body || '')}</div>`).join('') || '<div style="font-size:12px;color:var(--light);padding:6px 0">Записей пока нет — добавьте первый контакт</div>');
+}
+
+// ── Вкладка «Клиенты» и карточка клиента ──
+function crmClientsHTML() {
+  const q = _crm.q.toLowerCase();
+  const rows = allClients.filter(c => c.role === 'client' && (!q || [c.company_name, c.login, c.contact].join(' ').toLowerCase().includes(q)))
+    .map(c => ({ c, s: _crm.stats[c.id] || { n: 0, total: 0, avg: 0 } }))
+    .sort((a, b) => b.s.total - a.s.total);
+  return `<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <input class="inp" placeholder="🔍 Поиск клиента…" value="${escHtml(_crm.q)}" style="max-width:260px"
+        oninput="_crm.q=this.value;clearTimeout(window._crmT);window._crmT=setTimeout(()=>{crmRender();const i=document.querySelector('#crm-content input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},300)">
+      <span style="font-size:11px;color:var(--mid);align-self:center">Оборот — сумма позиций заказов (без отменённых), ¥</span>
+    </div>
+    <div class="tbl-wrap"><table style="min-width:820px">
+      <thead><tr><th class="L">Клиент / 客户</th>${isScopedMgr() ? '' : '<th>Менеджер</th>'}<th>Заказов</th><th>Оборот ¥</th><th>Средний ¥</th>
+        <th>Последний заказ</th><th>Обычно</th><th>Статус</th><th></th></tr></thead>
+      <tbody>${rows.map(({ c, s }, i) => `<tr class="${i % 2 ? 'stripe' : ''}">
+        <td class="L"><b>${escHtml(c.company_name || c.login)}</b><div style="font-size:10px;color:var(--mid)">${escHtml(c.contact || '')}</div></td>
+        ${isScopedMgr() ? '' : `<td style="font-size:11px;color:var(--mid)">${escHtml(mgrName(c.manager_id)) || '—'}</td>`}
+        <td>${s.n}</td><td style="font-weight:700">${opMoney(s.total)}</td><td>${s.n ? opMoney(s.avg) : '—'}</td>
+        <td>${s.last ? opFmtDateFull(s.last) + `<div style="font-size:10px;color:var(--mid)">${s.since} дн. назад</div>` : '—'}</td>
+        <td style="font-size:11px">${s.every ? 'раз в ' + s.every + ' дн.' : '—'}</td>
+        <td>${s.sleeping ? '<span class="badge" style="background:#fef3c7;color:#92400e">😴 спящий</span>' : s.n ? '<span class="badge" style="background:#dcfce7;color:#166534">активен</span>' : '<span class="badge">нет заказов</span>'}</td>
+        <td><button class="btn btn-secondary btn-sm" onclick="crmClientCard('${c.id}')">Карточка</button></td>
+      </tr>`).join('') || '<tr><td colspan="9" style="padding:14px;color:var(--light)">Клиентов нет</td></tr>'}</tbody>
+    </table></div>`;
+}
+
+async function crmClientCard(clientId) {
+  if (!allClients.length) await loadClients();
+  const c = allClients.find(x => String(x.id) === String(clientId));
+  if (!c) { toast('Клиент недоступен / 无权限'); return; }
+  if (!Object.keys(_crm.stats).length) await crmLoad();
+  const s = _crm.stats[c.id] || { n: 0, total: 0, avg: 0, orders: [], top: [] };
+  const lead = _crm.leads.find(l => String(l.client_id) === String(c.id));
+  const mc = document.getElementById('modal-content');
+  mc.classList.add('op-wide');
+  mc.innerHTML = `
+    <div class="modal-title">👤 ${escHtml(c.company_name || c.login)}</div>
+    <div style="font-size:12px;color:var(--mid);margin:-6px 0 10px">${escHtml(c.contact || '')}${c.manager_id ? ' · 💼 ' + escHtml(mgrName(c.manager_id)) : ''}${lead ? ` · 🎯 из лида (${escHtml(lead.source || 'источник не указан')})` : ''}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      ${crmTile('Заказов', s.n)}${crmTile('Оборот', opMoney(s.total))}${crmTile('Средний заказ', s.n ? opMoney(s.avg) : '—')}
+      ${crmTile('Последний заказ', s.last ? s.since + ' дн. назад' : '—', s.sleeping ? '#b45309' : '')}
+      ${crmTile('Обычно', s.every ? 'раз в ' + s.every + ' дн.' : '—')}
+    </div>
+    ${s.sleeping ? `<div style="margin-bottom:10px;padding:8px 12px;background:#fef3c7;border-radius:8px;font-size:12px;color:#92400e">😴 Клиент давно не заказывал — стоит связаться: предложить свежий прайс или сезонную позицию.</div>` : ''}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <b style="font-size:13px">🌸 Чаще всего берёт / 常购品种</b>
+        ${s.top.length ? s.top.map(([n, b]) => `<div style="font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border)">${escHtml(n)} <span style="color:var(--mid)">· ${b} кор.</span></div>`).join('') : '<div style="font-size:12px;color:var(--light)">—</div>'}
+        <b style="font-size:13px;display:block;margin-top:12px">📦 Последние заказы / 最近订单</b>
+        ${s.orders.slice(0, 8).map(o => `<div style="display:flex;gap:8px;font-size:12px;padding:4px 0;border-bottom:1px dashed var(--border)">
+          <a href="#" onclick="event.preventDefault();closeModal();openOrder('${o.id}')"><b>${escHtml(o.num)}</b></a>
+          <span style="color:var(--mid)">${opFmtDateFull(o.date)}</span><span style="flex:1"></span><b>${opMoney(o.sum)}</b></div>`).join('') || '<div style="font-size:12px;color:var(--light)">Заказов пока нет</div>'}
+      </div>
+      <div><b style="font-size:13px">🗂 Контакты и задачи / 联系记录</b>${crmActFormHTML()}
+        <div id="crm-acts" style="max-height:46vh;overflow-y:auto;margin-top:8px"><div class="spinner"></div></div></div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal();crmOpenChat('${c.id}')">💬 Чат с клиентом</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-primary" onclick="closeModal()">Закрыть / 关闭</button>
+    </div>`;
+  openModal();
+  crmLoadActs({ client_id: c.id });
+}
+
+function crmOpenChat(clientId) {
+  window._pendingChatRoom = { room: 'client-' + clientId, clientId };
+  const tab = Array.from(document.querySelectorAll('.nav-tab')).find(t => t.getAttribute('onclick')?.includes("'chat'"));
+  showPage('chat', tab || undefined);
+}
+
+// ══════════════════════════════════════════════════════════
 //  ПРИЁМКА ОТ ПОСТАВЩИКОВ: график поставок, форма приёмки, акты
 // ══════════════════════════════════════════════════════════
 let _supDeliv = { shipment: null, groups: [] };
@@ -13603,6 +14116,7 @@ async function loadClaims() {
     .select('*, client:users!claims_client_id_fkey(company_name,login)')
     .order('created_at', { ascending: false });
   if (statusFilter) q = q.eq('status', statusFilter);
+  await ensureScope(); q = scopeQ(q);
 
   const { data: claims, error } = await q;
 
