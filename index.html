@@ -1403,6 +1403,15 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 
   <!-- PAGE: DASHBOARD (manager) -->
+  <div class="page" id="page-calc">
+    <div class="page-inner">
+      <div class="page-title">🧮 Калькулятор поставки / 物流成本计算</div>
+      <div class="page-sub">Логистика, таможня, себестоимость и цена. Проценты задаются вручную в каждом расчёте.</div>
+      <div id="calc-tabs" style="display:flex;gap:6px;margin-bottom:14px;border-bottom:2px solid var(--border);flex-wrap:wrap"></div>
+      <div id="calc-content"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
   <div class="page" id="page-crm">
     <div class="page-inner">
       <div class="page-title">CRM · Лиды и клиенты / 客户管理</div>
@@ -1679,6 +1688,7 @@ async function initApp() {
     document.getElementById('btn-manage-cats').style.display = full ? 'inline-flex' : 'none';
     ['btn-add-manager', 'btn-add-warehouse'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = full ? '' : 'none'; });
     if (!full) document.getElementById('top-role').textContent = '💼 Клиентский менеджер / 客户经理';
+    if (calcAccess()) document.getElementById('tab-notif')?.insertAdjacentHTML('beforebegin', `<div class="nav-tab" onclick="showPage('calc',this)">🧮 Калькулятор</div>`);
     loadClients().then(() => crmBadge()).catch(() => {});
   } else if (isWh) {
     tabs.innerHTML = `
@@ -1793,6 +1803,7 @@ function showPage(name, tabEl) {
   }
   if (name === 'dashboard') loadDashboard();
   if (name === 'crm') crmOpen();
+  if (name === 'calc') calcOpen();
   if (name === 'claims') loadClaims();
   if (name === 'my-claims') loadMyClaims();
 }
@@ -6249,7 +6260,7 @@ function renderClients() {
     </tr></thead>
     <tbody>${allClients.map((c,i) => `
       <tr class="${i%2?'stripe':''}">
-        <td class="L"><b>${c.company_name||'—'}</b>${c.purchase_tracking?' <span title="Видит журнал закупа" style="font-size:10px">🛒</span>':''}${c.tg_chat_id?' <span title="Telegram подключён" style="font-size:10px">📲</span>':''}</td>
+        <td class="L"><b>${c.company_name||'—'}</b>${c.purchase_tracking?' <span title="Видит журнал закупа" style="font-size:10px">🛒</span>':''}${c.tg_chat_id?' <span title="Telegram подключён" style="font-size:10px">📲</span>':''}${c.calc_access?' <span title="Доступ к калькулятору" style="font-size:10px">🧮</span>':''}</td>
         <td class="L" style="color:var(--mid);font-family:monospace">${c.login}</td>
         <td style="font-size:11px;color:var(--mid)">${c.contact||'—'}</td>
         <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?(c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':'👑 Менеджер / 经理'):c.role==='warehouse'?'🏭 Склад / 仓库':'👤 Клиент / 客户'}</span></td>
@@ -6338,6 +6349,13 @@ function showEditClientModal(id) {
     ${user.role === 'client' && !isScopedMgr() ? ('manager_id' in user ? `
     <div class="field" style="margin-top:10px"><label>Ответственный менеджер / 负责经理</label>
       <select class="inp" id="ec-manager">${mgrOptions(user.manager_id)}</select></div>` : `<div style="margin-top:10px;font-size:11px;color:var(--mid)">💼 Закрепление за менеджером: выполните SQL-миграцию «Клиентские менеджеры».</div>`) : ''}
+    ${user.role === 'manager' && currentUser?.is_admin && String(user.id) !== String(currentUser.id) && 'calc_access' in user ? `
+    <div style="margin-top:10px;padding:10px 12px;background:var(--gold-l);border-radius:6px;font-size:12px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
+        <input type="checkbox" id="ec-calc" ${user.calc_access ? 'checked' : ''} style="width:15px;height:15px">
+        🧮 Доступ к калькулятору поставки (себестоимость, таможня, наценки)</label>
+      <div style="font-size:11px;color:var(--mid);margin:4px 0 0 21px">Включать и отключать может только админ</div>
+    </div>` : ''}
     ${user.role === 'manager' && currentUser?.is_admin && String(user.id) !== String(currentUser.id) ? ('client_scope' in user ? `
     <div style="margin-top:10px;padding:10px 12px;background:var(--sage-l);border-radius:6px;font-size:12px">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
@@ -6374,6 +6392,8 @@ async function saveClient(id) {
   if (curEl) updates.currency = curEl.value;
   const mgEl = document.getElementById('ec-manager');
   if (mgEl) updates.manager_id = mgEl.value || null;
+  const calcEl = document.getElementById('ec-calc');
+  if (calcEl && currentUser?.is_admin) updates.calc_access = calcEl.checked;
   const scEl = document.getElementById('ec-scope-own');
   if (scEl) updates.client_scope = scEl.checked ? 'own' : null;
   const ptEl = document.getElementById('ec-purch-track');
@@ -12103,6 +12123,7 @@ function opRenderManager() {
         <span style="font-size:11px;color:${trackOn ? '#15803d' : 'var(--light)'}">${trackOn ? '👁 клиент видит этот журнал / 客户可见' : '🔒 клиенту не виден (включается в карточке клиента) / 客户不可见'}</span>
         <span style="flex:1"></span>
         <button class="btn btn-gold btn-sm" onclick="opBulkForm()">⚡ Приход от поставщика / 批量入库</button>
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer" title="Загрузить таблицу закупа (поставщик, 单价, банчи, пакинг)">📥 Закуп из Excel<input type="file" accept=".xlsx,.xls" style="display:none" onchange="opImportFile(this)"></label>
         <button class="btn btn-secondary btn-sm" onclick="opExportExcel()">📊 Excel</button>
         <button class="btn btn-secondary btn-sm" onclick="opReload()" title="Обновить">↻</button>
       </div>
@@ -12990,6 +13011,7 @@ async function wbRebuildFromFact() {
 //  Клиентский менеджер видит только своё; админ и полные менеджеры — всё.
 // ══════════════════════════════════════════════════════════
 const CRM_STAGES = [
+  ['cold', '🧊 Холодная база', '待开发'],
   ['new', '🆕 Новый', '新线索'], ['contacted', '📞 Первый контакт', '已联系'], ['negotiation', '💬 Переговоры', '洽谈中'],
   ['trial', '📦 Пробный заказ', '试订单'], ['won', '✅ Стал клиентом', '已成交'], ['lost', '✖ Отказ', '已流失'],
 ];
@@ -13013,7 +13035,7 @@ async function crmLoad() {
   await ensureScope();
   if (!allClients.length) await loadClients();
   const [L, T, O] = await Promise.all([
-    crmScopeMgr(sb.from('crm_leads').select('*')).order('updated_at', { ascending: false }),
+    crmLoadAllLeads(),
     crmScopeMgr(sb.from('crm_tasks').select('*')).eq('done', false).order('due_date', { ascending: true }),
     scopeQ(sb.from('orders').select('id, order_number, client_id, status, date_order, order_items(subtotal, qty_boxes, flower_snapshot)'))
       .neq('status', 'cancelled'),
@@ -13063,12 +13085,12 @@ async function crmOpen(tab) {
 }
 
 function crmRender() {
-  const tabs = [['today', '📅 Сегодня / 今日'], ['pipeline', '🎯 Воронка / 销售漏斗'], ['clients', '👥 Клиенты / 客户']];
+  const tabs = [['today', '📅 Сегодня / 今日'], ['base', '📇 База / 客户库'], ['pipeline', '🎯 Воронка / 销售漏斗'], ['clients', '👥 Клиенты / 客户']];
   document.getElementById('crm-tabs').innerHTML = tabs.map(([k, l]) =>
     `<button class="wh-tab ${_crm.tab === k ? 'active' : ''}" onclick="_crm.tab='${k}';crmRender()">${l}</button>`).join('');
   const c = document.getElementById('crm-content');
   if (!_crm.ok) { c.innerHTML = `<div class="card" style="border-left:4px solid var(--gold)">${CRM_SQL_HINT}</div>`; return; }
-  c.innerHTML = _crm.tab === 'pipeline' ? crmPipelineHTML() : _crm.tab === 'clients' ? crmClientsHTML() : crmTodayHTML();
+  c.innerHTML = _crm.tab === 'pipeline' ? crmPipelineHTML() : _crm.tab === 'clients' ? crmClientsHTML() : _crm.tab === 'base' ? baseHTML() : crmTodayHTML();
 }
 
 async function crmBadge() {
@@ -13087,11 +13109,12 @@ function crmTile(label, value, color) {
 }
 function crmTodayHTML() {
   const t = crmToday();
-  const open = _crm.leads.filter(l => !['won', 'lost'].includes(l.stage));
+  const open = _crm.leads.filter(l => !['won', 'lost', 'cold'].includes(l.stage));
+  const coldDue = _crm.leads.filter(l => l.stage === 'cold' && l.next_date);
   const won = _crm.leads.filter(l => l.stage === 'won').length, lost = _crm.leads.filter(l => l.stage === 'lost').length;
   const due = [
     ..._crm.tasks.map(x => ({ type: 'task', date: x.due_date, text: x.text, x })),
-    ...open.filter(l => l.next_date).map(l => ({ type: 'lead', date: l.next_date, text: l.next_action || 'следующий шаг', x: l })),
+    ...[...open, ...coldDue].filter(l => l.next_date).map(l => ({ type: 'lead', date: l.next_date, text: l.next_action || 'следующий шаг', x: l })),
   ].sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const late = due.filter(d => d.date <= t), week = due.filter(d => d.date > t && crmDays(d.date) >= -7);
   const sleeping = allClients.filter(c => c.role === 'client' && _crm.stats[c.id]?.sleeping)
@@ -13113,6 +13136,7 @@ function crmTodayHTML() {
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
       ${crmTile('Задач на сегодня и просрочено / 今日待办', late.length, late.length ? '#dc2626' : '')}
       ${crmTile('Лидов в работе / 跟进中线索', open.length)}
+      ${crmTile('🧊 Холодная база / 待开发', _crm.leads.filter(l => l.stage === 'cold').length, 'var(--mid)')}
       ${crmTile('Конверсия лидов / 转化率', won + lost ? Math.round(won / (won + lost) * 100) + '%' : '—')}
       ${crmTile('😴 Спящих клиентов / 沉睡客户', sleeping.length, sleeping.length ? '#b45309' : '')}
     </div>
@@ -13165,7 +13189,8 @@ function crmPipelineHTML() {
       <input class="inp" placeholder="🔍 Компания, город, телефон…" value="${escHtml(_crm.q)}" style="max-width:260px"
         oninput="_crm.q=this.value;clearTimeout(window._crmT);window._crmT=setTimeout(()=>{crmRender();const i=document.querySelector('#crm-content input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},300)">
     </div>
-    <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;align-items:flex-start">${CRM_STAGES.map(col).join('')}</div>`;
+    <div style="font-size:11px;color:var(--mid);margin-bottom:6px">🧊 Холодная база (${_crm.leads.filter(l => l.stage === 'cold').length}) — во вкладке «База»</div>
+    <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;align-items:flex-start">${CRM_STAGES.filter(s => s[0] !== 'cold').map(col).join('')}</div>`;
 }
 
 // ── Карточка лида ──
@@ -13203,6 +13228,30 @@ async function crmLeadModal(id) {
           <div class="field" style="flex:2"><label>⏰ Следующий шаг / 下一步</label><input class="inp" id="cl-next" value="${escHtml(l.next_action || '')}" placeholder="Позвонить, отправить прайс к 8 марта…"></div>
           <div class="field"><label>Когда / 日期</label><input class="inp" type="date" id="cl-next-date" value="${l.next_date || ''}"></div>
         </div>
+        <details ${l.inn || l.decision_maker || l.website || l.current_supplier ? 'open' : ''} style="margin:6px 0"><summary style="cursor:pointer;font-size:12px;font-weight:600">📇 Реквизиты и подробности</summary>
+          <div class="field-row" style="margin-top:6px">
+            <div class="field"><label>ИНН</label><input class="inp" id="cl-inn" value="${escHtml(l.inn || '')}"></div>
+            <div class="field"><label>Регион</label><input class="inp" id="cl-region" value="${escHtml(l.region || '')}"></div>
+            <div class="field" style="flex:2"><label>Адрес</label><input class="inp" id="cl-address" value="${escHtml(l.address || '')}"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>ЛПР (кто решает)</label><input class="inp" id="cl-dm" value="${escHtml(l.decision_maker || '')}"></div>
+            <div class="field"><label>Email</label><input class="inp" id="cl-email" value="${escHtml(l.email || '')}"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Сайт</label><input class="inp" id="cl-site" value="${escHtml(l.website || '')}"></div>
+            <div class="field"><label>Соцсети</label><input class="inp" id="cl-soc" value="${escHtml(l.socials || '')}"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Текущий поставщик</label><input class="inp" id="cl-supp" value="${escHtml(l.current_supplier || '')}"></div>
+            <div class="field"><label>Объём закупок</label><input class="inp" id="cl-vol" value="${escHtml(l.volume || '')}"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Что берут</label><input class="inp" id="cl-int" value="${escHtml(l.interests || '')}" placeholder="срезка, зелень, горшечные"></div>
+            <div class="field"><label>Теги</label><input class="inp" id="cl-tags" value="${escHtml(l.tags || '')}" placeholder="через запятую"></div>
+          </div>
+          <label style="font-size:12px;cursor:pointer"><input type="checkbox" id="cl-dnc" ${l.do_not_call ? 'checked' : ''}> 🚫 Не звонить</label>
+        </details>
         <div class="field"><label>Заметки / 备注</label><textarea class="inp" id="cl-notes" style="min-height:60px">${escHtml(l.notes || '').replace(/<br>/g, '\n')}</textarea></div>
         ${l.client_id ? `<div style="font-size:12px;margin-top:6px">✅ Стал клиентом: <a href="#" onclick="event.preventDefault();crmClientCard('${l.client_id}')">открыть карточку клиента</a></div>` : ''}
       </div>
@@ -13224,7 +13273,7 @@ async function crmLeadSave(id) {
   const v = x => document.getElementById(x)?.value?.trim() ?? '';
   if (!v('cl-company')) { toast('Укажите компанию / 请填写公司'); return; }
   const stage = v('cl-stage') || 'new';
-  if (!['won', 'lost'].includes(stage) && !v('cl-next-date') && !confirm('У лида нет следующего шага с датой — он может «потеряться». Сохранить так? / 没有下一步，确定保存？')) return;
+  if (!['won', 'lost', 'cold'].includes(stage) && !v('cl-next-date') && !confirm('У лида нет следующего шага с датой — он может «потеряться». Сохранить так? / 没有下一步，确定保存？')) return;
   const row = {
     company: v('cl-company'), contact_name: v('cl-contact') || null, phone: v('cl-phone') || null, messenger: v('cl-msg') || null,
     city: v('cl-city') || null, segment: v('cl-seg') || null, source: v('cl-src') || null, stage,
@@ -13232,10 +13281,17 @@ async function crmLeadSave(id) {
     next_action: v('cl-next') || null, next_date: v('cl-next-date') || null, notes: v('cl-notes') || null,
     manager_id: isScopedMgr() ? currentUser.id : (v('cl-mgr') || null), updated_at: new Date().toISOString(),
   };
+  const extra = { inn: v('cl-inn') || null, region: v('cl-region') || null, address: v('cl-address') || null, decision_maker: v('cl-dm') || null,
+    email: v('cl-email') || null, website: v('cl-site') || null, socials: v('cl-soc') || null, current_supplier: v('cl-supp') || null,
+    volume: v('cl-vol') || null, interests: v('cl-int') || null, tags: v('cl-tags') || null, do_not_call: !!document.getElementById('cl-dnc')?.checked };
   const prev = id ? _crm.leads.find(x => String(x.id) === String(id)) : null;
   let res;
-  if (id) res = await sb.from('crm_leads').update(row).eq('id', id);
-  else res = await sb.from('crm_leads').insert({ ...row, created_by: crmWho() }).select().single();
+  const put = r => id ? sb.from('crm_leads').update(r).eq('id', id) : sb.from('crm_leads').insert({ ...r, created_by: crmWho() }).select().single();
+  res = await put({ ...row, ...extra });
+  if (res.error && /column/.test(res.error.message)) {   // поля базы ещё не добавлены в БД — сохраняем основное
+    res = await put(row);
+    if (!res.error) toast('⚠️ Реквизиты не сохранены — выполните sql_leads_base.sql');
+  }
   if (res.error) { toast('❌ ' + (crmMissing(res.error) ? CRM_SQL_HINT : res.error.message)); return; }
   const leadId = id || res.data?.id;
   if (prev && prev.stage !== stage) await crmAct({ lead_id: leadId }, 'note', `Этап: ${crmStage(prev.stage)[1]} → ${crmStage(stage)[1]}`);
@@ -13457,13 +13513,14 @@ async function fxFetchCbr() {
   // кэш на 6 часов, чтобы не дёргать сайт ЦБ при каждом переходе
   try {
     const c = JSON.parse(localStorage.getItem('amma_cbr') || 'null');
-    if (c && Date.now() - c.ts < 6 * 3600e3) return c;
+    if (c && c.eur_rub && Date.now() - c.ts < 6 * 3600e3) return c;
   } catch (e) {}
   try {
     const r = await fetch('https://www.cbr-xml-daily.ru/daily_json.js', { cache: 'no-store' });
     const j = await r.json();
     const cny = j.Valute.CNY.Value / j.Valute.CNY.Nominal, usd = j.Valute.USD.Value / j.Valute.USD.Nominal;
-    const out = { cny_rub: cny, usd_rub: usd, date: j.Date, ts: Date.now() };
+    const eur = j.Valute.EUR ? j.Valute.EUR.Value / j.Valute.EUR.Nominal : null;
+    const out = { cny_rub: cny, usd_rub: usd, eur_rub: eur, date: j.Date, ts: Date.now() };
     try { localStorage.setItem('amma_cbr', JSON.stringify(out)); } catch (e) {}
     return out;
   } catch (e) {
@@ -13489,7 +13546,7 @@ async function fxInit() {
   // полные менеджеры тихо сохраняют свежий курс ЦБ — запасной вариант, если у клиента сайт ЦБ недоступен
   if (FX.cbr && currentUser?.role === 'manager' && !isScopedMgr()
       && (!FX.cfg.cbr || FX.cfg.cbr.date !== FX.cbr.date)) {
-    FX.cfg.cbr = { cny_rub: FX.cbr.cny_rub, usd_rub: FX.cbr.usd_rub, date: FX.cbr.date };
+    FX.cfg.cbr = { cny_rub: FX.cbr.cny_rub, usd_rub: FX.cbr.usd_rub, eur_rub: FX.cbr.eur_rub, date: FX.cbr.date };
     sb.from('app_settings').upsert({ key: 'fx', value: FX.cfg, updated_at: new Date().toISOString() }).then(() => {});
   }
   fxCompute();
@@ -13671,6 +13728,812 @@ async function notifyShipmentClients(shipmentId, title, note) {
         `Машина ${shp?.ship_number || ''} · заказ ${nums.join(', ')}${note ? ' · ' + note : ''}`, '📍');
     }
   } catch (e) {}
+}
+
+// ══════════════════════════════════════════════════════════
+//  🧮 КАЛЬКУЛЯТОР ПОСТАВКИ: логистика, таможня, себестоимость, цена.
+//  Доступ: админ + пользователи с users.calc_access (включает только админ).
+//  Все проценты (наценки, комиссии) вводятся вручную в каждом расчёте.
+//  Справочник: calc_hs_codes (коды ТН ВЭД), calc_fee_tiers (там. сбор). Расчёты: calc_runs.
+// ══════════════════════════════════════════════════════════
+const CALC_SQL_HINT = 'Таблицы калькулятора не созданы — выполните sql_calc.sql в Supabase';
+const CALC_BASIS = { boxes: 'по коробкам', weight: 'по весу', value: 'по стоимости' };
+let _calc = { tab: 'run', run: null, ref: { codes: [], tiers: [] }, runs: [], res: null, ok: true };
+
+function calcAccess() {
+  return currentUser?.role === 'manager' && (!!currentUser?.is_admin || !!currentUser?.calc_access);
+}
+function calcNum(v) { const n = parseFloat(String(v ?? '').replace(',', '.').replace(/\s/g, '')); return isNaN(n) ? 0 : n; }
+function calcRub(v, d = 0) { return (+v || 0).toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' ₽'; }
+function calcBlank() {
+  const r = FX.cbr || FX.cfg?.cbr || {};
+  return {
+    id: null, title: 'Поставка ' + opFmtDateFull(opToday()), date: opToday(), scenario: 'srb',
+    rates: { USD: r.usd_rub ? +r.usd_rub.toFixed(4) : '', EUR: r.eur_rub ? +r.eur_rub.toFixed(4) : '', CNY: r.cny_rub ? +r.cny_rub.toFixed(4) : '' },
+    vat_pct: 22, fx_comm_pct: '', claim: '',
+    expenses: [
+      { name: 'Транспорт до границы ЕАЭС (Хоргос)', amount: '', in_cv: true, basis: 'boxes' },
+      { name: 'Транспорт после границы (до склада в РФ)', amount: '', in_cv: false, basis: 'boxes' },
+      { name: 'Прочие расходы до границы', amount: '', in_cv: true, basis: 'boxes' },
+      { name: 'Услуги брокера', amount: '', in_cv: false, basis: 'boxes' },
+      { name: 'Услуга СВХ', amount: '', in_cv: false, basis: 'boxes' },
+      { name: 'Доставка по России', amount: '', in_cv: false, basis: 'boxes' },
+    ],
+    ml: { revenue: '', includes_goods: false, markup_pct: '' },
+    srb: { markup_pct: '' },
+    items: [calcBlankItem()],
+  };
+}
+function calcBlankItem() { return { code: '', name: '', qty: '', weight: '', boxes: '', cur: 'USD', price: '', markup_pct: '', market_price: '' }; }
+
+// ── Расчёт ──
+function calcTier(cv) {
+  const t = [..._calc.ref.tiers].sort((a, b) => a.from_rub - b.from_rub);
+  let fee = 0;
+  t.forEach(x => { if (cv >= +x.from_rub) fee = +x.fee; });
+  return fee;
+}
+function calcCompute(run) {
+  const R = run.rates || {};
+  const rate = c => c === 'RUB' ? 1 : calcNum(R[c]);
+  const vatDef = calcNum(run.vat_pct) / 100;
+  const items = (run.items || []).filter(it => calcNum(it.qty) || calcNum(it.price) || it.name || it.code);
+  const L = items.map(it => {
+    const goodsCur = calcNum(it.qty) * calcNum(it.price);
+    return { it, goodsCur, goods: goodsCur * rate(it.cur), w: calcNum(it.weight), b: calcNum(it.boxes), alloc: 0, allocCv: 0, allocPost: 0 };
+  });
+  const T = { W: L.reduce((s, x) => s + x.w, 0), B: L.reduce((s, x) => s + x.b, 0), G: L.reduce((s, x) => s + x.goods, 0) };
+  const warns = [];
+  if (!rate('USD') || !rate('EUR')) warns.push('не заполнены курсы USD / EUR');
+  // распределение расходов
+  const expTotals = { cv: 0, post: 0 };
+  (run.expenses || []).forEach(e => {
+    const amt = calcNum(e.amount); if (!amt) return;
+    const base = e.basis === 'weight' ? T.W : e.basis === 'value' ? T.G : T.B;
+    if (!base) { warns.push(`«${e.name}»: нечего распределять (${CALC_BASIS[e.basis]} = 0)`); return; }
+    L.forEach(x => {
+      const part = amt * (e.basis === 'weight' ? x.w : e.basis === 'value' ? x.goods : x.b) / base;
+      x.alloc += part; if (e.in_cv) x.allocCv += part; else x.allocPost += part;
+    });
+    if (e.in_cv) expTotals.cv += amt; else expTotals.post += amt;
+  });
+  L.forEach(x => { x.cv = x.goods + x.allocCv; });
+  // пошлина и НДС по коду ТН ВЭД
+  const groups = {};
+  L.forEach(x => { const k = String(x.it.code || '').trim(); (groups[k] = groups[k] || { code: k, lines: [], cv: 0, w: 0 }).lines.push(x); });
+  Object.values(groups).forEach(g => {
+    g.cv = g.lines.reduce((s, x) => s + x.cv, 0); g.w = g.lines.reduce((s, x) => s + x.w, 0);
+    g.ref = _calc.ref.codes.find(c => c.code === g.code);
+    if (!g.ref) { if (g.code) warns.push(`код ${g.code} не найден в справочнике — пошлина не посчитана`); else warns.push('есть позиции без кода ТН ВЭД'); }
+    const pct = g.ref ? calcNum(g.ref.duty_pct) / 100 : 0;
+    const spec = g.ref ? calcNum(g.ref.duty_eur_kg) * g.w * rate('EUR') : 0;
+    g.dutyAdv = g.cv * pct; g.dutySpec = spec;
+    g.duty = Math.max(g.dutyAdv, g.dutySpec);
+    const vat = g.ref && g.ref.vat_pct != null && g.ref.vat_pct !== '' ? calcNum(g.ref.vat_pct) / 100 : vatDef;
+    g.vat = (g.cv + g.duty) * vat;
+    g.usdKg = g.w && rate('USD') ? g.cv / rate('USD') / g.w : null;
+    g.low = g.ref && g.usdKg != null && g.ref.control_usd_kg && g.usdKg < +g.ref.control_usd_kg;
+    if (g.low) warns.push(`код ${g.code}: ${g.usdKg.toFixed(2)} $/кг ниже контрольного ${g.ref.control_usd_kg} $/кг — риск корректировки стоимости`);
+    // доля строки — по её таможенной стоимости (не по коробкам)
+    g.lines.forEach(x => { const s = g.cv ? x.cv / g.cv : 0; x.duty = g.duty * s; x.vat = g.vat * s; x.group = g; });
+  });
+  T.CV = L.reduce((s, x) => s + x.cv, 0);
+  T.fee = T.CV ? calcTier(T.CV) : 0;
+  const fxPct = calcNum(run.fx_comm_pct) / 100;
+  L.forEach(x => {
+    x.fee = T.CV ? T.fee * x.cv / T.CV : 0;
+    x.fx = x.goods * fxPct;
+    x.cost = x.goods + x.alloc + x.duty + x.vat + x.fee + x.fx;
+    x.unitCost = calcNum(x.it.qty) ? x.cost / calcNum(x.it.qty) : 0;
+  });
+  Object.assign(T, {
+    expCv: expTotals.cv, expPost: expTotals.post,
+    duty: L.reduce((s, x) => s + x.duty, 0), vat: L.reduce((s, x) => s + x.vat, 0),
+    fx: L.reduce((s, x) => s + x.fx, 0), cost: L.reduce((s, x) => s + x.cost, 0),
+  });
+  T.customs = T.duty + T.vat + T.fee;
+  // сценарии
+  if (run.scenario === 'ml') {
+    const rev = calcNum(run.ml.revenue), claim = calcNum(run.claim);
+    // если в выручку не входит товар (его оплачивает покупатель), товар не вычитается из прибыли
+    T.profit = rev - T.cost + (run.ml.includes_goods ? 0 : T.G) - claim;
+    const mk = calcNum(run.ml.markup_pct) / 100;
+    L.forEach(x => {
+      x.profit = T.cost ? T.profit * x.cost / T.cost : 0;
+      x.priceLine = x.cost + x.profit;                      // полная стоимость позиции для покупателя
+      const q = calcNum(x.it.qty), b = calcNum(x.it.boxes);
+      x.unit = q ? x.priceLine / q : 0; x.box = b ? x.priceLine / b : 0;
+      x.unit2 = x.unit * (1 + mk); x.box2 = x.box * (1 + mk);
+    });
+    if (!rev) warns.push('не указана сумма реализации');
+  } else {
+    const mkDef = run.srb.markup_pct === '' || run.srb.markup_pct == null ? null : calcNum(run.srb.markup_pct);
+    L.forEach(x => {
+      const q = calcNum(x.it.qty), b = calcNum(x.it.boxes);
+      const own = x.it.markup_pct === '' || x.it.markup_pct == null ? null : calcNum(x.it.markup_pct);
+      const m = own ?? mkDef;
+      x.mkSrc = x.it.market_price !== '' && x.it.market_price != null ? 'price' : own != null ? 'own' : mkDef != null ? 'def' : 'none';
+      x.unit = x.mkSrc === 'price' ? calcNum(x.it.market_price) : x.unitCost * (1 + (m || 0) / 100);
+      x.box = b ? x.unit * q / b : 0;
+      x.revenue = x.unit * q;
+      x.mkFact = x.unitCost ? (x.unit / x.unitCost - 1) * 100 : 0;
+    });
+    T.revenue = L.reduce((s, x) => s + x.revenue, 0);
+    T.profit = T.revenue - T.cost;
+    if (L.some(x => x.mkSrc === 'none')) warns.push('наценка не задана — цена продажи равна себестоимости');
+  }
+  return { L, T, warns, groups };
+}
+
+// ── Страница ──
+async function calcOpen() {
+  if (!calcAccess()) { document.getElementById('calc-content').innerHTML = '<div class="card">Нет доступа / 无权限</div>'; return; }
+  document.getElementById('calc-content').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  if (!FX.cbr?.eur_rub) { try { localStorage.removeItem('amma_cbr'); } catch (e) {} FX.cbr = await fxFetchCbr(); }
+  const [c, t] = await Promise.all([
+    sb.from('calc_hs_codes').select('*').order('code'),
+    sb.from('calc_fee_tiers').select('*').order('from_rub'),
+  ]);
+  _calc.ok = !(c.error || t.error);
+  _calc.ref = { codes: c.data || [], tiers: t.data || [] };
+  if (!_calc.run) _calc.run = calcBlank();
+  calcRender();
+}
+function calcRender() {
+  const tabs = [['run', '🧮 Расчёт / 计算'], ['history', '🗂 История / 历史'], ['ref', '📚 Справочник / 参考']];
+  document.getElementById('calc-tabs').innerHTML = tabs.map(([k, l]) =>
+    `<button class="wh-tab ${_calc.tab === k ? 'active' : ''}" onclick="_calc.tab='${k}';${k === 'history' ? 'calcLoadRuns()' : 'calcRender()'}">${l}</button>`).join('');
+  const el = document.getElementById('calc-content');
+  if (!_calc.ok) { el.innerHTML = `<div class="card" style="border-left:4px solid var(--gold)">${CALC_SQL_HINT}</div>`; return; }
+  if (_calc.tab === 'ref') el.innerHTML = calcRefHTML();
+  else if (_calc.tab === 'history') el.innerHTML = calcHistoryHTML();
+  else { el.innerHTML = calcRunHTML(); calcRefresh(); }
+}
+
+const cIn = (path, val, w, extra = '') =>
+  `<input class="inp" value="${escHtml(val ?? '')}" style="width:${w}px;padding:3px 5px;font-size:12px" ${extra} oninput="calcSet('${path}',this.value)">`;
+function calcSet(path, v) {
+  const keys = path.split('.'); let o = _calc.run;
+  keys.slice(0, -1).forEach(k => { o = o[k]; });
+  o[keys[keys.length - 1]] = v;
+  clearTimeout(window._calcT); window._calcT = setTimeout(calcRefresh, 250);
+}
+
+function calcRunHTML() {
+  const r = _calc.run, ml = r.scenario === 'ml';
+  const codeList = `<datalist id="calc-codes">${_calc.ref.codes.map(c => `<option value="${c.code}">${escHtml(c.descr || '')}</option>`).join('')}</datalist>`;
+  const exp = r.expenses.map((e, i) => `<tr>
+      <td class="L">${cIn(`expenses.${i}.name`, e.name, 260)}</td>
+      <td>${cIn(`expenses.${i}.amount`, e.amount, 110, 'placeholder="₽" inputmode="decimal"')}</td>
+      <td><label style="font-size:11px;cursor:pointer"><input type="checkbox" ${e.in_cv ? 'checked' : ''} onchange="_calc.run.expenses[${i}].in_cv=this.checked;calcRefresh()"> в там. стоимость</label></td>
+      <td><select class="inp" style="width:auto;padding:3px 5px;font-size:11px" onchange="_calc.run.expenses[${i}].basis=this.value;calcRefresh()">
+        ${Object.entries(CALC_BASIS).map(([k, t]) => `<option value="${k}" ${e.basis === k ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
+      <td><button class="rbtn" onclick="_calc.run.expenses.splice(${i},1);calcRender()">×</button></td></tr>`).join('');
+  const items = r.items.map((it, i) => `<tr>
+      <td style="color:var(--light);font-size:10px">${i + 1}</td>
+      <td>${cIn(`items.${i}.code`, it.code, 98, 'list="calc-codes"')}</td>
+      <td class="L">${cIn(`items.${i}.name`, it.name, 170)}</td>
+      <td>${cIn(`items.${i}.qty`, it.qty, 62, 'inputmode="decimal"')}</td>
+      <td>${cIn(`items.${i}.weight`, it.weight, 58, 'inputmode="decimal"')}</td>
+      <td>${cIn(`items.${i}.boxes`, it.boxes, 48, 'inputmode="decimal"')}</td>
+      <td><select class="inp" style="width:auto;padding:3px 4px;font-size:11px" onchange="calcSet('items.${i}.cur',this.value)">
+        ${['USD', 'CNY', 'EUR', 'RUB'].map(c => `<option ${it.cur === c ? 'selected' : ''}>${c}</option>`).join('')}</select></td>
+      <td>${cIn(`items.${i}.price`, it.price, 62, 'inputmode="decimal"')}</td>
+      ${ml ? '' : `<td>${cIn(`items.${i}.markup_pct`, it.markup_pct, 52, 'placeholder="%" title="Своя наценка для позиции, %"')}</td>
+      <td>${cIn(`items.${i}.market_price`, it.market_price, 66, 'placeholder="₽/шт" title="Своя цена продажи за шт, ₽ — если заполнено, наценка не применяется"')}</td>`}
+      <td><button class="rbtn" onclick="_calc.run.items.splice(${i},1);if(!_calc.run.items.length)_calc.run.items.push(calcBlankItem());calcRender()">×</button></td></tr>`).join('');
+  return `${codeList}
+    <div class="card" style="margin-bottom:12px">
+      <div class="field-row">
+        <div class="field" style="flex:2"><label>Название расчёта</label>${cIn('title', r.title, 280)}</div>
+        <div class="field"><label>Дата поставки</label><input class="inp" type="date" value="${r.date || ''}" onchange="calcSet('date',this.value)"></div>
+        <div class="field"><label>Сценарий</label><select class="inp" onchange="_calc.run.scenario=this.value;calcRender()">
+          <option value="srb" ${!ml ? 'selected' : ''}>СРБ Глобал — прямая закупка</option>
+          <option value="ml" ${ml ? 'selected' : ''}>Мастер Логистик — продажа (СРБ покупает часть)</option></select></div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;font-size:12px">
+        <div><b>Курсы, ₽ за 1:</b></div>
+        <label>USD ${cIn('rates.USD', r.rates.USD, 80)}</label>
+        <label>EUR ${cIn('rates.EUR', r.rates.EUR, 80)}</label>
+        <label>CNY ${cIn('rates.CNY', r.rates.CNY, 80)}</label>
+        <button class="btn btn-secondary btn-sm" onclick="calcRatesCbr()">↻ Курс ЦБ</button>
+        <span style="color:var(--mid);font-size:11px">${FX.cbr?.date ? 'ЦБ РФ на ' + new Date(FX.cbr.date).toLocaleDateString('ru-RU') : ''} · таможня считает по курсу на дату регистрации ДТ</span>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;align-items:center">
+        <label>НДС, % ${cIn('vat_pct', r.vat_pct, 50)}</label>
+        <label>Комиссия за конвертацию, % от товара ${cIn('fx_comm_pct', r.fx_comm_pct, 50, 'placeholder="%"')}</label>
+        ${ml ? `<label>Сумма реализации, ₽ ${cIn('ml.revenue', r.ml.revenue, 110)}</label>
+          <label style="cursor:pointer"><input type="checkbox" ${r.ml.includes_goods ? 'checked' : ''} onchange="_calc.run.ml.includes_goods=this.checked;calcRefresh()"> в сумму реализации входит стоимость товара</label>
+          <label>Претензия, ₽ ${cIn('claim', r.claim, 90)}</label>
+          <label>Наценка СРБ сверху, % ${cIn('ml.markup_pct', r.ml.markup_pct, 50, 'placeholder="%"')}</label>`
+        : `<label>Наценка по умолчанию, % ${cIn('srb.markup_pct', r.srb.markup_pct, 50, 'placeholder="%"')}</label>`}
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <b style="font-size:13px">🚚 Расходы по поставке</b>
+      <div style="font-size:11px;color:var(--mid);margin:2px 0 6px">В таможенную стоимость входят только расходы до места прибытия в ЕАЭС (для машины из Куньмина — граница Китая с Казахстаном). Брокер, СВХ и доставка по РФ — не входят.</div>
+      <div class="tbl-wrap"><table style="min-width:640px"><thead><tr><th class="L">Статья</th><th>Сумма, ₽</th><th>Таможня</th><th>Распределять</th><th></th></tr></thead><tbody>${exp}</tbody></table></div>
+      <button class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="_calc.run.expenses.push({name:'',amount:'',in_cv:false,basis:'boxes'});calcRender()">＋ Статья</button>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+        <b style="font-size:13px">📦 Позиции поставки</b><span style="flex:1"></span>
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer">📥 Из Excel<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="calcImportItems(this)"></label>
+        <button class="btn btn-secondary btn-sm" onclick="_calc.run.items.push(calcBlankItem());calcRender()">＋ Позиция</button>
+      </div>
+      <div class="tbl-wrap"><table style="min-width:${ml ? 820 : 960}px"><thead><tr><th>№</th><th>Код ТН ВЭД</th><th class="L">Наименование</th><th>Кол-во, шт</th><th>Вес нетто, кг</th><th>Кор.</th><th>Валюта</th><th>Цена/ед</th>
+        ${ml ? '' : '<th>Своя наценка, %</th><th>Своя цена, ₽/шт</th>'}<th></th></tr></thead><tbody>${items}</tbody></table></div>
+    </div>
+    <div id="calc-results"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button class="btn btn-primary" onclick="calcSave()">💾 Сохранить расчёт</button>
+      <button class="btn btn-secondary" onclick="calcExport()">📊 Excel</button>
+      <button class="btn btn-secondary" onclick="_calc.run={...JSON.parse(JSON.stringify(_calc.run)),id:null,title:_calc.run.title+' (копия)'};calcRender();toast('Копия — сохраните под новым названием')">⧉ Копия</button>
+      <button class="btn btn-secondary" onclick="if(confirm('Начать новый расчёт? Несохранённое пропадёт.')){_calc.run=calcBlank();calcRender()}">＋ Новый</button>
+    </div>`;
+}
+
+function calcRefresh() {
+  const el = document.getElementById('calc-results'); if (!el) return;
+  const r = _calc.run, ml = r.scenario === 'ml';
+  const { L, T, warns } = _calc.res = calcCompute(r);
+  const tile = (l, v, c) => `<div style="flex:1;min-width:150px;padding:8px 10px;border:1px solid var(--border);border-radius:8px"><div style="font-size:10px;color:var(--mid)">${l}</div><div style="font-weight:700;font-size:15px;color:${c || 'var(--sage-d)'}">${v}</div></div>`;
+  const rows = L.map((x, i) => `<tr class="${i % 2 ? 'stripe' : ''}">
+      <td style="font-size:10px">${escHtml(x.it.code || '—')}</td>
+      <td class="L" style="font-size:11px"><b>${escHtml(x.it.name || '—')}</b></td>
+      <td>${calcRub(x.goods)}</td><td>${calcRub(x.alloc)}</td><td>${calcRub(x.cv)}</td>
+      <td>${calcRub(x.duty + x.vat)}</td><td>${calcRub(x.fee)}</td><td>${calcRub(x.fx)}</td>
+      <td style="font-weight:700">${calcRub(x.cost)}</td>
+      <td style="font-size:11px;color:${x.group?.low ? '#dc2626' : 'var(--mid)'}">${x.group?.usdKg != null ? x.group.usdKg.toFixed(2) : '—'}${x.group?.low ? ' ⚠' : ''}</td>
+      <td>${calcRub(x.unitCost, 2)}</td>
+      ${ml ? `<td>${calcRub(x.profit)}</td><td style="font-weight:700">${calcRub(x.unit, 2)}</td><td>${calcRub(x.box)}</td>
+              ${calcNum(r.ml.markup_pct) ? `<td style="font-weight:700;color:var(--sage-d)">${calcRub(x.unit2, 2)}</td><td>${calcRub(x.box2)}</td>` : ''}`
+           : `<td style="font-weight:700;color:var(--sage-d)">${calcRub(x.unit, 2)}</td><td>${calcRub(x.box)}</td>
+              <td style="font-size:11px;color:${x.mkFact < 0 ? '#dc2626' : 'var(--mid)'}">${x.mkFact.toFixed(1)}%${x.mkSrc === 'price' ? ' ✎' : ''}</td>`}
+    </tr>`).join('');
+  el.innerHTML = `
+    ${warns.length ? `<div style="margin-bottom:10px;padding:8px 12px;background:#fff7ed;border-left:4px solid #f59e0b;border-radius:8px;font-size:12px"><b style="color:#92400e">⚠️ Проверьте:</b><ul style="margin:4px 0 0 16px;padding:0">${warns.map(w => `<li>${escHtml(w)}</li>`).join('')}</ul></div>` : ''}
+    <div class="card" style="margin-bottom:12px">
+      <b style="font-size:13px">📊 Итоги по поставке</b>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        ${tile('Вес нетто / коробки', `${T.W.toLocaleString('ru-RU')} кг · ${T.B} кор.`)}
+        ${tile('Товар', calcRub(T.G))}
+        ${tile('Таможенная стоимость', calcRub(T.CV))}
+        ${tile('Пошлина', calcRub(T.duty))}
+        ${tile('НДС', calcRub(T.vat))}
+        ${tile('Таможенный сбор', calcRub(T.fee))}
+        ${tile('Итого таможенный платёж', calcRub(T.customs), '#b45309')}
+        ${tile('Расходы после границы', calcRub(T.expPost))}
+        ${tile('Комиссия за конвертацию', calcRub(T.fx))}
+        ${tile('Полная себестоимость', calcRub(T.cost), 'var(--charcoal)')}
+        ${ml ? tile('Прибыль Мастер Логистик', calcRub(T.profit), T.profit < 0 ? '#dc2626' : '#15803d')
+             : tile('Выручка / прибыль', `${calcRub(T.revenue)} / ${calcRub(T.profit)}`, T.profit < 0 ? '#dc2626' : '#15803d')}
+      </div>
+    </div>
+    <div class="card"><b style="font-size:13px">📋 По позициям</b>
+      <div class="tbl-wrap" style="margin-top:6px"><table style="min-width:1200px"><thead><tr>
+        <th>Код</th><th class="L">Позиция</th><th>Товар</th><th>Расходы</th><th>Там. стоимость</th><th>Пошлина+НДС</th><th>Сбор</th><th>Конвертация</th><th>Себестоимость</th><th>$/кг</th><th>Себест./шт</th>
+        ${ml ? `<th>Прибыль МЛ</th><th>Цена МЛ/шт</th><th>Цена МЛ/кор.</th>${calcNum(r.ml.markup_pct) ? '<th>Цена СРБ/шт</th><th>Цена СРБ/кор.</th>' : ''}`
+             : '<th>Цена/шт</th><th>Цена/кор.</th><th>Наценка факт</th>'}
+      </tr></thead><tbody>${rows || '<tr><td colspan="16" style="padding:12px;color:var(--light)">Добавьте позиции</td></tr>'}</tbody></table></div>
+      <div style="font-size:10px;color:var(--light);margin-top:6px">Пошлина = max(ставка % × там. стоимость; €/кг × вес) по каждому коду, внутри кода делится по там. стоимости позиций. НДС = (там. стоимость + пошлина) × НДС. Сбор — по ступеням от общей там. стоимости. ✎ — цена задана вручную.</div>
+    </div>`;
+}
+
+async function calcRatesCbr() {
+  try { localStorage.removeItem('amma_cbr'); } catch (e) {}
+  FX.cbr = await fxFetchCbr();
+  if (!FX.cbr) { toast('Сайт ЦБ недоступен — введите курсы вручную'); return; }
+  _calc.run.rates = { USD: +FX.cbr.usd_rub.toFixed(4), EUR: +(FX.cbr.eur_rub || 0).toFixed(4), CNY: +FX.cbr.cny_rub.toFixed(4) };
+  calcRender(); toast('✅ Курсы ЦБ на ' + new Date(FX.cbr.date).toLocaleDateString('ru-RU'));
+}
+
+// Импорт позиций из Excel (формат листа «Расчёт»: код, наименование, шт, кг, коробки, валюта, цена)
+async function calcImportItems(input) {
+  const file = input.files?.[0]; if (!file) return;
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames.find(n => /расч[её]т/i.test(n)) || wb.SheetNames[0]];
+    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+    const t = v => String(v ?? '').toLowerCase();
+    const h = aoa.findIndex(r => r && r.some(c => /тн ?вэд/.test(t(c))) && r.some(c => /наимен/.test(t(c))));
+    if (h < 0) { toast('Не найдена строка заголовков (Код ТН ВЭД, Наименование…)'); return; }
+    const col = {};
+    aoa[h].forEach((c, j) => {
+      const s = t(c);
+      if (/тн ?вэд/.test(s)) col.code = j; else if (/наимен/.test(s)) col.name = j;
+      else if (/кол-во,?\s*\n?\s*шт|кол-во шт|^кол-во,\s*шт/.test(s) || (/шт/.test(s) && col.qty == null && !/цена/.test(s))) col.qty = j;
+      else if (/вес/.test(s)) col.weight = j; else if (/короб/.test(s) && col.boxes == null && !/цена/.test(s)) col.boxes = j;
+      else if (/валют/.test(s) && col.cur == null) col.cur = j; else if (/цена\/ед/.test(s)) col.price = j;
+    });
+    const items = [];
+    aoa.slice(h + 1).forEach(r => {
+      if (!r) return;
+      const code = r[col.code], name = r[col.name];
+      if (!code && !name) return;
+      items.push({ ...calcBlankItem(), code: code ? String(code).replace(/\D/g, '').padStart(10, '0') : '', name: String(name || ''),
+        qty: r[col.qty] ?? '', weight: r[col.weight] ?? '', boxes: r[col.boxes] ?? '', cur: String(r[col.cur] || 'USD').toUpperCase(), price: r[col.price] ?? '' });
+    });
+    if (!items.length) { toast('Позиции не найдены'); return; }
+    _calc.run.items = items; calcRender();
+    toast(`📥 Загружено позиций: ${items.length}`);
+  } catch (e) { toast('❌ ' + (e.message || e)); } finally { input.value = ''; }
+}
+
+async function calcSave() {
+  const r = _calc.run, { T } = calcCompute(r);
+  const row = { title: r.title || 'Без названия', ship_date: r.date || null, scenario: r.scenario, data: r,
+    totals: { cost: T.cost, customs: T.customs, profit: T.profit, W: T.W, B: T.B, CV: T.CV, revenue: T.revenue ?? null },
+    updated_at: new Date().toISOString() };
+  let res;
+  if (r.id) res = await sb.from('calc_runs').update(row).eq('id', r.id).select().single();
+  else res = await sb.from('calc_runs').insert({ ...row, created_by: currentUser.company_name || currentUser.login }).select().single();
+  if (res.error) { toast('❌ ' + res.error.message); return; }
+  r.id = res.data?.id;
+  logActivity('calc_save', 'calc', r.id, r.title, `Себестоимость ${calcRub(T.cost)}`);
+  toast('✅ Расчёт сохранён / 已保存');
+}
+async function calcLoadRuns() {
+  const { data, error } = await sb.from('calc_runs').select('id, title, ship_date, scenario, totals, created_by, updated_at').order('updated_at', { ascending: false }).limit(200);
+  if (error) { _calc.ok = false; } else _calc.runs = data || [];
+  calcRender();
+}
+function calcHistoryHTML() {
+  return `<div class="card"><div class="tbl-wrap"><table style="min-width:760px"><thead><tr><th class="L">Расчёт</th><th>Дата поставки</th><th>Сценарий</th><th>Вес / кор.</th><th>Таможня</th><th>Себестоимость</th><th>Прибыль</th><th>Автор</th><th></th></tr></thead>
+    <tbody>${_calc.runs.map((x, i) => `<tr class="${i % 2 ? 'stripe' : ''}">
+      <td class="L"><b>${escHtml(x.title)}</b><div style="font-size:10px;color:var(--light)">изм. ${new Date(x.updated_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div></td>
+      <td>${x.ship_date ? opFmtDateFull(x.ship_date) : '—'}</td><td style="font-size:11px">${x.scenario === 'ml' ? 'Мастер Логистик' : 'СРБ прямая'}</td>
+      <td style="font-size:11px">${(x.totals?.W || 0).toLocaleString('ru-RU')} кг / ${x.totals?.B || 0}</td>
+      <td>${calcRub(x.totals?.customs)}</td><td style="font-weight:700">${calcRub(x.totals?.cost)}</td>
+      <td style="color:${(x.totals?.profit || 0) < 0 ? '#dc2626' : '#15803d'}">${calcRub(x.totals?.profit)}</td>
+      <td style="font-size:11px;color:var(--mid)">${escHtml(x.created_by || '')}</td>
+      <td style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="calcOpenRun(${x.id})">Открыть</button>
+        <button class="rbtn" title="Удалить" onclick="calcDeleteRun(${x.id})">×</button></td></tr>`).join('') || '<tr><td colspan="9" style="padding:14px;color:var(--light)">Сохранённых расчётов пока нет</td></tr>'}</tbody></table></div></div>`;
+}
+async function calcOpenRun(id) {
+  const { data, error } = await sb.from('calc_runs').select('*').eq('id', id).single();
+  if (error || !data) { toast('❌ ' + (error?.message || 'не найден')); return; }
+  _calc.run = { ...calcBlank(), ...data.data, id: data.id };
+  _calc.tab = 'run'; calcRender();
+}
+async function calcDeleteRun(id) {
+  if (!confirm('Удалить расчёт из истории?')) return;
+  const { error } = await sb.from('calc_runs').delete().eq('id', id);
+  if (error) { toast('❌ ' + error.message); return; }
+  calcLoadRuns();
+}
+
+function calcExport() {
+  const r = _calc.run, ml = r.scenario === 'ml';
+  const { L, T } = calcCompute(r);
+  const p = [['Расчёт', r.title], ['Дата поставки', r.date], ['Сценарий', ml ? 'Мастер Логистик' : 'СРБ Глобал — прямая закупка'],
+    ['Курс USD', calcNum(r.rates.USD)], ['Курс EUR', calcNum(r.rates.EUR)], ['Курс CNY', calcNum(r.rates.CNY)],
+    ['НДС, %', calcNum(r.vat_pct)], ['Комиссия за конвертацию, %', calcNum(r.fx_comm_pct)], [],
+    ['РАСХОДЫ', 'Сумма, ₽', 'В там. стоимость', 'Распределение'],
+    ...r.expenses.filter(e => calcNum(e.amount)).map(e => [e.name, calcNum(e.amount), e.in_cv ? 'да' : 'нет', CALC_BASIS[e.basis]]), [],
+    ['ИТОГИ'], ['Товар, ₽', T.G], ['Таможенная стоимость, ₽', T.CV], ['Пошлина, ₽', T.duty], ['НДС, ₽', T.vat], ['Таможенный сбор, ₽', T.fee],
+    ['Итого таможенный платёж, ₽', T.customs], ['Комиссия за конвертацию, ₽', T.fx], ['Полная себестоимость, ₽', T.cost],
+    ...(ml ? [['Сумма реализации, ₽', calcNum(r.ml.revenue)], ['Прибыль Мастер Логистик, ₽', T.profit]] : [['Выручка, ₽', T.revenue], ['Прибыль, ₽', T.profit]])];
+  const head = ['Код ТН ВЭД', 'Наименование', 'Кол-во, шт', 'Вес, кг', 'Коробки', 'Валюта', 'Цена/ед', 'Товар, ₽', 'Расходы, ₽', 'Там. стоимость, ₽', 'Пошлина, ₽', 'НДС, ₽', 'Сбор, ₽', 'Конвертация, ₽', 'Себестоимость, ₽', '$/кг', 'Себест./шт, ₽']
+    .concat(ml ? ['Прибыль МЛ, ₽', 'Цена МЛ/шт', 'Цена МЛ/кор.', 'Цена СРБ/шт', 'Цена СРБ/кор.'] : ['Цена/шт, ₽', 'Цена/кор., ₽', 'Наценка факт, %']);
+  const lines = L.map(x => [x.it.code, x.it.name, calcNum(x.it.qty), x.w, x.b, x.it.cur, calcNum(x.it.price), x.goods, x.alloc, x.cv, x.duty, x.vat, x.fee, x.fx, x.cost,
+    x.group?.usdKg != null ? +x.group.usdKg.toFixed(2) : '', x.unitCost]
+    .concat(ml ? [x.profit, x.unit, x.box, x.unit2, x.box2] : [x.unit, x.box, +x.mkFact.toFixed(1)])
+    .map(v => typeof v === 'number' ? +v.toFixed(2) : v));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(p), 'Параметры');
+  const ws = XLSX.utils.aoa_to_sheet([head, ...lines]); ws['!cols'] = head.map((_, i) => ({ wch: i === 1 ? 28 : 13 }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Позиции');
+  XLSX.writeFile(wb, `Калькулятор_${(r.title || 'расчёт').replace(/[\\/:*?"<>|]/g, '')}.xlsx`);
+}
+
+// ── Справочник ──
+function calcRefHTML() {
+  const codes = _calc.ref.codes.map((c, i) => `<tr class="${i % 2 ? 'stripe' : ''}">
+      <td><input class="inp" value="${escHtml(c.code)}" style="width:100px;padding:3px 5px;font-size:12px" onchange="_calc.ref.codes[${i}].code=this.value.replace(/\\D/g,'');_calc.ref.codes[${i}]._dirty=1"></td>
+      ${['duty_pct', 'duty_eur_kg', 'vat_pct'].map(f => `<td><input class="inp" value="${c[f] ?? ''}" style="width:62px;padding:3px 5px;font-size:12px" onchange="_calc.ref.codes[${i}].${f}=this.value===''?null:calcNum(this.value);_calc.ref.codes[${i}]._dirty=1"></td>`).join('')}
+      <td class="L"><input class="inp" value="${escHtml(c.descr || '')}" style="width:260px;padding:3px 5px;font-size:12px" onchange="_calc.ref.codes[${i}].descr=this.value;_calc.ref.codes[${i}]._dirty=1"></td>
+      <td><input class="inp" value="${c.control_usd_kg ?? ''}" style="width:62px;padding:3px 5px;font-size:12px" onchange="_calc.ref.codes[${i}].control_usd_kg=this.value===''?null:calcNum(this.value);_calc.ref.codes[${i}]._dirty=1"></td>
+      <td><button class="rbtn" onclick="calcRefDel('calc_hs_codes',${c.id ?? 'null'},${i})">×</button></td></tr>`).join('');
+  const tiers = _calc.ref.tiers.map((t, i) => `<tr><td><input class="inp" value="${t.from_rub}" style="width:120px;padding:3px 5px" onchange="_calc.ref.tiers[${i}].from_rub=calcNum(this.value);_calc.ref.tiers[${i}]._dirty=1"></td>
+      <td><input class="inp" value="${t.fee}" style="width:90px;padding:3px 5px" onchange="_calc.ref.tiers[${i}].fee=calcNum(this.value);_calc.ref.tiers[${i}]._dirty=1"></td>
+      <td><button class="rbtn" onclick="calcRefDel('calc_fee_tiers',${t.id ?? 'null'},${i})">×</button></td></tr>`).join('');
+  return `<div class="card" style="margin-bottom:12px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:13px">Коды ТН ВЭД</b>
+        <span style="font-size:11px;color:var(--mid)">Пошлина: ставка % и «не менее €/кг» (пусто — без минимума). Контроль $/кг — ориентир таможни по стоимости.</span></div>
+      <div class="tbl-wrap" style="margin-top:6px"><table style="min-width:760px"><thead><tr><th>Код</th><th>Пошлина, %</th><th>Не менее, €/кг</th><th>НДС, %</th><th class="L">Описание</th><th>Контроль $/кг</th><th></th></tr></thead><tbody>${codes}</tbody></table></div>
+      <button class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="_calc.ref.codes.push({code:'',duty_pct:null,duty_eur_kg:null,vat_pct:22,descr:'',control_usd_kg:null,_dirty:1});calcRender()">＋ Код</button>
+    </div>
+    <div class="card" style="margin-bottom:12px"><b style="font-size:13px">Таможенный сбор (ступени)</b>
+      <div style="font-size:11px;color:var(--mid);margin:2px 0 6px">Сбор = сумма из строки с наибольшим «от» не выше общей таможенной стоимости. Сверяйте при изменении постановления.</div>
+      <table style="min-width:320px"><thead><tr><th>Там. стоимость от, ₽</th><th>Сбор, ₽</th><th></th></tr></thead><tbody>${tiers}</tbody></table>
+      <button class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="_calc.ref.tiers.push({from_rub:0,fee:0,_dirty:1});calcRender()">＋ Ступень</button>
+    </div>
+    <button class="btn btn-primary" onclick="calcRefSave()">💾 Сохранить справочник</button>`;
+}
+async function calcRefSave() {
+  for (const [tb, list, key] of [['calc_hs_codes', _calc.ref.codes, 'code'], ['calc_fee_tiers', _calc.ref.tiers, 'from_rub']]) {
+    const dirty = list.filter(x => x._dirty && x[key] !== '' && x[key] != null);
+    for (const x of dirty) {
+      const { _dirty, ...row } = x;
+      const res = row.id ? await sb.from(tb).update(row).eq('id', row.id) : await sb.from(tb).insert(row).select().single();
+      if (res.error) { toast('❌ ' + res.error.message); return; }
+      if (!row.id && res.data) x.id = res.data.id;
+      delete x._dirty;
+    }
+  }
+  logActivity('calc_ref', 'calc', null, 'справочник', 'Справочник калькулятора изменён');
+  toast('✅ Справочник сохранён');
+}
+async function calcRefDel(tb, id, i) {
+  if (!confirm('Удалить строку справочника?')) return;
+  if (id) { const { error } = await sb.from(tb).delete().eq('id', id); if (error) { toast('❌ ' + error.message); return; } }
+  (tb === 'calc_hs_codes' ? _calc.ref.codes : _calc.ref.tiers).splice(i, 1); calcRender();
+}
+
+// ══════════════════════════════════════════════════════════
+//  📇 КЛИЕНТСКАЯ БАЗА ДЛЯ ПОИСКА (CRM → «База»): импорт из Excel, дубли,
+//  распределение по менеджерам, фильтры, результат звонка в один клик.
+// ══════════════════════════════════════════════════════════
+const BASE_FIELDS = [
+  // [поле, заголовок в шаблоне, ключевые слова для распознавания столбца]
+  ['company', 'Компания *', /компан|организац|назван|наимен|клиент/],
+  ['inn', 'ИНН', /инн/],
+  ['city', 'Город', /город|населен/],
+  ['region', 'Регион', /регион|область|край/],
+  ['address', 'Адрес', /адрес/],
+  ['segment', 'Тип (салон/опт/сеть…)', /тип|сегмент|вид деят/],
+  ['contact_name', 'Контактное лицо', /контакт.*лиц|фио|имя/],
+  ['decision_maker', 'ЛПР (кто решает)', /лпр|руковод|директор|решени/],
+  ['phone', 'Телефон', /тел/],
+  ['email', 'Email', /mail|почт/],
+  ['messenger', 'Telegram / WhatsApp', /telegram|телеграм|whats|ватсап|мессендж/],
+  ['website', 'Сайт', /сайт|site|www/],
+  ['socials', 'Соцсети (VK, Instagram)', /соц|vk|вк|instagram|инст/],
+  ['current_supplier', 'Текущий поставщик', /поставщик/],
+  ['volume', 'Объём закупок', /объ[её]м/],
+  ['interests', 'Что берут (срезка/зелень/горшечные)', /интерес|категор|что бер|ассорт/],
+  ['source', 'Источник', /источник/],
+  ['tags', 'Теги (через запятую)', /тег/],
+  ['notes', 'Комментарий', /коммент|примеч|заметк/],
+];
+let _base = { q: '', stage: 'open', city: '', seg: '', mgr: '', due: false, limit: 100, sel: new Set(), imp: null };
+
+function basePhoneKey(p) { const d = String(p || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; }
+function baseCompanyKey(c, city) { return impNorm(String(c || '').replace(/^(ооо|ип|ао|зао|оао)\s+/i, '').replace(/[«»"]/g, '')) + '|' + impNorm(city); }
+
+async function crmLoadAllLeads() {
+  const out = [];
+  for (let from = 0; from < 50000; from += 1000) {
+    const { data, error } = await crmScopeMgr(sb.from('crm_leads').select('*')).order('updated_at', { ascending: false }).range(from, from + 999);
+    if (error) return { data: out, error };
+    out.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  return { data: out, error: null };
+}
+
+function baseFiltered() {
+  const t = crmToday(), q = _base.q.toLowerCase();
+  return _crm.leads.filter(l =>
+    (_base.stage === 'all' || (_base.stage === 'open' ? !['won', 'lost'].includes(l.stage) : (l.stage || 'new') === _base.stage)) &&
+    (!_base.city || (l.city || '') === _base.city) &&
+    (!_base.seg || (l.segment || '') === _base.seg) &&
+    (!_base.mgr || String(l.manager_id || '') === _base.mgr) &&
+    (!_base.due || (l.next_date && l.next_date <= t)) &&
+    (!q || [l.company, l.contact_name, l.decision_maker, l.phone, l.inn, l.city, l.tags, l.notes].join(' ').toLowerCase().includes(q)));
+}
+
+function baseHTML() {
+  const t = crmToday();
+  const list = baseFiltered();
+  const shown = list.slice(0, _base.limit);
+  const cities = [...new Set(_crm.leads.map(l => l.city).filter(Boolean))].sort();
+  const segs = [...new Set(_crm.leads.map(l => l.segment).filter(Boolean))].sort();
+  const cnt = st => _crm.leads.filter(l => (l.stage || 'new') === st).length;
+  const sel = (id, val, opts) => `<select class="inp" style="width:auto;padding:4px 6px;font-size:12px" onchange="_base.${id}=this.value;_base.limit=100;crmRender()">${opts.map(([v, t2]) => `<option value="${escHtml(v)}" ${val === v ? 'selected' : ''}>${escHtml(t2)}</option>`).join('')}</select>`;
+  const rows = shown.map(l => {
+    const st = crmStage(l.stage);
+    return `<tr style="${l.do_not_call ? 'opacity:.55' : ''}">
+      <td><input type="checkbox" ${_base.sel.has(String(l.id)) ? 'checked' : ''} onchange="baseToggle('${l.id}',this.checked)"></td>
+      <td class="L" style="cursor:pointer" onclick="crmLeadModal(${l.id})"><b>${escHtml(l.company || '—')}</b>${l.do_not_call ? ' <span title="Не звонить">🚫</span>' : ''}
+        <div style="font-size:10px;color:var(--mid)">${[l.city, l.segment, l.inn ? 'ИНН ' + l.inn : ''].filter(Boolean).map(escHtml).join(' · ')}</div></td>
+      <td style="font-size:11px">${escHtml(l.decision_maker || l.contact_name || '')}${l.phone ? `<div><a href="tel:${escHtml(l.phone)}">${escHtml(l.phone)}</a></div>` : ''}</td>
+      <td style="font-size:11px">${st[1]}${l.call_attempts ? `<div style="font-size:10px;color:var(--light)">попыток: ${l.call_attempts}</div>` : ''}</td>
+      <td style="font-size:11px;color:${l.next_date && l.next_date < t ? '#dc2626' : l.next_date === t ? '#b45309' : 'var(--mid)'}">${l.next_date ? opFmtDate(l.next_date) + ' ' + escHtml(l.next_action || '') : '—'}</td>
+      ${isScopedMgr() ? '' : `<td style="font-size:10px;color:var(--mid)">${escHtml(mgrName(l.manager_id)) || '—'}</td>`}
+      <td style="white-space:nowrap">
+        <button class="rbtn" title="Не дозвонился" onclick="baseCall(${l.id},'noanswer')">📵</button>
+        <button class="rbtn" title="Перезвонить" onclick="baseCall(${l.id},'later')">⏰</button>
+        <button class="rbtn" title="Интересно — в работу" onclick="baseCall(${l.id},'yes')">👍</button>
+        <button class="rbtn" title="Неинтересно" onclick="baseCall(${l.id},'no')">👎</button>
+      </td></tr>`;
+  }).join('');
+  return `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+      <label class="btn btn-gold btn-sm" style="cursor:pointer">📥 Импорт из Excel<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="baseImportFile(this)"></label>
+      <button class="btn btn-secondary btn-sm" onclick="baseTemplate()">📄 Шаблон базы</button>
+      <button class="btn btn-secondary btn-sm" onclick="baseExport()">📊 Выгрузить (${list.length})</button>
+      <button class="btn btn-primary btn-sm" onclick="crmLeadModal()">＋ Лид</button>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--mid)">🧊 холодных: ${cnt('cold')} · в работе: ${_crm.leads.filter(l => !['cold', 'won', 'lost'].includes(l.stage)).length}</span>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+      <input class="inp" placeholder="🔍 Компания, ИНН, телефон, тег…" value="${escHtml(_base.q)}" style="max-width:240px;padding:4px 8px;font-size:12px"
+        oninput="_base.q=this.value;_base.limit=100;clearTimeout(window._crmT);window._crmT=setTimeout(()=>{crmRender();const i=document.querySelector('#crm-content input[placeholder^=\\'🔍\\']');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},300)">
+      ${sel('stage', _base.stage, [['open', 'Все в работе'], ['all', 'Все этапы'], ...CRM_STAGES.map(s => [s[0], s[1]])])}
+      ${sel('city', _base.city, [['', 'Все города'], ...cities.map(c => [c, c])])}
+      ${sel('seg', _base.seg, [['', 'Все типы'], ...segs.map(c => [c, c])])}
+      ${isScopedMgr() ? '' : sel('mgr', _base.mgr, [['', 'Все менеджеры'], ...allClients.filter(u => u.role === 'manager').map(m => [String(m.id), m.company_name || m.login])])}
+      <label style="font-size:12px;cursor:pointer"><input type="checkbox" ${_base.due ? 'checked' : ''} onchange="_base.due=this.checked;crmRender()"> ⏰ Звонить сегодня</label>
+    </div>
+    ${_base.sel.size ? `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;padding:6px 10px;background:var(--gold-l);border-radius:8px;font-size:12px">
+      Выбрано: <b>${_base.sel.size}</b>
+      <select class="inp" style="width:auto;padding:3px 6px;font-size:11px" onchange="if(this.value)baseBulk('stage',this.value)"><option value="">Сменить этап…</option>${CRM_STAGES.map(s => `<option value="${s[0]}">${s[1]}</option>`).join('')}</select>
+      ${isScopedMgr() ? '' : `<select class="inp" style="width:auto;padding:3px 6px;font-size:11px" onchange="if(this.value)baseBulk('mgr',this.value)"><option value="">Назначить менеджера…</option>${allClients.filter(u => u.role === 'manager').map(m => `<option value="${m.id}">${escHtml(m.company_name || m.login)}</option>`).join('')}</select>`}
+      ${isScopedMgr() ? '' : `<button class="btn btn-danger btn-sm" style="font-size:10px;padding:2px 8px" onclick="baseBulk('delete')">🗑 Удалить</button>`}
+      <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px" onclick="_base.sel.clear();crmRender()">Снять выбор</button></div>` : ''}
+    <div class="tbl-wrap"><table style="min-width:900px"><thead><tr>
+      <th style="width:26px"><input type="checkbox" title="Выбрать показанные" onchange="baseSelectShown(this.checked)"></th>
+      <th class="L">Компания</th><th>Контакт</th><th>Этап</th><th>Следующий шаг</th>${isScopedMgr() ? '' : '<th>Менеджер</th>'}<th>Звонок</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="7" style="padding:14px;color:var(--light)">Нет лидов под фильтр. Загрузите базу из Excel или добавьте лида.</td></tr>'}</tbody></table></div>
+    ${list.length > _base.limit ? `<button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="_base.limit+=200;crmRender()">Показать ещё (${list.length - _base.limit})</button>` : ''}
+    <div style="font-size:10px;color:var(--light);margin-top:6px">📵 не дозвонился (+1 попытка, перезвон завтра) · ⏰ перезвонить в выбранный день · 👍 интересно → «Первый контакт» · 👎 неинтересно → «Отказ» с причиной</div>`;
+}
+function baseToggle(id, on) { if (on) _base.sel.add(String(id)); else _base.sel.delete(String(id)); crmRender(); }
+function baseSelectShown(on) { baseFiltered().slice(0, _base.limit).forEach(l => on ? _base.sel.add(String(l.id)) : _base.sel.delete(String(l.id))); crmRender(); }
+
+// Результат звонка в один клик
+async function baseCall(id, kind) {
+  const l = _crm.leads.find(x => String(x.id) === String(id)); if (!l) return;
+  const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString('sv-SE');
+  let upd = { updated_at: new Date().toISOString(), last_contact_at: new Date().toISOString() }, note = '';
+  if (kind === 'noanswer') {
+    upd.call_attempts = (l.call_attempts || 0) + 1; upd.next_date = tomorrow; upd.next_action = upd.next_action || 'Перезвонить (не дозвонились)';
+    note = `📵 Не дозвонились (попытка ${upd.call_attempts})`;
+  } else if (kind === 'later') {
+    const d = prompt('Когда перезвонить? (ГГГГ-ММ-ДД)', tomorrow); if (!d) return;
+    const what = prompt('Что сделать?', 'Перезвонить') || 'Перезвонить';
+    upd.next_date = d; upd.next_action = what; if (l.stage === 'cold' || l.stage === 'new') upd.stage = 'contacted';
+    note = `⏰ Договорились: ${what} ${opFmtDate(d)}`;
+  } else if (kind === 'yes') {
+    upd.stage = ['cold', 'new'].includes(l.stage) ? 'contacted' : l.stage;
+    note = '👍 Интересно — взяли в работу';
+  } else if (kind === 'no') {
+    const why = prompt('Почему неинтересно? (дорого, уже есть поставщик, не их профиль…)', '');
+    if (why === null) return;
+    upd.stage = 'lost'; upd.lost_reason = why || 'неинтересно'; upd.next_date = null;
+    note = '👎 Неинтересно: ' + (why || '—');
+  }
+  const { error } = await sb.from('crm_leads').update(upd).eq('id', id);
+  if (error) { toast('❌ ' + (crmMissing(error) || /column/.test(error.message) ? 'Выполните sql_leads_base.sql' : error.message)); return; }
+  Object.assign(l, upd);
+  await crmAct({ lead_id: id }, 'call', note);
+  toast('✅ ' + note);
+  crmRender(); crmBadge();
+  if (kind === 'yes') crmLeadModal(id);
+}
+
+async function baseBulk(action, val) {
+  const ids = [..._base.sel];
+  if (!ids.length) return;
+  if (action === 'delete' && !confirm(`Удалить ${ids.length} лидов вместе с историей?`)) return;
+  for (let i = 0; i < ids.length; i += 200) {
+    const part = ids.slice(i, i + 200);
+    const q = action === 'delete' ? sb.from('crm_leads').delete()
+      : sb.from('crm_leads').update(action === 'stage' ? { stage: val, updated_at: new Date().toISOString() } : { manager_id: val, updated_at: new Date().toISOString() });
+    const { error } = await q.in('id', part);
+    if (error) { toast('❌ ' + error.message); return; }
+  }
+  logActivity('crm_bulk', 'lead', null, action, `${ids.length} лидов: ${action} ${val || ''}`);
+  _base.sel.clear(); toast('✅ Готово'); await crmLoad(); crmRender();
+}
+
+// ── Импорт ──
+function baseTemplate() {
+  const ws = XLSX.utils.aoa_to_sheet([BASE_FIELDS.map(f => f[1]),
+    ['ООО «Цветы Урала»', '6671000000', 'Екатеринбург', 'Свердловская обл.', 'ул. Ленина, 1', 'Оптовик', 'Анна', 'Игорь Петров (директор)', '+7 912 000-00-00', 'info@example.ru', '@flowers_ural', 'example.ru', 'vk.com/example', 'Голландия через Москву', '~40 коробок/нед', 'срезка, зелень', 'Выставка Flowers Expo', 'опт, приоритет', '']]);
+  ws['!cols'] = BASE_FIELDS.map(f => ({ wch: Math.max(14, f[1].length + 2) }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'База');
+  XLSX.writeFile(wb, 'Шаблон_клиентской_базы_AMMA.xlsx');
+}
+async function baseImportFile(input) {
+  const file = input.files?.[0]; if (!file) return;
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
+    const h = aoa.findIndex(r => r && r.some(c => BASE_FIELDS[0][2].test(String(c).toLowerCase())));
+    if (h < 0) { toast('Не нашла столбец «Компания» — скачайте шаблон базы'); return; }
+    const map = {};
+    aoa[h].forEach((c, j) => {
+      const s = String(c).toLowerCase().trim(); if (!s) return;
+      const f = BASE_FIELDS.find(([k, , re]) => map[k] == null && re.test(s));
+      if (f) map[f[0]] = j;
+    });
+    const rows = aoa.slice(h + 1).map(r => {
+      const o = {}; Object.entries(map).forEach(([k, j]) => { const v = String(r[j] ?? '').trim(); if (v) o[k] = v; }); return o;
+    }).filter(o => o.company);
+    if (!rows.length) { toast('В файле нет строк с названием компании'); return; }
+    // дубли: с существующими лидами, клиентами и внутри файла
+    await crmLoad();
+    const seen = new Set();
+    const addKeys = x => { const p = basePhoneKey(x.phone); if (p) seen.add('p' + p); if (x.inn) seen.add('i' + String(x.inn).replace(/\D/g, '')); seen.add('c' + baseCompanyKey(x.company || x.company_name, x.city)); };
+    _crm.leads.forEach(addKeys);
+    const { data: cls } = await sb.from('users').select('company_name, contact').eq('role', 'client');
+    (cls || []).forEach(c => { seen.add('c' + baseCompanyKey(c.company_name, '')); const p = basePhoneKey(c.contact); if (p) seen.add('p' + p); });
+    const fresh = [], dups = [];
+    rows.forEach(x => {
+      const keys = [basePhoneKey(x.phone) && 'p' + basePhoneKey(x.phone), x.inn && 'i' + String(x.inn).replace(/\D/g, ''), 'c' + baseCompanyKey(x.company, x.city), 'c' + baseCompanyKey(x.company, '')].filter(Boolean);
+      if (keys.some(k => seen.has(k))) dups.push(x); else { fresh.push(x); addKeys(x); }
+    });
+    _base.imp = { fresh, dups, file: file.name, cols: Object.keys(map) };
+    baseImportModal();
+  } catch (e) { toast('❌ ' + (e.message || e)); } finally { input.value = ''; }
+}
+function baseImportModal() {
+  const { fresh, dups, file, cols } = _base.imp;
+  const mgrs = allClients.filter(u => u.role === 'manager');
+  const mc = document.getElementById('modal-content'); mc.classList.add('op-wide');
+  mc.innerHTML = `<div class="modal-title">📥 Импорт базы: ${escHtml(file)}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      ${crmTile('Новых лидов', fresh.length, '#15803d')}${crmTile('Дубли — пропущены', dups.length, dups.length ? '#b45309' : '')}
+    </div>
+    <div style="font-size:11px;color:var(--mid);margin-bottom:8px">Распознаны столбцы: ${cols.map(c => BASE_FIELDS.find(f => f[0] === c)[1]).join(', ')}.
+      Дубли ищутся по телефону, ИНН и названию компании — среди лидов и действующих клиентов.</div>
+    <div class="field-row">
+      <div class="field"><label>Этап</label><select class="inp" id="bi-stage">${CRM_STAGES.filter(s => ['cold', 'new'].includes(s[0])).map(s => `<option value="${s[0]}">${s[1]}</option>`).join('')}</select></div>
+      <div class="field" style="flex:2"><label>Источник (для строк без источника)</label><input class="inp" id="bi-src" placeholder="напр. 2ГИС, Екатеринбург, сентябрь 2026"></div>
+    </div>
+    ${isScopedMgr() ? '<div style="font-size:12px;margin-bottom:8px">Лиды будут закреплены за вами.</div>' : `
+    <div class="field"><label>Распределить по менеджерам (поровну между отмеченными)</label>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px">${mgrs.map(m => `<label style="cursor:pointer"><input type="checkbox" class="bi-mgr" value="${m.id}" ${m.client_scope === 'own' ? 'checked' : ''}> ${escHtml(m.company_name || m.login)}${m.client_scope === 'own' ? ' 💼' : ''}</label>`).join('')}</div>
+      <div style="font-size:10px;color:var(--light)">Не отмечено никого — лиды останутся без менеджера</div></div>`}
+    ${dups.length ? `<details style="margin-top:8px;font-size:12px"><summary>Показать дубли (${dups.length})</summary>${dups.slice(0, 50).map(d => `<div>· ${escHtml(d.company)} ${escHtml(d.city || '')} ${escHtml(d.phone || '')}</div>`).join('')}${dups.length > 50 ? '<div>…</div>' : ''}</details>` : ''}
+    <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+      <button class="btn btn-primary" ${fresh.length ? '' : 'disabled'} onclick="baseImportSave()">✅ Загрузить ${fresh.length} лидов</button></div>`;
+  openModal();
+}
+async function baseImportSave() {
+  const { fresh, file } = _base.imp;
+  const stage = document.getElementById('bi-stage').value, src = document.getElementById('bi-src').value.trim();
+  const mgrs = isScopedMgr() ? [currentUser.id] : [...document.querySelectorAll('.bi-mgr:checked')].map(x => x.value);
+  const who = crmWho(), now = new Date().toISOString();
+  const rows = fresh.map((x, i) => ({ ...x, stage, source: x.source || src || file, manager_id: mgrs.length ? mgrs[i % mgrs.length] : null,
+    do_not_call: false, call_attempts: 0, created_by: who, updated_at: now }));
+  for (let i = 0; i < rows.length; i += 500) {
+    const { error } = await sb.from('crm_leads').insert(rows.slice(i, i + 500));
+    if (error) { toast('❌ ' + (/column/.test(error.message) ? 'Выполните sql_leads_base.sql — ' : '') + error.message); return; }
+  }
+  logActivity('crm_import', 'lead', null, file, `Импорт базы: ${rows.length} лидов`);
+  closeModal(); toast(`✅ Загружено ${rows.length} лидов`);
+  _base.stage = stage; await crmLoad(); crmRender();
+}
+function baseExport() {
+  const list = baseFiltered();
+  const head = [...BASE_FIELDS.map(f => f[1].replace(' *', '')), 'Этап', 'Следующий шаг', 'Дата шага', 'Менеджер', 'Попыток звонка'];
+  const aoa = [head, ...list.map(l => [...BASE_FIELDS.map(f => l[f[0]] || ''), crmStage(l.stage)[1], l.next_action || '', l.next_date || '', mgrName(l.manager_id), l.call_attempts || 0])];
+  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = head.map(() => ({ wch: 18 }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'База');
+  XLSX.writeFile(wb, `Клиентская_база_${opToday()}.xlsx`);
+}
+
+// ── Импорт закупа из Excel в журнал заказа (формат закупщиков: 电话 | 供应商名称 | RU | 中文 | … | 单价 | 扎/箱 | 总扎数 | 枝(克)/扎) ──
+let _opImp = null;
+function opSheetAoa(ws) {
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+  // объединённые ячейки (поставщик на группу строк) — размножаем значение на весь диапазон
+  (ws['!merges'] || []).forEach(m => {
+    const v = aoa[m.s.r]?.[m.s.c];
+    if (v == null || v === '') return;
+    for (let r = m.s.r; r <= m.e.r; r++) for (let c = m.s.c; c <= m.e.c; c++) { aoa[r] = aoa[r] || []; if (aoa[r][c] == null || aoa[r][c] === '') aoa[r][c] = v; }
+  });
+  return aoa;
+}
+async function opImportFile(input) {
+  const file = input.files?.[0]; if (!file) return;
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const aoa = opSheetAoa(wb.Sheets[wb.SheetNames[0]]);
+    const t = v => String(v ?? '').toLowerCase();
+    const h = aoa.findIndex(r => r && r.some(c => /品名|назван/.test(t(c))) && r.some(c => /单价|扎|банч/.test(t(c))));
+    if (h < 0) { toast('Не нашла заголовки (品名 / 单价 / 扎数)'); return; }
+    const width = Math.max(...aoa.slice(0, h + 1).map(r => (r || []).length));
+    const head = Array.from({ length: width }, (_, j) => t(aoa[h]?.[j]) + ' ' + t(aoa[h - 1]?.[j]));
+    const data = aoa.slice(h + 1).filter(r => r && r.some(v => v != null && v !== ''));
+    const nonEmpty = j => data.filter(r => r[j] != null && String(r[j]).trim() !== '').length;
+    const pick = (re, not) => { const js = head.map((s, j) => j).filter(j => re.test(head[j]) && !(not && not.test(head[j]))); return js.sort((a, b) => nonEmpty(b) - nonEmpty(a))[0]; };
+    const names = head.map((s, j) => j).filter(j => /назван|品名/.test(head[j]) && !/поставщик|供应商/.test(head[j]));
+    const col = {
+      ru: names[0], cn: names[1], sup: pick(/供应商|поставщик/), phone: pick(/电话|тел/),
+      boxes: pick(/箱数|кор\.\s/), bpb: pick(/банч\/кор|扎\/箱/), total: pick(/总扎数|всего банч/),
+      stems: pick(/枝|ст\(г\)|стебл/), price: pick(/单价|закуп/, /件价/) ?? pick(/¥\/банч|件价/),
+    };
+    const num = v => { const n = parseFloat(String(v ?? '').replace(',', '.')); return isNaN(n) ? null : n; };
+    await opLoadSups();
+    const rows = data.map(r => {
+      const ru = String(r[col.ru] ?? '').trim(), cn = String(r[col.cn] ?? '').trim();
+      if (!ru && !cn) return null;
+      if (/^итого|^合计/i.test(ru)) return null;
+      const bunches = num(r[col.total]) ?? ((num(r[col.boxes]) || 0) * (num(r[col.bpb]) || 0));
+      const price = num(r[col.price]);
+      if (!bunches && price == null) return null;
+      const g = _op.groups.find(x => !x.orphan && ((ru && impNorm(x.ru) === impNorm(ru)) || (cn && impNorm(x.cn) === impNorm(cn))));
+      const supName = String(r[col.sup] ?? '').trim(), phone = String(r[col.phone] ?? '').replace(/\.0$/, '').trim();
+      return { ru: ru || cn, cn, g, bunches, price, stems: r[col.stems] != null ? String(r[col.stems]).trim() : '', supName, phone };
+    }).filter(Boolean);
+    if (!rows.length) { toast('Строк закупа не найдено'); return; }
+    // поставщики: ищем по телефону или названию, новых создадим при загрузке
+    const supKey = r => r.supName ? (r.phone || '') + '|' + r.supName : '';
+    const newSups = {};
+    rows.forEach(r => {
+      if (!r.supName) return;
+      const found = _op.sups.find(s => (r.phone && String(s.phone || '').replace(/\D/g, '') === r.phone.replace(/\D/g, '')) || [s.name_cn, s.name_ru].some(n => n && impNorm(n) === impNorm(r.supName)));
+      if (found) r.supId = found.id; else newSups[supKey(r)] = { name: r.supName, phone: r.phone };
+    });
+    _opImp = { rows, newSups, file: file.name };
+    opImportModal();
+  } catch (e) { toast('❌ ' + (e.message || e)); } finally { input.value = ''; }
+}
+function opImportModal() {
+  const { rows, newSups, file } = _opImp;
+  const matched = rows.filter(r => r.g).length, total = rows.reduce((s, r) => s + (r.bunches || 0) * (r.price || 0), 0);
+  const noSup = rows.filter(r => !r.supName).length, noPrice = rows.filter(r => r.price == null).length;
+  const exists = _op.lots.length;
+  const mc = document.getElementById('modal-content'); mc.classList.add('op-wide');
+  mc.innerHTML = `<div class="modal-title">📥 Закуп из Excel: ${escHtml(file)}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      ${crmTile('Строк закупа', rows.length)}${crmTile('Совпало с заказом', matched + ' / ' + rows.length, matched < rows.length ? '#b45309' : '#15803d')}
+      ${crmTile('Сумма закупа', opMoney(total))}${crmTile('Новых поставщиков', Object.keys(newSups).length)}
+    </div>
+    ${noSup || noPrice || exists ? `<div style="margin-bottom:10px;padding:8px 12px;background:#fff7ed;border-left:4px solid #f59e0b;border-radius:8px;font-size:12px"><ul style="margin:0 0 0 16px;padding:0">
+      ${noSup ? `<li>у ${noSup} строк не указан поставщик — загрузятся без поставщика, его можно дописать потом (✏️)</li>` : ''}
+      ${noPrice ? `<li>у ${noPrice} строк нет цены</li>` : ''}
+      ${exists ? `<li>в журнале уже есть ${exists} партий — новые добавятся к ним (дубли не проверяются)</li>` : ''}
+      ${matched < rows.length ? `<li>${rows.length - matched} позиций нет в заказе — попадут в журнал как «нет в заказе»</li>` : ''}</ul></div>` : ''}
+    <div class="field-row">
+      <div class="field"><label>Дата закупа</label><input class="inp" type="date" id="oi-date" value="${opToday()}"></div>
+      <div class="field"><label>Статус</label><select class="inp" id="oi-status"><option value="received">✅ Принято на склад</option><option value="awaiting">⏳ Ожидается</option></select></div>
+    </div>
+    <div class="tbl-wrap" style="max-height:44vh;overflow-y:auto"><table style="min-width:760px"><thead><tr><th class="L">Позиция</th><th>В заказе</th><th class="L">Поставщик</th><th>Банчей</th><th>¥/банч</th><th>Пакинг</th><th>Сумма</th></tr></thead>
+      <tbody>${rows.map((r, i) => `<tr class="${i % 2 ? 'stripe' : ''}">
+        <td class="L" style="font-size:11px"><b>${escHtml(r.ru)}</b><div style="color:var(--mid);font-size:10px">${escHtml(r.cn)}</div></td>
+        <td style="font-size:11px">${r.g ? '✅' : '<span style="color:#b45309">➕ нет</span>'}</td>
+        <td class="L" style="font-size:11px">${r.supName ? escHtml(r.supName) + (r.supId ? '' : ' <span style="color:#15803d;font-size:10px">новый</span>') + (r.phone ? `<div style="color:var(--mid);font-size:10px">${escHtml(r.phone)}</div>` : '') : '<span style="color:var(--light)">— не указан</span>'}</td>
+        <td>${r.bunches ?? '—'}</td><td>${r.price != null ? r.price : '—'}</td><td style="font-size:11px">${escHtml(r.stems)}</td>
+        <td>${r.price != null ? opMoney(r.bunches * r.price) : '—'}</td></tr>`).join('')}</tbody></table></div>
+    <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="opImportSave()">✅ Загрузить в журнал (${rows.length})</button></div>`;
+  openModal();
+}
+async function opImportSave() {
+  if (!opStaffAccess()) { toast('Нет доступа'); return; }
+  const { rows, newSups, file } = _opImp;
+  const date = document.getElementById('oi-date').value || opToday(), status = document.getElementById('oi-status').value;
+  // 1. создаём новых поставщиков
+  const created = {};
+  for (const [k, s] of Object.entries(newSups)) {
+    const { data, error } = await sb.from('suppliers').insert({ name_ru: s.name, name_cn: s.name, phone: s.phone || null }).select().single();
+    if (error) { toast('❌ Поставщик ' + s.name + ': ' + error.message); return; }
+    created[k] = data.id;
+  }
+  // 2. партии
+  const who = currentUser?.company_name || currentUser?.login || null;
+  const lots = rows.map(r => ({
+    order_id: _op.order.id,
+    item_key: r.g ? r.g.key : 'n:' + r.ru.trim().toLowerCase(),
+    item_ru: r.g ? r.g.ru : r.ru, item_cn: r.g ? (r.g.cn || null) : (r.cn || null),
+    lot_ru: r.ru, lot_cn: r.cn || null,
+    purchase_date: date, supplier_id: r.supId || created[(r.phone || '') + '|' + r.supName] || null,
+    qty_bunches: r.bunches || 0, price_per_bunch: r.price, stems_per_bunch: r.stems || null,
+    status, note: null, created_by: who,
+  }));
+  for (let i = 0; i < lots.length; i += 200) {
+    const { error } = await sb.from('order_purchases').insert(lots.slice(i, i + 200));
+    if (error) { toast('❌ ' + (opIsMissingTable(error) ? OP_SQL_HINT : error.message)); return; }
+  }
+  logActivity('order_purchase', 'order', _op.order.id, _op.order.order_number, `Импорт закупа из Excel (${file}): ${lots.length} партий`);
+  closeModal(); toast(`✅ В журнал загружено ${lots.length} партий`);
+  await opLoadSups(); opReload();
 }
 
 // ══════════════════════════════════════════════════════════
