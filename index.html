@@ -13031,19 +13031,72 @@ function crmScopeMgr(q) { return isScopedMgr() ? q.eq('manager_id', currentUser.
 function crmWho() { return currentUser?.company_name || currentUser?.login || ''; }
 function crmMissing(err) { return err && (err.code === '42P01' || err.code === 'PGRST205' || /crm_/.test(err.message || '')); }
 
-async function crmLoad() {
+// forceStats=true — пересчитать статистику заказов (при открытии вкладки).
+// После действий с лидами/задачами заказы не перезагружаются — это самая тяжёлая часть.
+async function crmLoad(forceStats = false) {
   await ensureScope();
   if (!allClients.length) await loadClients();
-  const [L, T, O] = await Promise.all([
+  const needStats = forceStats || !_crm.statsLoaded;
+  const [L, T] = await Promise.all([
     crmLoadAllLeads(),
     crmScopeMgr(sb.from('crm_tasks').select('*')).eq('done', false).order('due_date', { ascending: true }),
-    scopeQ(sb.from('orders').select('id, order_number, client_id, status, date_order, order_items(subtotal, qty_boxes, flower_snapshot)'))
-      .neq('status', 'cancelled'),
+    needStats ? crmLoadStats() : null,
   ]);
   _crm.ok = !(crmMissing(L.error) || crmMissing(T.error));
   _crm.leads = L.data || [];
   _crm.tasks = T.data || [];
-  _crm.stats = crmCalcStats(O.data || []);
+}
+
+// Статистика по клиентам. Сначала — готовая сводка из view crm_client_stats (одна строка на клиента),
+// если view ещё не создан — старый способ (все заказы с позициями, считается в браузере).
+async function crmLoadStats() {
+  let q = sb.from('crm_client_stats').select('*');
+  if (isScopedMgr()) q = q.in('client_id', allClients.map(c => c.id));
+  const { data, error } = await q;
+  if (!error) {
+    _crm.stats = crmStatsFromView(data || []);
+    _crm.statsFromView = true;
+  } else {
+    const { data: O } = await scopeQ(sb.from('orders')
+      .select('id, order_number, client_id, status, date_order, order_items(subtotal, qty_boxes, flower_snapshot)'))
+      .neq('status', 'cancelled');
+    _crm.stats = crmCalcStats(O || []);
+    _crm.statsFromView = false;
+  }
+  _crm.statsLoaded = true;
+}
+
+function crmStatsFromView(rows) {
+  const st = {};
+  rows.forEach(r => {
+    const n = +r.n || 0, total = parseFloat(r.total) || 0, nd = +r.nd || 0;
+    const s = { n, total, avg: n ? total / n : 0, last: r.last_date || null, orders: null, top: null };
+    s.since = crmDays(s.last);
+    // средний интервал между разными датами заказов = (последняя − первая) / (кол-во дат − 1)
+    s.every = nd > 1 && r.first_date && r.last_date
+      ? Math.round((new Date(r.last_date) - new Date(r.first_date)) / 86400000 / (nd - 1)) : null;
+    s.sleeping = s.since != null && (s.every ? s.since > Math.max(s.every * 1.5, 21) : s.since > 45);
+    st[r.client_id] = s;
+  });
+  return st;
+}
+
+// Заказы и топ позиций одного клиента — грузятся только при открытии его карточки
+async function crmClientDetail(clientId) {
+  const { data } = await sb.from('orders')
+    .select('id, order_number, status, date_order, order_items(subtotal, qty_boxes, flower_snapshot)')
+    .eq('client_id', clientId).not('status', 'in', '(cancelled,draft)')
+    .order('date_order', { ascending: false }).limit(300);
+  const items = {}, orders = [];
+  (data || []).forEach(o => {
+    const sum = (o.order_items || []).reduce((a, i) => a + (parseFloat(i.subtotal) || 0), 0);
+    orders.push({ id: o.id, num: o.order_number, date: o.date_order, sum, status: o.status });
+    (o.order_items || []).forEach(i => {
+      const k = i.flower_snapshot?.ru || '—';
+      items[k] = (items[k] || 0) + (parseInt(i.qty_boxes) || 0);
+    });
+  });
+  return { orders, top: Object.entries(items).sort((a, b) => b[1] - a[1]).slice(0, 5) };
 }
 
 // Сводка по клиентам: заказы, оборот, средний заказ, давность, обычная частота, топ позиций
@@ -13079,7 +13132,7 @@ async function crmOpen(tab) {
   const c = document.getElementById('crm-content');
   if (!c) return;
   c.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-  await crmLoad();
+  await crmLoad(true);
   crmRender();
   crmBadge();
 }
@@ -13219,7 +13272,7 @@ async function crmLeadModal(id) {
         </div>
         <div class="field-row">
           <div class="field"><label>Этап / 阶段</label><select class="inp" id="cl-stage" onchange="document.getElementById('cl-lost-wrap').style.display=this.value==='lost'?'':'none'">
-            ${CRM_STAGES.map(([k, ru, cn]) => `<option value="${k}" ${(l.stage || 'new') === k ? 'selected' : ''}>${ru} / ${cn}</option>`).join('')}</select></div>
+            ${CRM_STAGES.filter(([k]) => k !== 'won' || l.stage === 'won').map(([k, ru, cn]) => `<option value="${k}" ${(l.stage || 'new') === k ? 'selected' : ''}>${ru} / ${cn}</option>`).join('')}</select></div>
           ${isScopedMgr() ? '' : `<div class="field"><label>Менеджер / 负责经理</label>${crmMgrSel('cl-mgr', l.manager_id ?? (currentUser.role === 'manager' ? currentUser.id : ''))}</div>`}
         </div>
         <div class="field" id="cl-lost-wrap" style="display:${l.stage === 'lost' ? '' : 'none'}"><label>Причина отказа / 流失原因</label>
@@ -13428,8 +13481,9 @@ async function crmClientCard(clientId) {
   if (!allClients.length) await loadClients();
   const c = allClients.find(x => String(x.id) === String(clientId));
   if (!c) { toast('Клиент недоступен / 无权限'); return; }
-  if (!Object.keys(_crm.stats).length) await crmLoad();
+  if (!_crm.statsLoaded) await crmLoad(true);
   const s = _crm.stats[c.id] || { n: 0, total: 0, avg: 0, orders: [], top: [] };
+  if (!s.orders || !s.top) Object.assign(s, await crmClientDetail(c.id));
   const lead = _crm.leads.find(l => String(l.client_id) === String(c.id));
   const mc = document.getElementById('modal-content');
   mc.classList.add('op-wide');
@@ -14269,7 +14323,7 @@ function baseHTML() {
     </div>
     ${_base.sel.size ? `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;padding:6px 10px;background:var(--gold-l);border-radius:8px;font-size:12px">
       Выбрано: <b>${_base.sel.size}</b>
-      <select class="inp" style="width:auto;padding:3px 6px;font-size:11px" onchange="if(this.value)baseBulk('stage',this.value)"><option value="">Сменить этап…</option>${CRM_STAGES.map(s => `<option value="${s[0]}">${s[1]}</option>`).join('')}</select>
+      <select class="inp" style="width:auto;padding:3px 6px;font-size:11px" onchange="if(this.value)baseBulk('stage',this.value)"><option value="">Сменить этап…</option>${CRM_STAGES.filter(s => s[0] !== 'won').map(s => `<option value="${s[0]}">${s[1]}</option>`).join('')}</select>
       ${isScopedMgr() ? '' : `<select class="inp" style="width:auto;padding:3px 6px;font-size:11px" onchange="if(this.value)baseBulk('mgr',this.value)"><option value="">Назначить менеджера…</option>${allClients.filter(u => u.role === 'manager').map(m => `<option value="${m.id}">${escHtml(m.company_name || m.login)}</option>`).join('')}</select>`}
       ${isScopedMgr() ? '' : `<button class="btn btn-danger btn-sm" style="font-size:10px;padding:2px 8px" onclick="baseBulk('delete')">🗑 Удалить</button>`}
       <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px" onclick="_base.sel.clear();crmRender()">Снять выбор</button></div>` : ''}
@@ -14320,6 +14374,12 @@ async function baseBulk(action, val) {
   if (action === 'delete' && !confirm(`Удалить ${ids.length} лидов вместе с историей?`)) return;
   for (let i = 0; i < ids.length; i += 200) {
     const part = ids.slice(i, i + 200);
+    if (action === 'delete') {   // сначала история и задачи этих лидов, чтобы не оставалось «сирот»
+      const r1 = await sb.from('crm_activities').delete().in('lead_id', part);
+      const r2 = await sb.from('crm_tasks').delete().in('lead_id', part);
+      const e = r1.error || r2.error;
+      if (e) { toast('❌ ' + e.message); return; }
+    }
     const q = action === 'delete' ? sb.from('crm_leads').delete()
       : sb.from('crm_leads').update(action === 'stage' ? { stage: val, updated_at: new Date().toISOString() } : { manager_id: val, updated_at: new Date().toISOString() });
     const { error } = await q.in('id', part);
