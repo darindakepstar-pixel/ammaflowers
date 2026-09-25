@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>AMMA FLOWERS — Система заказов</title>
+<script>window.__ammaRecovery = /type=recovery/.test(location.hash);</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -79,6 +80,9 @@ btn,button{font-family:var(--font-b);cursor:pointer}
 .login-err{color:var(--red);font-size:12px;text-align:center;margin-top:10px;display:none}
 .guest-divider{display:flex;align-items:center;gap:10px;margin:18px 0 14px;color:var(--light);font-size:11px}
 .guest-divider::before,.guest-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.auth-links{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:12px}
+.auth-links a{color:var(--sage-d,#2f5d50);text-decoration:none;border-bottom:1px dashed currentColor}
+.auth-msg{font-size:13px;line-height:1.5;padding:12px 14px;border-radius:10px;background:var(--sage-l,#eef5f1);margin:10px 0}
 .btn-guest{width:100%;padding:12px;background:#fff;color:var(--sage-d);border:1.5px solid var(--sage);border-radius:999px;font-size:13px;font-weight:600;letter-spacing:.2px;transition:transform .15s,background .2s,color .2s}
 .btn-guest:active{transform:scale(.98)}
 .btn-guest:hover{background:var(--sage-l);animation:btn-glow-pulse 1.6s ease-in-out infinite}
@@ -706,18 +710,24 @@ document.addEventListener('DOMContentLoaded', function(){
       </div>
     </div>
     <div class="login-card">
+      <div id="auth-view">
       <h2>Вход / 登录 / Login</h2>
-      <p>Введите логин и пароль / 请输入账号和密码 / Enter login and password</p>
+      <p>Email или логин и пароль / 邮箱或账号和密码 / Email or login</p>
       <div class="form-group">
-        <label>Логин / 账号</label>
-        <input type="text" id="inp-login" placeholder="Логин / 账号 / Login" autocomplete="username">
+        <label>Email или логин / 邮箱或账号</label>
+        <input type="text" id="inp-login" placeholder="name@company.ru / login" autocomplete="username">
       </div>
       <div class="form-group">
         <label>Пароль / 密码</label>
         <input type="password" id="inp-pass" placeholder="Пароль / 密码 / Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
       </div>
-      <button class="btn-login" onclick="doLogin()">Войти / 登录 →</button>
+      <button class="btn-login" id="btn-login" onclick="doLogin()">Войти / 登录 →</button>
       <div class="login-err" id="login-err">Неверный логин или пароль</div>
+      <div class="auth-links">
+        <a href="#" onclick="event.preventDefault();authView('reset')">Забыли пароль? / 忘记密码</a>
+        <a href="#" onclick="event.preventDefault();authView('request')">Запросить доступ / 申请开通</a>
+      </div>
+      </div>
       <div class="guest-divider"><span>или / 或</span></div>
       <button class="btn-guest" onclick="enterGuestMode()">👁 Смотреть прайс без входа / 免登录查看价格单</button>
       <div class="login-footer">
@@ -738,6 +748,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <span class="user-pill" id="top-role"></span>
       <span id="cur-select-wrap" style="display:inline-flex;gap:4px;align-items:center"></span>
       <button class="btn-theme" id="theme-toggle" onclick="toggleTheme()" title="Тема / 主题">☀️</button>
+      <button class="btn-theme" onclick="showChangePasswordModal()" title="Сменить пароль / 修改密码">🔑</button>
       <button class="btn-logout" onclick="logout()">Выйти / 退出</button>
     </div>
   </div>
@@ -1108,6 +1119,13 @@ document.addEventListener('DOMContentLoaded', function(){
         <button class="btn btn-secondary" id="btn-add-manager" onclick="showAddManagerModal()">+ Менеджер / 经理</button>
         <button class="btn btn-secondary" id="btn-add-warehouse" style="background:var(--gold);color:#fff" onclick="showAddWarehouseModal()">🏭 + Склад / 仓库</button>
       </div>
+      <div id="admin-app-tools" style="display:none;gap:8px;margin:-6px 0 14px;flex-wrap:wrap;align-items:center;font-size:12px">
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer">⬆ Обновить систему / 更新系统
+          <input type="file" accept=".html,text/html" style="display:none" onchange="uploadAppVersion(this)"></label>
+        <button class="btn btn-secondary btn-sm" onclick="rollbackAppVersion()">↩ Предыдущая версия</button>
+        <span style="color:var(--mid)">Только админ. Файл системы хранится в закрытом хранилище.</span>
+      </div>
+      <div id="access-requests"></div>
       <div id="clients-list"><div class="loading"><div class="spinner"></div></div></div>
     </div>
   </div>
@@ -1522,10 +1540,10 @@ function scopeQ(q, col = 'client_id') {
 }
 // Кому из менеджеров слать уведомление по клиенту: всем «полным» + ответственному клиентскому менеджеру
 async function mgrsFor(clientId) {
-  const { data } = await sb.from('users').select('*').eq('role', 'manager');
+  const data = (await staffList()).filter(s => s.role === 'manager');
   let resp = null;
   if (clientId) {
-    const { data: c } = await sb.from('users').select('*').eq('id', clientId).maybeSingle();
+    const { data: c } = await sb.from('users').select('id, manager_id').eq('id', clientId).maybeSingle();
     resp = c?.manager_id || null;
   }
   return { data: (data || []).filter(m => m.client_scope !== 'own' || (resp && String(m.id) === String(resp))) };
@@ -1553,20 +1571,188 @@ async function sha256(msg) {
 // ══════════════════════════════════════════════════════════
 //  LOGIN / LOGOUT
 // ══════════════════════════════════════════════════════════
+// ══ Вход через Supabase Auth ══
+// Логин без «@» превращается в служебный адрес login@amma.local; при первом входе после обновления
+// старый пароль переносится функцией auth-migrate.
+const AMMA_LOGIN_DOMAIN = 'amma.local';
+function authLoginEmail(login) {
+  const l = String(login || '').trim().toLowerCase();
+  if (/^[a-z0-9._-]+$/.test(l)) return l + '@' + AMMA_LOGIN_DOMAIN;
+  return 'u-' + Array.from(new TextEncoder().encode(l), b => b.toString(16).padStart(2, '0')).join('') + '@' + AMMA_LOGIN_DOMAIN;
+}
+async function authSignIn(id, pass) {
+  const isEmail = id.includes('@');
+  const email = isEmail ? id.trim().toLowerCase() : authLoginEmail(id);
+  let { error } = await sb.auth.signInWithPassword({ email, password: pass });
+  if (!error) return {};
+  if (/banned/i.test(error.message)) return { error: 'Доступ закрыт. Обратитесь к менеджеру / 账号已停用' };
+  if (isEmail) return { error: 'Неверный email или пароль / 邮箱或密码错误' };
+  let j = {};
+  try {
+    const r = await fetch(SUPABASE_URL + '/functions/v1/auth-migrate', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY },
+      body: JSON.stringify({ login: id.trim(), password: pass }) });
+    j = await r.json().catch(() => ({}));
+  } catch (e) { return { error: 'Нет связи с сервером / 网络错误' }; }
+  if (j.status === 'ok') {
+    ({ error } = await sb.auth.signInWithPassword({ email: j.email, password: pass }));
+    return error ? { error: error.message } : {};
+  }
+  if (j.status === 'use_email') return { error: 'Этот аккаунт входит по email: ' + j.hint + ' / 请用邮箱登录' };
+  if (j.error === 'blocked') return { error: 'Доступ закрыт. Обратитесь к менеджеру / 账号已停用' };
+  if (j.error === 'locked') return { error: 'Слишком много попыток — подождите 15 минут / 尝试次数过多，请稍后' };
+  if (j.error === 'create_failed' || j.error === 'link_failed') return { error: 'Не удалось перенести аккаунт: ' + (j.detail || j.error) };
+  return { error: 'Неверный логин или пароль / 账号或密码错误' };
+}
+// После входа: проверяем статус и открываем систему
+async function authEnter(silent) {
+  const { data: w, error } = await sb.rpc('app_whoami');
+  if (error) { if (!silent) showErr('Ошибка входа: ' + error.message); return false; }
+  if (w?.status === 'active') {
+    const { data } = await sb.from('users').select('*').eq('id', w.id).maybeSingle();
+    if (!data) { if (!silent) showErr('Профиль не найден / 未找到账户'); return false; }
+    currentUser = data;
+    if (!silent) logActivity('login', 'session', null, data.company_name || data.login, 'Вход в систему');
+    document.getElementById('login-err').style.display = 'none';
+    showApp();
+    return true;
+  }
+  if (w?.status === 'pending') { authView('pending'); return false; }
+  await sb.auth.signOut();
+  if (window.__AMMA_SHELL) { location.reload(); return false; }
+  authView('login');
+  showErr(w?.status === 'blocked' || w?.status === 'rejected'
+    ? 'Доступ закрыт. Обратитесь к менеджеру / 账号已停用' : 'Аккаунт не найден / 未找到账户');
+  return false;
+}
 async function doLogin() {
   const login = document.getElementById('inp-login').value.trim();
   const pass  = document.getElementById('inp-pass').value;
   if (!login || !pass) { showErr('Заполните логин и пароль / 请填写账号和密码'); return; }
-  const hash = await sha256(pass);
-  const { data, error } = await sb.from('users')
-    .select('*').eq('login', login).eq('password_hash', hash).single();
-  if (error || !data) { showErr('Неверный логин или пароль / 账号或密码错误'); return; }
-  currentUser = data;
-  try { sessionStorage.setItem('amma_user', JSON.stringify(data)); } catch(e){}
-  logActivity('login', 'session', null, data.company_name || data.login, 'Вход в систему');
-  document.getElementById('login-err').style.display = 'none';
-  document.getElementById('inp-pass').value = '';
-  showApp();
+  const btn = document.getElementById('btn-login');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const r = await authSignIn(login, pass);
+    if (r.error) { showErr(r.error); return; }
+    document.getElementById('inp-pass').value = '';
+    await authEnter(false);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Войти / 登录 →'; }
+  }
+}
+
+// Экраны: вход / заявка / забыли пароль / новый пароль / заявка на рассмотрении
+let _authLoginHTML = null;
+function authView(mode) {
+  const box = document.getElementById('auth-view');
+  if (!box) return;
+  if (_authLoginHTML === null) _authLoginHTML = box.innerHTML;
+  document.getElementById('screen-app').style.display = 'none';
+  document.getElementById('screen-login').style.display = 'flex';
+  const back = `<div class="auth-links"><a href="#" onclick="event.preventDefault();authView('login')">← Ко входу / 返回登录</a></div>`;
+  const f = (id, label, type = 'text', ph = '', ac = '') => `<div class="form-group"><label>${label}</label>
+    <input type="${type}" id="${id}" placeholder="${ph}" ${ac ? `autocomplete="${ac}"` : ''}></div>`;
+  if (mode === 'login') { box.innerHTML = _authLoginHTML; }
+  else if (mode === 'request') box.innerHTML = `<h2>Заявка на доступ / 申请开通</h2>
+    <p>Для оптовых клиентов. После проверки менеджер откроет доступ. / 经理审核后开通</p>
+    ${f('rq-company', 'Компания / 公司 *')}${f('rq-name', 'Контактное лицо / 联系人 *')}
+    ${f('rq-phone', 'Телефон / WhatsApp / WeChat *')}${f('rq-city', 'Город / 城市')}
+    ${f('rq-email', 'Email (для входа) / 邮箱 *', 'email', 'name@company.ru', 'username')}
+    ${f('rq-pass', 'Пароль (мин. 8 символов) / 密码 *', 'password', '', 'new-password')}
+    <div class="form-group"><label>Комментарий / 备注</label><textarea id="rq-comment" rows="2" style="width:100%"></textarea></div>
+    <button class="btn-login" id="rq-btn" onclick="authRequest()">Отправить заявку / 提交 →</button>
+    <div class="login-err" id="login-err"></div>${back}`;
+  else if (mode === 'reset') box.innerHTML = `<h2>Восстановление пароля / 找回密码</h2>
+    <p>Пришлём ссылку для нового пароля. Если вход по логину без email — обратитесь к менеджеру.</p>
+    ${f('rs-email', 'Email / 邮箱', 'email', 'name@company.ru', 'username')}
+    <button class="btn-login" onclick="authReset()">Отправить ссылку / 发送链接 →</button>
+    <div class="login-err" id="login-err"></div>${back}`;
+  else if (mode === 'newpass') box.innerHTML = `<h2>Новый пароль / 新密码</h2>
+    ${f('np-pass', 'Новый пароль (мин. 8 символов) / 新密码', 'password', '', 'new-password')}
+    ${f('np-pass2', 'Повторите / 再次输入', 'password', '', 'new-password')}
+    <button class="btn-login" onclick="authSetNewPassword()">Сохранить и войти / 保存并登录 →</button>
+    <div class="login-err" id="login-err"></div>`;
+  else if (mode === 'pending') box.innerHTML = `<h2>Заявка на рассмотрении / 审核中</h2>
+    <div class="auth-msg">✅ Заявка получена. Менеджер проверит данные и откроет доступ — обычно в течение рабочего дня.
+    Мы свяжемся с вами по указанному телефону.<br><span style="color:var(--mid)">申请已收到，经理审核后开通。</span></div>
+    <button class="btn-login" onclick="authEnter(false)">Проверить статус / 查看状态 →</button>
+    <div class="login-err" id="login-err"></div>
+    <div class="auth-links"><a href="#" onclick="event.preventDefault();logout()">Выйти / 退出</a></div>`;
+  else if (mode === 'sent') box.innerHTML = `<h2>Проверьте почту / 请查收邮件</h2>
+    <div class="auth-msg">${escHtml(authView._msg || '')}</div>${back}`;
+}
+async function authRequest() {
+  const v = id => (document.getElementById(id)?.value || '').trim();
+  const email = v('rq-email').toLowerCase(), pass = document.getElementById('rq-pass').value;
+  if (!v('rq-company') || !v('rq-name') || !v('rq-phone') || !email) { showErr('Заполните поля со звёздочкой / 请填写必填项'); return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.endsWith('@' + AMMA_LOGIN_DOMAIN)) { showErr('Проверьте email / 邮箱格式错误'); return; }
+  if (pass.length < 8) { showErr('Пароль минимум 8 символов / 密码至少8位'); return; }
+  const btn = document.getElementById('rq-btn'); if (btn) btn.disabled = true;
+  const { data, error } = await sb.auth.signUp({ email, password: pass, options: {
+    emailRedirectTo: location.origin + location.pathname,
+    data: { amma_request: '1', company: v('rq-company'), contact_name: v('rq-name'), phone: v('rq-phone'),
+            city: v('rq-city'), comment: v('rq-comment') } } });
+  if (btn) btn.disabled = false;
+  if (error) {
+    showErr(/registered|exists/i.test(error.message) ? 'Этот email уже зарегистрирован — войдите или восстановите пароль' : error.message);
+    return;
+  }
+  if (data?.session) { authView('pending'); return; }
+  authView._msg = 'Мы отправили письмо на ' + email + '. Подтвердите адрес по ссылке из письма, затем войдите — заявка уйдёт менеджеру. / 请确认邮箱后登录';
+  authView('sent');
+}
+async function authReset() {
+  const email = (document.getElementById('rs-email')?.value || '').trim().toLowerCase();
+  if (!email.includes('@')) { showErr('Укажите email / 请输入邮箱'); return; }
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  if (error) { showErr('Не удалось отправить письмо — обратитесь к менеджеру / 发送失败，请联系经理'); return; }
+  authView._msg = 'Если такой email зарегистрирован, мы отправили на него ссылку для нового пароля. / 已发送重置链接';
+  authView('sent');
+}
+async function authSetNewPassword() {
+  const p1 = document.getElementById('np-pass').value, p2 = document.getElementById('np-pass2').value;
+  if (p1.length < 8) { showErr('Пароль минимум 8 символов / 密码至少8位'); return; }
+  if (p1 !== p2) { showErr('Пароли не совпадают / 两次密码不一致'); return; }
+  const { error } = await sb.auth.updateUser({ password: p1 });
+  if (error) { showErr(error.message); return; }
+  toast('✅ Пароль изменён / 密码已修改');
+  authView('login');
+  await authEnter(false);
+}
+// Смена своего пароля из системы
+function showChangePasswordModal() {
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">🔑 Сменить пароль / 修改密码</div>
+    <div class="field"><label>Новый пароль (мин. 8 символов) / 新密码</label><input class="inp" id="cp-pass" type="password" autocomplete="new-password"></div>
+    <div class="field"><label>Повторите / 再次输入</label><input class="inp" id="cp-pass2" type="password" autocomplete="new-password"></div>
+    <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+      <button class="btn btn-primary" onclick="changeOwnPassword()">💾 Сохранить / 保存</button></div>`;
+  openModal();
+}
+async function changeOwnPassword() {
+  const p1 = document.getElementById('cp-pass').value, p2 = document.getElementById('cp-pass2').value;
+  if (p1.length < 8) { toast('Пароль минимум 8 символов / 密码至少8位'); return; }
+  if (p1 !== p2) { toast('Пароли не совпадают / 两次密码不一致'); return; }
+  const { error } = await sb.auth.updateUser({ password: p1 });
+  if (error) { toast('❌ ' + error.message); return; }
+  closeModal(); toast('✅ Пароль изменён / 密码已修改');
+  logActivity('password_change', 'user', currentUser.id, currentUser.company_name || currentUser.login, 'Сменил свой пароль');
+}
+// Вызов серверной функции управления пользователями
+async function authAdmin(action, payload) {
+  const { data, error } = await sb.functions.invoke('admin-users', { body: { action, ...payload } });
+  if (error) {
+    let msg = error.message;
+    try { msg = (await error.context.json()).error || msg; } catch (e) {}
+    const human = { only_admin: 'Только для админа / 仅管理员', forbidden: 'Нет прав / 无权限', not_signed_in: 'Войдите заново' };
+    return { error: human[msg] || msg };
+  }
+  return data || {};
+}
+// Список сотрудников (кому слать уведомления) — доступен всем ролям без чтения таблицы users
+async function staffList() {
+  const { data } = await sb.rpc('app_staff');
+  return data || [];
 }
 
 function showApp() {
@@ -1591,33 +1777,27 @@ function showErr(msg) {
   el.textContent = msg; el.style.display = 'block';
 }
 
-function logout() {
+async function logout() {
+  try { await sb.auth.signOut(); } catch (e) {}
   currentUser = null; cart = {}; flowers = [];
-  try { sessionStorage.removeItem('amma_user'); } catch(e){}
-  document.getElementById('screen-app').style.display  = 'none';
-  document.getElementById('screen-login').style.display = 'flex';
-  document.getElementById('inp-login').value = '';
-  document.getElementById('inp-pass').value  = '';
+  try { sessionStorage.removeItem('amma_user'); } catch (e) {}
+  location.href = location.pathname;
 }
 
-// Auto-restore session on page load
-(function restoreSession() {
-  try {
-    const saved = sessionStorage.getItem('amma_user');
-    if (saved) {
-      currentUser = JSON.parse(saved);
-      // Show app immediately, data will reload
-      document.getElementById('screen-login').style.display = 'none';
-      document.getElementById('screen-app').style.display   = 'flex';
-      // Re-verify user still exists in DB silently
-      sb.from('users').select('*').eq('id', currentUser.id).single().then(({data,error}) => {
-        if (error || !data) { logout(); return; }
-        currentUser = data;
-        try { sessionStorage.setItem('amma_user', JSON.stringify(data)); } catch(e){}
-        initApp();
-      });
-    }
-  } catch(e) {}
+// Сессия Supabase Auth: при загрузке страницы входим автоматически
+(async function restoreSession() {
+  try { sessionStorage.removeItem('amma_user'); } catch (e) {}
+  sb.auth.onAuthStateChange((ev) => { if (ev === 'PASSWORD_RECOVERY') authView('newpass'); });
+  const { data: { session } } = await sb.auth.getSession();
+  if (window.__ammaRecovery && session) { authView('newpass'); return; }
+  if (session) {
+    document.getElementById('screen-login').style.display = 'none';
+    const ok = await authEnter(true);
+    if (!ok && document.getElementById('screen-app').style.display !== 'flex')
+      document.getElementById('screen-login').style.display = 'flex';
+  } else if (window.__AMMA_SHELL) {
+    location.reload();
+  }
 })();
 
 // ══════════════════════════════════════════════════════════
@@ -1687,6 +1867,7 @@ async function initApp() {
     document.getElementById('btn-add-flower').style.display = full ? 'inline-flex' : 'none';
     document.getElementById('btn-manage-cats').style.display = full ? 'inline-flex' : 'none';
     ['btn-add-manager', 'btn-add-warehouse'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = full ? '' : 'none'; });
+    const at = document.getElementById('admin-app-tools'); if (at) at.style.display = currentUser?.is_admin ? 'flex' : 'none';
     if (!full) document.getElementById('top-role').textContent = '💼 Клиентский менеджер / 客户经理';
     if (calcAccess()) document.getElementById('tab-notif')?.insertAdjacentHTML('beforebegin', `<div class="nav-tab" onclick="showPage('calc',this)">🧮 Калькулятор</div>`);
     loadClients().then(() => crmBadge()).catch(() => {});
@@ -4667,12 +4848,9 @@ async function executeDeleteOrder(orderId, orderNumber) {
   }
 
   // Verify password against current user's hash
-  const hash = await sha256(pass);
-  const { data: user, error: authErr } = await sb.from('users')
-    .select('id')
-    .eq('id', currentUser.id)
-    .eq('password_hash', hash)
-    .single();
+  const { data: { user: _au } } = await sb.auth.getUser();
+  const { error: authErr } = await sb.auth.signInWithPassword({ email: _au?.email || '', password: pass });
+  const user = authErr ? null : { id: currentUser.id };
 
   if (authErr || !user) {
     passInput.value = '';
@@ -5473,7 +5651,7 @@ async function rejectPackingChanges(orderId) {
 
   // Notify warehouse that manager rejected
   try {
-    const { data: whs } = await sb.from('users').select('id').eq('role','warehouse');
+    const whs = (await staffList()).filter(s => s.role === 'warehouse');
     const { data: orderInfo } = await sb.from('orders').select('order_number').eq('id', orderId).single();
     for (const w of (whs||[])) {
       await sendNotification(w.id,
@@ -5637,7 +5815,7 @@ async function updateOrderStatus(id, status) {
         }
         // Notify warehouse users
         if (triggers.warehouse) {
-          const { data: whUsers } = await sb.from('users').select('id').eq('role', 'warehouse');
+          const whUsers = (await staffList()).filter(s => s.role === 'warehouse');
           for (const wu of (whUsers || [])) {
             await sendNotification(wu.id, triggers.warehouse.title, triggers.warehouse.body, triggers.warehouse.icon);
           }
@@ -6245,6 +6423,7 @@ async function loadClients() {
 
 function renderClients() {
   const list = document.getElementById('clients-list');
+  loadAccessRequests();
   if (!allClients.length) {
     list.innerHTML = `<div class="empty-state"><div class="icon">👥</div><p>Нет клиентов</p></div>`;
     return;
@@ -6261,7 +6440,7 @@ function renderClients() {
     <tbody>${allClients.map((c,i) => `
       <tr class="${i%2?'stripe':''}">
         <td class="L"><b>${c.company_name||'—'}</b>${c.purchase_tracking?' <span title="Видит журнал закупа" style="font-size:10px">🛒</span>':''}${c.tg_chat_id?' <span title="Telegram подключён" style="font-size:10px">📲</span>':''}${c.calc_access?' <span title="Доступ к калькулятору" style="font-size:10px">🧮</span>':''}</td>
-        <td class="L" style="color:var(--mid);font-family:monospace">${c.login}</td>
+        <td class="L" style="color:var(--mid);font-family:monospace">${escHtml(c.login)}${c.blocked ? ' <span title="Доступ закрыт">🔒</span>' : ''}${c.email ? `<div style="font-size:10px;font-family:inherit">${escHtml(c.email)}</div>` : ''}</td>
         <td style="font-size:11px;color:var(--mid)">${c.contact||'—'}</td>
         <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?(c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':'👑 Менеджер / 经理'):c.role==='warehouse'?'🏭 Склад / 仓库':'👤 Клиент / 客户'}</span></td>
         <td style="font-size:11px;color:var(--mid)">${c.role==='client' ? (escHtml(mgrName(c.manager_id)) || '<span style="color:var(--light)">— не закреплён</span>') : ''}</td>
@@ -6280,6 +6459,7 @@ function showAddClientModal() {
     </div>
     <div class="field-row">
       <div class="field"><label>Пароль / 密码</label><input class="inp" id="nc-pass" type="password" placeholder="Мин. 6 символов / 至少6位"></div>
+      <div class="field"><label>Email (необязательно) / 邮箱</label><input class="inp" id="nc-email" type="email" placeholder="для входа и сброса пароля"></div>
       <div class="field"><label>Контакт / 联系方式</label><input class="inp" id="nc-contact" placeholder="+7 / email..."></div>
     </div>
     ${isScopedMgr() ? '' : `<div class="field"><label>Ответственный менеджер / 负责经理</label>
@@ -6298,13 +6478,13 @@ async function addClient() {
   const contact = document.getElementById('nc-contact').value.trim();
   if (!login || !pass) { toast('Заполните логин и пароль'); return; }
   if (pass.length < 6) { toast('Пароль минимум 6 символов'); return; }
-  const hash = await sha256(pass);
   const showMk = document.getElementById('nc-show-markup')?.checked || false;
-  const row = { login, password_hash: hash, role: 'client', company_name: company, contact, show_markup: showMk };
+  const row = { action: 'create', role: 'client', login, password: pass, email: document.getElementById('nc-email')?.value.trim() || '',
+    company_name: company, contact, show_markup: showMk };
   const mgrSel = isScopedMgr() ? currentUser.id : (document.getElementById('nc-manager')?.value || null);
   if (mgrSel) row.manager_id = mgrSel;   // требует SQL-миграции «Клиентские менеджеры»
-  const { error } = await sb.from('users').insert(row);
-  if (error) { toast('Ошибка: ' + error.message); return; }
+  const { error } = await authAdmin('create', row);
+  if (error) { toast('Ошибка: ' + error); return; }
   closeModal();
   await loadClients();
   renderClients();
@@ -6328,7 +6508,9 @@ function showEditClientModal(id) {
     </div>
     <div class="field-row">
       <div class="field"><label>Новый пароль / 新密码 (пусто = не менять / 空=不修改)</label>
-        <input class="inp" id="ec-pass" type="password" placeholder="Новый пароль / 新密码..."></div>
+        <input class="inp" id="ec-pass" type="password" placeholder="Новый пароль / 新密码..." autocomplete="new-password"></div>
+      <div class="field"><label>Email для входа / 登录邮箱 (пусто = вход по логину)</label>
+        <input class="inp" id="ec-email" type="email" value="${escHtml(user.email || '')}" placeholder="name@company.ru"></div>
       <div class="field"><label>Контакт / 联系方式</label>
         <input class="inp" id="ec-contact" value="${user.contact||''}" placeholder="+7 / email / 联系方式"></div>
     </div>
@@ -6373,7 +6555,8 @@ function showEditClientModal(id) {
         …и закупочные цены ¥/банч / 显示采购价</label>
     </div>` : `<div style="margin-top:10px;font-size:11px;color:var(--mid)">🛒 Журнал закупа для клиента: выполните SQL-миграцию «Журнал закупа», чтобы появилась настройка.</div>`) : ''}
     <div class="modal-btns">
-      <button class="btn btn-danger btn-sm" onclick="deleteClient('${id}','${user.login}')">🗑 Удалить</button>
+      ${currentUser?.is_admin ? `<button class="btn btn-danger btn-sm" onclick="deleteClient('${id}','${user.login}')">🗑 Удалить</button>
+      <button class="btn btn-secondary btn-sm" onclick="blockUser('${id}', ${user.blocked ? 'false' : 'true'})">${user.blocked ? '🔓 Открыть доступ' : '🔒 Закрыть доступ'}</button>` : ''}
       <div style="flex:1"></div>
       <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
       <button class="btn btn-primary" onclick="saveClient('${id}')">💾 Сохранить</button>
@@ -6401,24 +6584,113 @@ async function saveClient(id) {
     updates.purchase_tracking = ptEl.checked;
     updates.purchase_show_prices = !!document.getElementById('ec-purch-prices')?.checked;
   }
-  if (pass) {
-    if (pass.length < 6) { toast('Пароль минимум 6 символов'); return; }
-    updates.password_hash = await sha256(pass);
-  }
-  const { error } = await sb.from('users').update(updates).eq('id', id);
+  if (pass && pass.length < 6) { toast('Пароль минимум 6 символов'); return; }
+  const { data: saved, error } = await sb.from('users').update(updates).eq('id', id).select('id');
   if (error) { toast('Ошибка: ' + error.message); return; }
+  if (!saved?.length) { toast('❌ Нет прав менять этого пользователя / 无权限'); return; }
+  if (pass) {
+    const r = await authAdmin('set_password', { user_id: id, password: pass });
+    if (r.error) { toast('❌ Пароль: ' + r.error); return; }
+  }
+  const emEl = document.getElementById('ec-email');
+  const prevEmail = allClients.find(c => String(c.id) === String(id))?.email || '';
+  if (emEl && emEl.value.trim().toLowerCase() !== prevEmail) {
+    const r = await authAdmin('set_email', { user_id: id, email: emEl.value.trim() });
+    if (r.error) { toast('❌ Email: ' + r.error); return; }
+  }
   closeModal();
   await loadClients(); renderClients();
   toast('✅ Данные обновлены');
 }
 
 async function deleteClient(id, login) {
-  if (!confirm(`Удалить клиента "${login}"?\nВсе его заказы останутся в системе.`)) return;
-  const { error } = await sb.from('users').delete().eq('id', id);
-  if (error) { toast('Ошибка: ' + error.message); return; }
+  if (!confirm(`Удалить пользователя "${login}"?\nЕсли у него есть заказы — удалить нельзя, закройте доступ.`)) return;
+  const r = await authAdmin('delete', { user_id: id });
+  if (r.error) { toast('❌ ' + r.error); return; }
   closeModal();
   await loadClients(); renderClients();
-  toast('🗑 Клиент удалён: ' + login);
+  toast('🗑 Удалён: ' + login);
+}
+async function blockUser(id, blocked) {
+  if (!confirm(blocked ? 'Закрыть доступ? Пользователь сразу выйдет из системы на всех устройствах.' : 'Открыть доступ снова?')) return;
+  const r = await authAdmin('block', { user_id: id, blocked });
+  if (r.error) { toast('❌ ' + r.error); return; }
+  closeModal(); await loadClients(); renderClients();
+  toast(blocked ? '🔒 Доступ закрыт' : '🔓 Доступ открыт');
+}
+
+// ══ Заявки на доступ (админ и полные менеджеры) ══
+async function loadAccessRequests() {
+  const box = document.getElementById('access-requests');
+  if (!box) return;
+  if (currentUser?.role !== 'manager' || isScopedMgr()) { box.innerHTML = ''; return; }
+  const { data, error } = await sb.from('access_requests').select('*').eq('status', 'pending').order('created_at');
+  if (error || !data?.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="card" style="margin-bottom:14px;border-left:4px solid var(--gold)">
+    <b>🆕 Заявки на доступ / 访问申请 (${data.length})</b>
+    <div style="font-size:11px;color:var(--mid);margin:2px 0 8px">Перед одобрением позвоните по указанному телефону и убедитесь, что это реальный клиент.</div>
+    ${data.map(r => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--border);font-size:12px">
+      <div style="flex:1;min-width:220px"><b>${escHtml(r.company || '—')}</b> · ${escHtml(r.contact_name || '')} · ${escHtml(r.phone || '')} · ${escHtml(r.city || '')}
+        <div style="color:var(--mid)">${escHtml(r.email || '')} · ${new Date(r.created_at).toLocaleString('ru-RU')}${r.comment ? ' · «' + escHtml(r.comment) + '»' : ''}</div></div>
+      <button class="btn btn-primary btn-sm" onclick="approveRequestModal(${r.id})">✅ Одобрить</button>
+      <button class="btn btn-secondary btn-sm" onclick="rejectRequest(${r.id})">✖ Отклонить</button>
+    </div>`).join('')}</div>`;
+  window._accessReqs = data;
+}
+function approveRequestModal(rid) {
+  const r = (window._accessReqs || []).find(x => x.id === rid); if (!r) return;
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">✅ Открыть доступ: ${escHtml(r.company || r.email)}</div>
+    <div class="field-row">
+      <div class="field"><label>Компания / 公司</label><input class="inp" id="ar-company" value="${escHtml(r.company || '')}"></div>
+      <div class="field"><label>Логин / 账号</label><input class="inp" id="ar-login" value="${escHtml(String(r.email || '').split('@')[0].replace(/[^a-zA-Z0-9._-]/g, ''))}"></div>
+    </div>
+    <div class="field"><label>Контакт / 联系方式</label><input class="inp" id="ar-contact" value="${escHtml([r.contact_name, r.phone, r.city].filter(Boolean).join(', '))}"></div>
+    <div class="field"><label>Ответственный менеджер / 负责经理</label><select class="inp" id="ar-manager">${mgrOptions(null)}</select></div>
+    <div style="font-size:11px;color:var(--mid)">Клиент будет входить со своим email ${escHtml(r.email || '')} и паролем, который указал в заявке.</div>
+    <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+      <button class="btn btn-primary" onclick="approveRequest(${r.id})">✅ Открыть доступ</button></div>`;
+  openModal();
+}
+async function approveRequest(rid) {
+  const r = await authAdmin('approve', { request_id: rid, role: 'client',
+    login: document.getElementById('ar-login').value.trim(), company_name: document.getElementById('ar-company').value.trim(),
+    contact: document.getElementById('ar-contact').value.trim(), manager_id: document.getElementById('ar-manager').value || null });
+  if (r.error) { toast('❌ ' + r.error); return; }
+  closeModal(); toast('✅ Доступ открыт / 已开通'); await loadClients(); renderClients();
+}
+async function rejectRequest(rid) {
+  if (!confirm('Отклонить заявку? / 拒绝申请？')) return;
+  const r = await authAdmin('reject', { request_id: rid });
+  if (r.error) { toast('❌ ' + r.error); return; }
+  toast('Заявка отклонена'); loadAccessRequests();
+}
+
+// ══ Обновление системы (шаг 3: код хранится в закрытом хранилище Supabase) ══
+async function uploadAppVersion(input) {
+  const file = input.files?.[0]; input.value = '';
+  if (!file) return;
+  if (!/\.html?$/i.test(file.name)) { toast('Нужен файл .html'); return; }
+  const text = await file.text();
+  if (!text.includes('restoreSession') || !text.includes('SUPABASE_URL')) { toast('❌ Это не файл системы AMMA'); return; }
+  if (!confirm(`Загрузить новую версию системы (${(file.size / 1024 / 1024).toFixed(2)} МБ)?\nВсе увидят её после обновления страницы. Текущая версия сохранится как резервная.`)) return;
+  const bucket = sb.storage.from('app');
+  const cur = await bucket.download('app.html');
+  if (cur.data) await bucket.upload('app-prev.html', cur.data, { upsert: true, contentType: 'text/html', cacheControl: '0' });
+  const { error } = await bucket.upload('app.html', new Blob([text], { type: 'text/html' }), { upsert: true, contentType: 'text/html', cacheControl: '0' });
+  if (error) { toast('❌ ' + error.message); return; }
+  logActivity('app_update', 'app', null, file.name, `Загружена новая версия системы (${file.size} байт)`);
+  toast('✅ Новая версия загружена — обновите страницу');
+}
+async function rollbackAppVersion() {
+  if (!confirm('Вернуть предыдущую версию системы?')) return;
+  const bucket = sb.storage.from('app');
+  const prev = await bucket.download('app-prev.html');
+  if (!prev.data) { toast('Резервной версии нет'); return; }
+  const { error } = await bucket.upload('app.html', prev.data, { upsert: true, contentType: 'text/html', cacheControl: '0' });
+  if (error) { toast('❌ ' + error.message); return; }
+  logActivity('app_update', 'app', null, 'app-prev.html', 'Возврат предыдущей версии системы');
+  toast('↩ Предыдущая версия восстановлена — обновите страницу');
 }
 
 function showAddManagerModal() {
@@ -6438,6 +6710,7 @@ function showAddManagerModal() {
         <input class="inp" id="nm-pass" type="password" placeholder="Мин. 6 символов / 至少6位"></div>
       <div class="field"><label>Контакт / 联系方式</label>
         <input class="inp" id="nm-contact" placeholder="+7 / email..."></div>
+      <div class="field"><label>Email (необязательно) / 邮箱</label><input class="inp" id="nm-email" type="email" placeholder="для входа и сброса пароля"></div>
     </div>
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:600;margin-top:6px">
       <input type="checkbox" id="nm-scope-own" checked style="width:16px;height:16px">
@@ -6457,11 +6730,10 @@ async function addManager() {
   const contact = document.getElementById('nm-contact').value.trim();
   if (!login || !pass) { toast('Заполните логин и пароль'); return; }
   if (pass.length < 6) { toast('Пароль минимум 6 символов'); return; }
-  const hash = await sha256(pass);
-  const mrow = { login, password_hash: hash, role: 'manager', company_name: company, contact };
+  const mrow = { role: 'manager', login, password: pass, email: document.getElementById('nm-email')?.value.trim() || '', company_name: company, contact };
   if (document.getElementById('nm-scope-own')?.checked) mrow.client_scope = 'own';
-  const { error } = await sb.from('users').insert(mrow);
-  if (error) { toast('Ошибка: ' + (error.message.includes('unique') ? 'Логин уже занят' : error.message)); return; }
+  const { error } = await authAdmin('create', mrow);
+  if (error) { toast('Ошибка: ' + error); return; }
   closeModal();
   await loadClients(); renderClients();
   toast('✅ Менеджер создан: ' + (company||login));
@@ -6486,6 +6758,7 @@ function showAddWarehouseModal() {
       <div class="field"><label>Контакт / WeChat</label>
         <input class="inp" id="nw-contact" placeholder="WeChat / 联系方式..."></div>
     </div>
+    <div class="field"><label>Email (необязательно) / 邮箱</label><input class="inp" id="nw-email" type="email" placeholder="для входа и сброса пароля"></div>
     <div class="modal-btns">
       <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
       <button class="btn btn-primary" style="background:var(--gold)" onclick="addWarehouseUser()">🏭 Создать / 创建员工</button>
@@ -6500,11 +6773,9 @@ async function addWarehouseUser() {
   const contact = document.getElementById('nw-contact').value.trim();
   if (!login || !pass) { toast('Заполните логин и пароль / 请填写账号和密码'); return; }
   if (pass.length < 6) { toast('Пароль минимум 6 символов / 密码至少6位'); return; }
-  const hash = await sha256(pass);
-  const { error } = await sb.from('users').insert({
-    login, password_hash: hash, role: 'warehouse', company_name: name||login, contact
-  });
-  if (error) { toast('Ошибка: ' + (error.message.includes('unique') ? 'Логин уже занят / 账号已存在' : error.message)); return; }
+  const { error } = await authAdmin('create', { role: 'warehouse', login, password: pass, company_name: name || login, contact,
+    email: document.getElementById('nw-email')?.value.trim() || '' });
+  if (error) { toast('Ошибка: ' + error); return; }
   closeModal();
   await loadClients(); renderClients();
   toast('✅ Сотрудник склада создан: ' + (name||login));
@@ -8542,7 +8813,7 @@ async function notifyChat(msg) {
   }
   // Manager in office-warehouse → notify warehouse
   if (role === 'manager' && msg.room === 'office-warehouse') {
-    const { data: whs } = await sb.from('users').select('id').eq('role', 'warehouse');
+    const whs = (await staffList()).filter(s => s.role === 'warehouse');
     for (const w of (whs||[])) {
       await sendNotification(w.id, `💬 Сообщение от офиса / 办公室消息`, msg.body.slice(0,80), '💬');
     }
@@ -13370,12 +13641,12 @@ async function crmConvert(id) {
   if (!login) return;
   const pass = prompt('Пароль клиента (мин. 6 символов) / 密码:') || '';
   if (pass.length < 6) { toast('Пароль минимум 6 символов'); return; }
-  const { data: u, error } = await sb.from('users').insert({
-    login, password_hash: await sha256(pass), role: 'client', company_name: l.company,
+  const email = (prompt('Email клиента для входа (необязательно) / 客户邮箱:', l.email || '') || '').trim();
+  const res = await authAdmin('create', { role: 'client', login, password: pass, email, company_name: l.company,
     contact: [l.contact_name, l.phone, l.messenger].filter(Boolean).join(', ') || null,
-    manager_id: l.manager_id || (isScopedMgr() ? currentUser.id : null),
-  }).select().single();
-  if (error) { toast('❌ ' + (/unique|duplicate/.test(error.message) ? 'Логин уже занят' : error.message)); return; }
+    manager_id: l.manager_id || (isScopedMgr() ? currentUser.id : null) });
+  if (res.error) { toast('❌ ' + res.error); return; }
+  const u = { id: res.id };
   await sb.from('crm_leads').update({ stage: 'won', client_id: u.id, next_date: null, updated_at: new Date().toISOString() }).eq('id', id);
   await sb.from('crm_activities').update({ client_id: u.id }).eq('lead_id', id);   // история переходит в карточку клиента
   await crmAct({ lead_id: id, client_id: u.id }, 'note', `Стал клиентом, логин ${login}`);
