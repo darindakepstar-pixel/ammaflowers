@@ -13286,8 +13286,33 @@ const CRM_STAGES = [
   ['new', '🆕 Новый', '新线索'], ['contacted', '📞 Первый контакт', '已联系'], ['negotiation', '💬 Переговоры', '洽谈中'],
   ['trial', '📦 Пробный заказ', '试订单'], ['won', '✅ Стал клиентом', '已成交'], ['lost', '✖ Отказ', '已流失'],
 ];
-const CRM_SEGMENTS = ['Цветочный салон', 'Оптовик', 'Сеть магазинов', 'Ивент / декор', 'Частный флорист', 'Другое'];
-const CRM_SOURCES = ['Выставка', 'Рекомендация', 'Сайт', 'Соцсети', 'Холодный поиск', 'Входящее обращение', 'Другое'];
+const CRM_SEGMENTS = ['Цветочный салон', 'Оптовик', 'Сеть магазинов', 'Садовый центр', 'Озеленение / интерьер', 'Ивент / декор', 'Частный флорист', 'Другое'];
+const CRM_SOURCES = ['Выставка', 'Рекомендация', 'Сайт', 'Соцсети', 'Холодный поиск', 'Исследование рынка', 'Входящее обращение', 'Другое'];
+// Приоритет лида: A — прямой интерес к горшечным или сопутствующим, B — косвенный, C — нет интереса / агрегатор, ? — нужно проверить
+const CRM_PRIO = { A: ['A', '#15803d', '#dcfce7', 'Горячий: прямой интерес'], B: ['B', '#b45309', '#fef3c7', 'Тёплый: косвенный интерес'],
+  '?': ['?', '#6b7280', '#f3f4f6', 'Проверить вручную'], C: ['C', '#9ca3af', '#f9fafb', 'Холодный: интереса не видно'] };
+const CRM_LEVELS = ['Высокий', 'Средний', 'Низкий', 'Не определён'];
+const CRM_PRIO_ORDER = { A: 0, B: 1, '?': 2, C: 3 };
+function crmPrioBadge(p) {
+  const x = CRM_PRIO[p]; if (!x) return '';
+  return `<span title="${x[3]}" style="display:inline-block;min-width:18px;text-align:center;font-size:10px;font-weight:800;padding:1px 5px;border-radius:5px;color:${x[1]};background:${x[2]};border:1px solid ${x[1]}33;margin-right:5px">${x[0]}</span>`;
+}
+// Приоритет из оценок интереса (если не задан вручную)
+function crmCalcPrio(potted, acc, isAggr) {
+  const s = v => ({ 'Высокий': 3, 'Средний': 2, 'Низкий': 1 }[v] || 0);
+  if (isAggr) return 'C';
+  const m = Math.max(s(potted), s(acc));
+  return m === 3 ? 'A' : m === 2 ? 'B' : (!s(potted) && !s(acc) ? '?' : 'C');
+}
+// Что предложить в первом звонке
+function crmOffer(l) {
+  const hi = v => v === 'Высокий' || v === 'Средний';
+  const o = [];
+  if (hi(l.potted_interest)) o.push('горшечные растения');
+  if (hi(l.accessories_interest)) o.push('кашпо и сопутствующие');
+  if (!o.length) o.push('срезка и зелень');
+  return o.join(' + ');
+}
 const CRM_KINDS = { call: '📞 Звонок', msg: '💬 Переписка', meet: '🤝 Встреча', offer: '📄 Отправлено КП / прайс', note: '📝 Заметка' };
 const CRM_SQL_HINT = 'Таблицы CRM ещё не созданы — выполните sql_crm.sql в Supabase / 请先执行 sql_crm.sql';
 let _crm = { tab: 'today', leads: [], tasks: [], stats: {}, q: '', ok: true };
@@ -13466,6 +13491,8 @@ function crmTodayHTML() {
     </div>
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <button class="btn btn-primary btn-sm" onclick="crmLeadModal()">＋ Новый лид / 新线索</button>
+      ${(() => { const hot = _crm.leads.filter(l => l.priority === 'A' && l.stage === 'cold' && !l.do_not_call).length;
+        return hot ? `<button class="btn btn-gold btn-sm" onclick="_base.prio='A';_base.stage='cold';_base.sort='prio';_crm.tab='base';crmRender()">📞 Обзвон горячих: ${hot}</button>` : ''; })()}
       <button class="btn btn-secondary btn-sm" onclick="crmOpen()">↻ Обновить</button>
     </div>
     <div class="card" style="margin-bottom:12px"><b style="font-size:13px">🔥 Сегодня и просрочено / 今日及逾期</b>
@@ -13546,6 +13573,15 @@ async function crmLeadModal(id) {
             ${CRM_STAGES.filter(([k]) => k !== 'won' || l.stage === 'won').map(([k, ru, cn]) => `<option value="${k}" ${(l.stage || 'new') === k ? 'selected' : ''}>${ru} / ${cn}</option>`).join('')}</select></div>
           ${isScopedMgr() ? '' : `<div class="field"><label>Менеджер / 负责经理</label>${crmMgrSel('cl-mgr', l.manager_id ?? (currentUser.role === 'manager' ? currentUser.id : ''))}</div>`}
         </div>
+        <div class="field-row" style="background:var(--sage-l);border-radius:8px;padding:8px">
+          <div class="field"><label>Приоритет</label><select class="inp" id="cl-prio">
+            <option value=""></option>${Object.entries(CRM_PRIO).map(([k, x]) => `<option value="${k}" ${l.priority === k ? 'selected' : ''}>${k} — ${x[3]}</option>`).join('')}</select></div>
+          <div class="field"><label>🪴 Интерес: горшечные</label><select class="inp" id="cl-pot">${opt(CRM_LEVELS, l.potted_interest)}</select></div>
+          <div class="field"><label>🧺 Интерес: кашпо, грунт, уход</label><select class="inp" id="cl-acc">${opt(CRM_LEVELS, l.accessories_interest)}</select></div>
+        </div>
+        ${l.potted_interest || l.accessories_interest ? `<div style="font-size:12px;margin:-4px 0 8px;color:var(--sage-d)">💡 В первом звонке предложить: <b>${crmOffer(l)}</b></div>` : ''}
+        ${l.research ? `<details style="margin:0 0 8px"><summary style="cursor:pointer;font-size:12px;font-weight:600">🔎 Анализ компании (исследование рынка)</summary>
+          <div style="font-size:12px;white-space:pre-wrap;color:var(--mid);max-height:200px;overflow-y:auto;margin-top:6px">${escHtml(l.research)}</div></details>` : ''}
         <div class="field" id="cl-lost-wrap" style="display:${l.stage === 'lost' ? '' : 'none'}"><label>Причина отказа / 流失原因</label>
           <input class="inp" id="cl-lost" value="${escHtml(l.lost_reason || '')}" placeholder="Дорого, уже есть поставщик, не сезон…"></div>
         <div class="field-row" style="background:var(--gold-l);border-radius:8px;padding:8px">
@@ -13607,7 +13643,9 @@ async function crmLeadSave(id) {
   };
   const extra = { inn: v('cl-inn') || null, region: v('cl-region') || null, address: v('cl-address') || null, decision_maker: v('cl-dm') || null,
     email: v('cl-email') || null, website: v('cl-site') || null, socials: v('cl-soc') || null, current_supplier: v('cl-supp') || null,
-    volume: v('cl-vol') || null, interests: v('cl-int') || null, tags: v('cl-tags') || null, do_not_call: !!document.getElementById('cl-dnc')?.checked };
+    volume: v('cl-vol') || null, interests: v('cl-int') || null, tags: v('cl-tags') || null, do_not_call: !!document.getElementById('cl-dnc')?.checked,
+    potted_interest: v('cl-pot') || null, accessories_interest: v('cl-acc') || null,
+    priority: v('cl-prio') || ((v('cl-pot') || v('cl-acc')) ? crmCalcPrio(v('cl-pot'), v('cl-acc'), /агрегатор/i.test(v('cl-tags'))) : null) };
   const prev = id ? _crm.leads.find(x => String(x.id) === String(id)) : null;
   let res;
   const put = r => id ? sb.from('crm_leads').update(r).eq('id', id) : sb.from('crm_leads').insert({ ...r, created_by: crmWho() }).select().single();
@@ -14517,12 +14555,16 @@ const BASE_FIELDS = [
   ['socials', 'Соцсети (VK, Instagram)', /соц|vk|вк|instagram|инст/],
   ['current_supplier', 'Текущий поставщик', /поставщик/],
   ['volume', 'Объём закупок', /объ[её]м/],
+  ['priority', 'Приоритет (A/B/C/?)', /приоритет/],
+  ['potted_interest', 'Интерес: горшечные', /горшеч/],
+  ['accessories_interest', 'Интерес: сопутствующие', /сопут/],
+  ['research', 'Анализ компании', /анализ|оценк|исследован/],
   ['interests', 'Что берут (срезка/зелень/горшечные)', /интерес|категор|что бер|ассорт/],
   ['source', 'Источник', /источник/],
   ['tags', 'Теги (через запятую)', /тег/],
   ['notes', 'Комментарий', /коммент|примеч|заметк/],
 ];
-let _base = { q: '', stage: 'open', city: '', seg: '', mgr: '', due: false, limit: 100, sel: new Set(), imp: null };
+let _base = { q: '', stage: 'open', city: '', seg: '', mgr: '', prio: '', sort: 'prio', due: false, limit: 100, sel: new Set(), imp: null };
 
 function basePhoneKey(p) { const d = String(p || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; }
 function baseCompanyKey(c, city) { return impNorm(String(c || '').replace(/^(ооо|ип|ао|зао|оао)\s+/i, '').replace(/[«»"]/g, '')) + '|' + impNorm(city); }
@@ -14546,7 +14588,12 @@ function baseFiltered() {
     (!_base.seg || (l.segment || '') === _base.seg) &&
     (!_base.mgr || String(l.manager_id || '') === _base.mgr) &&
     (!_base.due || (l.next_date && l.next_date <= t)) &&
-    (!q || [l.company, l.contact_name, l.decision_maker, l.phone, l.inn, l.city, l.tags, l.notes].join(' ').toLowerCase().includes(q)));
+    (!_base.prio || (l.priority || '') === _base.prio) &&
+    (!q || [l.company, l.contact_name, l.decision_maker, l.phone, l.inn, l.city, l.tags, l.notes, l.research].join(' ').toLowerCase().includes(q)))
+    .sort((a, b) => _base.sort !== 'prio' ? 0
+      : ((CRM_PRIO_ORDER[a.priority] ?? 4) - (CRM_PRIO_ORDER[b.priority] ?? 4))
+        || (!!a.do_not_call - !!b.do_not_call)
+        || String(a.next_date || '9999').localeCompare(String(b.next_date || '9999')));
 }
 
 function baseHTML() {
@@ -14561,8 +14608,9 @@ function baseHTML() {
     const st = crmStage(l.stage);
     return `<tr style="${l.do_not_call ? 'opacity:.55' : ''}">
       <td><input type="checkbox" ${_base.sel.has(String(l.id)) ? 'checked' : ''} onchange="baseToggle('${l.id}',this.checked)"></td>
-      <td class="L" style="cursor:pointer" onclick="crmLeadModal(${l.id})"><b>${escHtml(l.company || '—')}</b>${l.do_not_call ? ' <span title="Не звонить">🚫</span>' : ''}
-        <div style="font-size:10px;color:var(--mid)">${[l.city, l.segment, l.inn ? 'ИНН ' + l.inn : ''].filter(Boolean).map(escHtml).join(' · ')}</div></td>
+      <td class="L" style="cursor:pointer" onclick="crmLeadModal(${l.id})">${crmPrioBadge(l.priority)}<b>${escHtml(l.company || '—')}</b>${l.do_not_call ? ' <span title="Не звонить">🚫</span>' : ''}
+        <div style="font-size:10px;color:var(--mid)">${[l.city, l.segment, l.inn ? 'ИНН ' + l.inn : ''].filter(Boolean).map(escHtml).join(' · ')}</div>
+        ${l.potted_interest || l.accessories_interest ? `<div style="font-size:10px;color:var(--sage-d)">💡 Предложить: ${crmOffer(l)}</div>` : ''}</td>
       <td style="font-size:11px">${escHtml(l.decision_maker || l.contact_name || '')}${l.phone ? `<div><a href="tel:${escHtml(l.phone)}">${escHtml(l.phone)}</a></div>` : ''}</td>
       <td style="font-size:11px">${st[1]}${l.call_attempts ? `<div style="font-size:10px;color:var(--light)">попыток: ${l.call_attempts}</div>` : ''}</td>
       <td style="font-size:11px;color:${l.next_date && l.next_date < t ? '#dc2626' : l.next_date === t ? '#b45309' : 'var(--mid)'}">${l.next_date ? opFmtDate(l.next_date) + ' ' + escHtml(l.next_action || '') : '—'}</td>
@@ -14589,6 +14637,8 @@ function baseHTML() {
       ${sel('stage', _base.stage, [['open', 'Все в работе'], ['all', 'Все этапы'], ...CRM_STAGES.map(s => [s[0], s[1]])])}
       ${sel('city', _base.city, [['', 'Все города'], ...cities.map(c => [c, c])])}
       ${sel('seg', _base.seg, [['', 'Все типы'], ...segs.map(c => [c, c])])}
+      ${sel('prio', _base.prio, [['', 'Любой приоритет'], ['A', 'A — горячие'], ['B', 'B — тёплые'], ['?', '? — проверить'], ['C', 'C — холодные']])}
+      ${sel('sort', _base.sort, [['prio', '↓ По приоритету'], ['upd', '↓ Недавно изменённые']])}
       ${isScopedMgr() ? '' : sel('mgr', _base.mgr, [['', 'Все менеджеры'], ...allClients.filter(u => u.role === 'manager').map(m => [String(m.id), m.company_name || m.login])])}
       <label style="font-size:12px;cursor:pointer"><input type="checkbox" ${_base.due ? 'checked' : ''} onchange="_base.due=this.checked;crmRender()"> ⏰ Звонить сегодня</label>
     </div>
@@ -14729,7 +14779,9 @@ async function baseImportSave() {
   const stage = document.getElementById('bi-stage').value, src = document.getElementById('bi-src').value.trim();
   const mgrs = isScopedMgr() ? [currentUser.id] : [...document.querySelectorAll('.bi-mgr:checked')].map(x => x.value);
   const who = crmWho(), now = new Date().toISOString();
-  const rows = fresh.map((x, i) => ({ ...x, stage, source: x.source || src || file, manager_id: mgrs.length ? mgrs[i % mgrs.length] : null,
+  const rows = fresh.map((x, i) => ({ ...x, priority: (x.priority && CRM_PRIO[String(x.priority).trim().toUpperCase()] ? String(x.priority).trim().toUpperCase() : null)
+      || ((x.potted_interest || x.accessories_interest) ? crmCalcPrio(x.potted_interest, x.accessories_interest, /агрегатор/i.test(x.tags || '')) : null),
+    stage, source: x.source || src || file, manager_id: mgrs.length ? mgrs[i % mgrs.length] : null,
     do_not_call: false, call_attempts: 0, created_by: who, updated_at: now }));
   for (let i = 0; i < rows.length; i += 500) {
     const { error } = await sb.from('crm_leads').insert(rows.slice(i, i + 500));
