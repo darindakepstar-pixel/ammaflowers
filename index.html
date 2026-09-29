@@ -14228,6 +14228,298 @@ function calcCompute(run) {
   return { L, T, warns, groups };
 }
 
+// ══════════════════════════════════════════════════════════
+//  💐 ЦЕНА В РФ: себестоимость цветка в России по схемам расчёта
+//  (крупный: машина 3,65 млн + ЦБ+8%; мелкий: формула 4,55 млн,
+//  паллета 175 000 ₽ + % на банч и т.д.), маржа с учётом брака и
+//  загрузки машины, сравнение с конкурентами.
+//  Настройки и цены конкурентов: таблица calc_price_config (id='main').
+//  Позиции: из прайса (flowers) или из накладной (waybill_items).
+// ══════════════════════════════════════════════════════════
+const RP_SQL_HINT = 'Таблица настроек не создана — выполните sql_price_calc.sql в Supabase';
+const RP_DEF = () => ({
+  rate: +(FX.cbr?.cny_rub || FX.cfg?.cbr?.cny_rub || 12.6).toFixed(4), rateDate: opToday(),
+  spoilPct: 5, loadPct: 95,
+  bigRub: 3650000, bigBoxes: 880, avgBoxVol: 0.095, ourPallets: 26,
+  pack20: 12, pack30: 14, extraPerM3: 204.51,
+  schemes: [
+    { id: 's1', name: 'Крупный · машина 3,65 млн, ЦБ+8%', type: 'truck', truckRub: 3650000, truckBoxes: 880, pct: 8, pctOn: 'rate', show: true },
+    { id: 's2', name: 'Мелкий · формула 4,55 млн, ЦБ+8%', type: 'truck', truckRub: 4550000, truckBoxes: 880, pct: 8, pctOn: 'rate', show: true },
+    { id: 's3', name: 'Мелкий · 1 паллета', type: 'pallet', palletRub: 175000, pct: 15, show: true },
+    { id: 's4', name: 'Мелкий · 3+ паллеты', type: 'pallet', palletRub: 165000, pct: 15, show: true },
+    { id: 's5', name: 'Мелкий · целая машина', type: 'pallet', palletRub: 155000, pct: 10, show: true },
+  ],
+  active: 's1', competitors: [], comp: {},
+});
+let _rp = { cfg: null, ok: true, src: 'price', wbId: '', wbList: [], wbItems: [], q: '', sort: 'n', loaded: false };
+
+async function rpLoad() {
+  const { data, error } = await sb.from('calc_price_config').select('data').eq('id', 'main').maybeSingle();
+  if (error) { _rp.ok = false; return; }
+  _rp.ok = true;
+  _rp.cfg = Object.assign(RP_DEF(), data?.data || {});
+  if (!Array.isArray(_rp.cfg.schemes) || !_rp.cfg.schemes.length) _rp.cfg.schemes = RP_DEF().schemes;
+  if (!_rp.cfg.schemes.some(s => s.id === _rp.cfg.active)) _rp.cfg.active = _rp.cfg.schemes[0].id;
+  _rp.cfg.comp = _rp.cfg.comp || {};
+  if (!flowers.length) { try { await loadFlowers(); } catch (e) {} }
+  const { data: wbs } = await sb.from('waybills')
+    .select('id,waybill_number,created_at,client:users!waybills_client_id_fkey(company_name)')
+    .order('created_at', { ascending: false }).limit(100);
+  _rp.wbList = wbs || [];
+  _rp.loaded = true;
+}
+function rpSave() {
+  clearTimeout(window._rpSaveT);
+  window._rpSaveT = setTimeout(async () => {
+    const { error } = await sb.from('calc_price_config').upsert({ id: 'main', data: _rp.cfg, updated_at: new Date().toISOString(), updated_by: currentUser?.company_name || currentUser?.login || null });
+    if (error) toast('❌ Настройки не сохранены: ' + error.message);
+  }, 800);
+}
+
+// ── позиции ──
+function rpBoxInfo(sizeStr, l, w, h) {
+  let vol = null, height = h;
+  if (l && w && h) vol = (l / 100) * (w / 100) * (h / 100);
+  else if (sizeStr) {
+    vol = boxVolumeM3({ box_size: sizeStr });
+    const m = String(sizeStr).replace(/,/g, '.').match(/(\d+(?:\.\d+)?)\s*[*xX×]\s*(\d+(?:\.\d+)?)\s*[*xX×]\s*(\d+(?:\.\d+)?)/);
+    height = m ? parseFloat(m[3]) : null;
+  }
+  if (!vol) { vol = DEFAULT_BOX_M3; height = 30; }
+  return { vol, height: height || 30 };
+}
+function rpItems() {
+  if (_rp.src === 'waybill') {
+    return (_rp.wbItems || []).map((it, i) => {
+      const s = it.flower_snapshot || {}, bpb = +it.bunches_per_box || +s.boxes_per_box || 0;
+      const b = rpBoxInfo(s.box_size, +it.box_length, +it.box_width, +it.box_height);
+      return { key: String(s.id || it.flower_id || s.ru || i), n: i + 1, name: s.ru || s.name || '—', cn: s.cn || '',
+        weight: itemWeightBased(it), perBunch: +it.stems_per_bunch || +s.stems || 0, bpb,
+        priceCny: bpb ? (+it.price_per_box || 0) / bpb : 0, boxes: +it.qty_boxes || 0, vol: b.vol, height: b.height };
+    });
+  }
+  return flowers.filter(f => f.catalog !== 'supplies' && (+f.price_a > 0)).map((f, i) => {
+    const b = rpBoxInfo(f.box_size);
+    return { key: String(f.id), n: i + 1, name: f.ru || f.en || '—', cn: f.cn || '', weight: isWeightItem(f),
+      perBunch: +f.stems || 0, bpb: +f.boxes_per_box || 0, priceCny: +f.price_a || 0, boxes: 0, vol: b.vol, height: b.height };
+  });
+}
+
+// ── формула ──
+function rpSch(id) { return _rp.cfg.schemes.find(s => s.id === id); }
+function rpPalletVol() { const c = _rp.cfg; return c.bigBoxes * c.avgBoxVol / (c.ourPallets || 26); }
+function rpSchPerM3(x) { const c = _rp.cfg; return x.type === 'pallet' ? (+x.palletRub || 0) / rpPalletVol() : (+x.truckRub || 0) / ((+x.truckBoxes || 1) * c.avgBoxVol); }
+function rpCalc(it, schId) {
+  const c = _rp.cfg, x = rpSch(schId); if (!x) return null;
+  const units = it.weight ? it.perBunch / 1000 : it.perBunch;
+  if (!(it.bpb > 0 && units > 0 && c.rate > 0 && c.bigBoxes > 0 && c.avgBoxVol > 0)) return null;
+  const v = it.vol, pack = it.height >= 30 ? c.pack30 : c.pack20;
+  const G = it.priceCny * it.bpb * c.rate, E = (pack + c.extraPerM3 * v) * c.rate;
+  const realLog = c.bigRub / (c.bigBoxes * c.avgBoxVol) / Math.max(0.05, (c.loadPct || 100) / 100) * v;
+  const cost = G + E + realLog, k1 = 1 + (+x.pct || 0) / 100, Lp = rpSchPerM3(x) * v;
+  let price, solveG;
+  if (x.type === 'pallet') { price = G * k1 + E + Lp; solveG = T => (T - E - Lp) / k1; }
+  else if (x.pctOn === 'all') { price = (G + E + Lp) * k1; solveG = T => T / k1 - E - Lp; }
+  else { price = (G + E) * k1 + Lp; solveG = T => (T - Lp) / k1 - E; }
+  const profit = price * (1 - (c.spoilPct || 0) / 100) - cost, k = it.bpb * units;
+  return { price, cost, profit, margin: profit / price, unit: price / k, unitCost: cost / k, uLbl: it.weight ? 'кг' : 'ст.',
+    maxCny: T => solveG(T * k) / it.bpb / c.rate };
+}
+
+// ── интерфейс ──
+const rpN = v => { const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return isNaN(n) ? null : n; };
+const rpR = v => (v == null || !isFinite(v)) ? '—' : calcRub(v, Math.abs(v) < 100 ? 1 : 0);
+const rpIn = (path, val, w, extra = '') => `<input class="inp" id="rp-${path.replace(/\./g, '-')}" value="${escHtml(val ?? '')}" style="width:${w}px;padding:3px 5px;font-size:12px" ${extra} oninput="rpSet('${path}',this.value)">`;
+function rpSet(path, raw, isText) {
+  const keys = path.split('.'); let o = _rp.cfg;
+  keys.slice(0, -1).forEach(k => { o = o[k]; });
+  const last = keys[keys.length - 1];
+  const text = isText || ['name', 'rateDate', 'type', 'pctOn'].includes(last);
+  if (text) o[last] = raw; else { const n = rpN(raw); if (n == null) return; o[last] = n; }
+  rpSave();
+  clearTimeout(window._rpT); window._rpT = setTimeout(rpRefresh, 250);
+}
+function rpRefresh() {
+  const a = document.activeElement, id = a?.id, pos = a?.selectionStart;
+  const t = document.getElementById('rp-table'); if (t) t.innerHTML = rpTableHTML();
+  const s = document.getElementById('rp-schemes'); if (s && !s.contains(a)) s.innerHTML = rpSchemesHTML();
+  const hb = document.getElementById('rp-active'); if (hb) hb.innerHTML = rpActiveHTML();
+  if (id) { const el = document.getElementById(id); if (el && el !== a) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (e) {} } }
+}
+async function rpOpen() {
+  const el = document.getElementById('calc-content');
+  if (!_rp.loaded) { el.innerHTML = '<div class="loading"><div class="spinner"></div></div>'; await rpLoad(); }
+  if (!_rp.ok) { el.innerHTML = `<div class="card" style="border-left:4px solid var(--gold)">${RP_SQL_HINT}</div>`; return; }
+  el.innerHTML = rpHTML();
+}
+function rpHTML() {
+  const c = _rp.cfg;
+  const pm = c.bigRub / (c.bigBoxes * c.avgBoxVol);
+  return `
+    <div class="card" style="margin-bottom:12px;font-size:12px;color:var(--mid)">
+      <b style="color:var(--sage-d)">Себестоимость короба</b> = цветы (¥ × курс) + упаковка и расходы в Китае + место в нашей машине с учётом загрузки (растаможка входит).
+      <b style="color:var(--sage-d)">Цена клиенту</b> — по схеме: «машина» = (цветы + расходы) × курс × (1 + %) + цена машины ÷ вместимость за место короба (или % на всё);
+      «паллета» = цветы × (1 + %) + расходы + цена паллеты ÷ её объём. <b style="color:var(--sage-d)">Маржа</b> = цена × (1 − брак %) − себестоимость.
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;font-size:12px">
+        <label>Курс ЦБ, ₽/¥ ${rpIn('rate', c.rate, 72, 'inputmode="decimal"')}</label>
+        <button class="btn btn-secondary btn-sm" onclick="rpRateCbr()">↻ Курс ЦБ</button>
+        <label>Брак, % ${rpIn('spoilPct', c.spoilPct, 46, 'inputmode="decimal" title="Доля выручки, которую теряем на браке"')}</label>
+        <label>Загрузка машины, % ${rpIn('loadPct', c.loadPct, 46, 'inputmode="decimal" title="Сколько мест в машине реально продано"')}</label>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;font-size:12px;margin-top:10px">
+        <label>Наша машина, ₽ ${rpIn('bigRub', c.bigRub, 90)}</label>
+        <label>вместимость, кор. ${rpIn('bigBoxes', c.bigBoxes, 54)}</label>
+        <label>паллет ${rpIn('ourPallets', c.ourPallets, 44)}</label>
+        <label>средний короб, м³ ${rpIn('avgBoxVol', c.avgBoxVol, 56)}</label>
+        <label>упаковка 20 / 30 см, ¥ ${rpIn('pack20', c.pack20, 40)} ${rpIn('pack30', c.pack30, 40)}</label>
+        <label>GPS, 报检, фумигация, паллеты, ¥/м³ ${rpIn('extraPerM3', c.extraPerM3, 62)}</label>
+      </div>
+      <div style="font-size:11px;color:var(--mid);margin-top:6px">Место в полной машине: короб 20 см ${calcRub(pm * 0.08)}, 30 см ${calcRub(pm * 0.12)} · паллета ${calcRub(c.bigRub / (c.ourPallets || 26))} (~${Math.round(c.bigBoxes / (c.ourPallets || 26))} кор.)</div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px"><b style="font-size:13px">🧾 Схемы расчёта цены</b><span style="flex:1"></span>
+        <button class="btn btn-secondary btn-sm" onclick="rpAddScheme('truck')">＋ Машина + %</button>
+        <button class="btn btn-secondary btn-sm" onclick="rpAddScheme('pallet')">＋ Паллета + % на банч</button></div>
+      <div id="rp-schemes">${rpSchemesHTML()}</div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <b style="font-size:13px">🏷 Конкуренты</b>
+        ${c.competitors.map((k, i) => `<span style="display:inline-flex;gap:3px;align-items:center">${rpIn(`competitors.${i}.name`, k.name, 120)}<button class="rbtn" onclick="rpDelComp(${i})" title="Удалить">×</button></span>`).join('')}
+        <input class="inp" id="rp-newcomp" placeholder="Новый конкурент" style="width:140px;padding:3px 5px;font-size:12px" onkeydown="if(event.key==='Enter')rpAddComp()">
+        <button class="btn btn-secondary btn-sm" onclick="rpAddComp()">＋</button>
+        <span style="font-size:11px;color:var(--mid)">Цены вводите в таблице: ₽ за стебель, для весовых — за кг.</span>
+      </div>
+    </div>
+    <div class="card">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:12px">
+        <b style="font-size:13px">📦 Позиции</b>
+        <select class="inp" style="width:auto;padding:3px 5px;font-size:12px" onchange="rpSetSrc(this.value)">
+          <option value="price" ${_rp.src === 'price' ? 'selected' : ''}>Из прайса (цена A)</option>
+          <option value="waybill" ${_rp.src === 'waybill' ? 'selected' : ''}>Из накладной</option></select>
+        ${_rp.src === 'waybill' ? `<select class="inp" style="width:auto;max-width:320px;padding:3px 5px;font-size:12px" onchange="rpSetWb(this.value)">
+          <option value="">— выберите накладную —</option>
+          ${_rp.wbList.map(w => `<option value="${w.id}" ${String(w.id) === String(_rp.wbId) ? 'selected' : ''}>${escHtml(w.waybill_number || '')} · ${escHtml(w.client?.company_name || '')} · ${opFmtDateFull(w.created_at)}</option>`).join('')}</select>` : ''}
+        <input class="inp" id="rp-q" placeholder="Поиск" value="${escHtml(_rp.q)}" style="width:160px;padding:3px 5px;font-size:12px" oninput="_rp.q=this.value;clearTimeout(window._rpT);window._rpT=setTimeout(rpRefresh,200)">
+        <select class="inp" style="width:auto;padding:3px 5px;font-size:12px" onchange="_rp.sort=this.value;rpRefresh()">
+          <option value="n" ${_rp.sort === 'n' ? 'selected' : ''}>По порядку</option>
+          <option value="margin" ${_rp.sort === 'margin' ? 'selected' : ''}>Сначала низкая маржа</option>
+          <option value="diff" ${_rp.sort === 'diff' ? 'selected' : ''}>Сначала где мы дороже</option></select>
+        <span style="flex:1"></span>
+        <span id="rp-active">${rpActiveHTML()}</span>
+      </div>
+      <div id="rp-table">${rpTableHTML()}</div>
+      <div style="font-size:11px;color:var(--mid);margin-top:6px">Маржа: зелёная — от 5%, жёлтая — 0–5%, красная — убыток (наведите — прибыль с короба). «Макс. ¥» — сколько можно платить поставщику за банч, чтобы наша цена по выбранной схеме сравнялась с самой низкой ценой конкурента.</div>
+    </div>`;
+}
+function rpActiveHTML() {
+  return `Маржа и сравнение по схеме: <select class="inp" style="width:auto;padding:3px 5px;font-size:12px" onchange="_rp.cfg.active=this.value;rpSave();rpRefresh()">
+    ${_rp.cfg.schemes.map(s => `<option value="${s.id}" ${s.id === _rp.cfg.active ? 'selected' : ''}>${escHtml(s.name)}</option>`).join('')}</select>`;
+}
+function rpSchemesHTML() {
+  const c = _rp.cfg;
+  return `<div class="tbl-wrap"><table style="min-width:900px"><thead><tr><th>Показ.</th><th class="L">Название</th><th>Тип</th><th>Цена, ₽</th><th>Вместимость, кор.</th><th>%</th><th>% к чему</th><th>Место кор. 20 / 30 см</th><th></th></tr></thead><tbody>
+    ${c.schemes.map((s, i) => { const p = `schemes.${i}`, pm = rpSchPerM3(s); return `<tr>
+      <td><input type="checkbox" ${s.show ? 'checked' : ''} onchange="_rp.cfg.schemes[${i}].show=this.checked;rpSave();rpRefresh()"></td>
+      <td class="L">${rpIn(p + '.name', s.name, 230)}</td>
+      <td><select class="inp" style="width:auto;padding:3px 5px;font-size:11px" onchange="rpSetType(${i},this.value)">
+        <option value="truck" ${s.type !== 'pallet' ? 'selected' : ''}>Машина + %</option><option value="pallet" ${s.type === 'pallet' ? 'selected' : ''}>Паллета + % на банч</option></select></td>
+      <td>${s.type === 'pallet' ? rpIn(p + '.palletRub', s.palletRub, 84, 'title="₽ за паллету, со всеми расходами"') : rpIn(p + '.truckRub', s.truckRub, 84, 'title="₽ за машину"')}</td>
+      <td>${s.type === 'pallet' ? '<span style="color:var(--light)">—</span>' : rpIn(p + '.truckBoxes', s.truckBoxes, 54)}</td>
+      <td>${rpIn(p + '.pct', s.pct, 44)}</td>
+      <td>${s.type === 'pallet' ? '<span style="font-size:11px;color:var(--mid)">на банч</span>' : `<select class="inp" style="width:auto;padding:3px 5px;font-size:11px" onchange="_rp.cfg.schemes[${i}].pctOn=this.value;rpSave();rpRefresh()">
+        <option value="rate" ${s.pctOn !== 'all' ? 'selected' : ''}>к курсу ЦБ</option><option value="all" ${s.pctOn === 'all' ? 'selected' : ''}>на всё</option></select>`}</td>
+      <td style="font-size:11px;color:var(--mid)">${calcRub(pm * 0.08)} / ${calcRub(pm * 0.12)}</td>
+      <td><button class="rbtn" onclick="rpDelScheme(${i})" title="Удалить схему">×</button></td></tr>`; }).join('')}
+  </tbody></table></div>`;
+}
+function rpTableHTML() {
+  const c = _rp.cfg;
+  if (_rp.src === 'waybill' && !_rp.wbId) return '<div style="padding:14px;color:var(--mid);font-size:12px">Выберите накладную — позиции и количество коробов подтянутся из неё.</div>';
+  const shown = c.schemes.filter(s => s.show), act = c.active;
+  const q = _rp.q.trim().toLowerCase();
+  let rows = rpItems().filter(it => !q || it.name.toLowerCase().includes(q) || it.cn.includes(q)).map(it => {
+    const r = rpCalc(it, act);
+    const prices = c.competitors.map(k => rpN(c.comp[it.key]?.[k.id])).filter(p => p > 0);
+    const min = prices.length ? Math.min(...prices) : null;
+    return { it, r, min, diff: r && min ? (r.unit - min) / min : null };
+  });
+  if (!rows.length) return '<div style="padding:14px;color:var(--mid);font-size:12px">Нет позиций с ценой.</div>';
+  if (_rp.sort === 'margin') rows.sort((a, b) => (a.r?.margin ?? 9) - (b.r?.margin ?? 9));
+  if (_rp.sort === 'diff') rows.sort((a, b) => (b.diff ?? -9) - (a.diff ?? -9));
+  // итоги (для накладной — по коробам; для прайса — по 1 коробу каждой позиции)
+  const tot = shown.map(s => { let P = 0, C = 0, F = 0; rows.forEach(({ it }) => { const r = rpCalc(it, s.id); const n = _rp.src === 'waybill' ? it.boxes : 1; if (r) { P += r.price * n; C += r.cost * n; F += r.profit * n; } }); return { s, P, C, F }; });
+  const mgCls = m => m == null ? '' : m < 0 ? 'color:#b3372c' : m < 0.05 ? 'color:#8a6a12' : 'color:#1d7a45';
+  const pct = m => m == null || !isFinite(m) ? '—' : (m * 100).toFixed(1).replace('.', ',') + '%';
+  const sumRow = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">${tot.map(t => `<div style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:11px;${t.s.id === act ? 'background:var(--sage-l)' : ''}">
+      <div style="color:var(--mid)">${escHtml(t.s.name)}</div>
+      <div><b>${_rp.src === 'waybill' ? calcRub(t.P) : ''}</b> ${_rp.src === 'waybill' ? '· прибыль ' + calcRub(t.F) + ' · ' : 'маржа по списку '}<b style="${mgCls(t.P ? t.F / t.P : null)}">${pct(t.P ? t.F / t.P : null)}</b></div></div>`).join('')}</div>`;
+  const head = `<tr><th>№</th><th class="L">Позиция</th><th class="L">Пакинг</th>${_rp.src === 'waybill' ? '<th>Кор.</th>' : ''}<th>¥ / банч</th><th>Себест., ₽</th>
+    ${shown.map(s => `<th style="${s.id === act ? 'background:var(--sage-l)' : ''}">${escHtml(s.name)}</th>`).join('')}
+    <th style="background:var(--sage-l)">Маржа</th>${c.competitors.map(k => `<th>${escHtml(k.name)}</th>`).join('')}${c.competitors.length ? '<th>Макс. ¥ / банч</th>' : ''}</tr>`;
+  const body = rows.map(({ it, r, min }) => {
+    const u = it.weight ? 'г' : 'шт';
+    return `<tr><td style="color:var(--light);font-size:10px">${it.n}</td>
+      <td class="L" style="white-space:normal;min-width:170px">${escHtml(it.name)}${it.cn ? `<div style="font-size:10px;color:var(--mid)">${escHtml(it.cn)}</div>` : ''}</td>
+      <td class="L" style="font-size:11px;color:var(--mid)">${it.perBunch} ${u} × ${it.bpb} · ${it.height >= 30 ? '30' : '20'} см</td>
+      ${_rp.src === 'waybill' ? `<td>${it.boxes}</td>` : ''}
+      <td>¥${(+it.priceCny).toFixed(2)}</td>
+      <td style="font-size:11px">${r ? rpR(r.unitCost) + ' / ' + r.uLbl : '—'}</td>
+      ${shown.map(s => { const x = rpCalc(it, s.id); return `<td style="${s.id === act ? 'background:var(--sage-l);font-weight:600' : ''}">${x ? rpR(x.unit) : '—'}</td>`; }).join('')}
+      <td style="background:var(--sage-l);font-weight:600;${mgCls(r?.margin)}" title="${r ? 'Прибыль с короба: ' + calcRub(r.profit) : ''}">${pct(r?.margin)}</td>
+      ${c.competitors.map(k => { const p = rpN(c.comp[it.key]?.[k.id]); const d = r && p > 0 ? (r.unit - p) / p : null;
+        return `<td style="white-space:nowrap"><input class="inp" id="rp-c-${escHtml(it.key)}-${k.id}" value="${p ?? ''}" placeholder="₽" inputmode="decimal" style="width:64px;padding:3px 5px;font-size:12px" oninput="rpSetComp('${escHtml(it.key).replace(/'/g, "\\'")}','${k.id}',this.value)">
+          ${d == null ? '' : `<span style="font-size:10px;font-weight:600;${d > 0 ? 'color:#b3372c' : 'color:#1d7a45'}">${d > 0 ? '+' : ''}${Math.round(d * 100)}%</span>`}</td>`; }).join('')}
+      ${c.competitors.length ? `<td style="${r && min ? (it.priceCny <= r.maxCny(min) ? 'color:#1d7a45' : 'color:#b3372c') : ''}">${r && min ? '¥' + r.maxCny(min).toFixed(1) : '—'}</td>` : ''}</tr>`;
+  }).join('');
+  return sumRow + `<div class="tbl-wrap"><table style="min-width:${900 + shown.length * 90 + c.competitors.length * 110}px"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+
+// ── действия ──
+function rpSetComp(key, cid, v) {
+  const c = _rp.cfg; c.comp[key] = c.comp[key] || {};
+  const n = rpN(v); if (n == null) delete c.comp[key][cid]; else c.comp[key][cid] = n;
+  rpSave(); clearTimeout(window._rpT); window._rpT = setTimeout(rpRefresh, 400);
+}
+function rpAddComp() {
+  const inp = document.getElementById('rp-newcomp'); const name = inp?.value.trim(); if (!name) return;
+  _rp.cfg.competitors.push({ id: 'c' + Date.now().toString(36), name }); rpSave(); rpOpen();
+}
+function rpDelComp(i) {
+  const k = _rp.cfg.competitors[i]; if (!k || !confirm(`Удалить конкурента «${k.name}» и его цены?`)) return;
+  _rp.cfg.competitors.splice(i, 1); Object.values(_rp.cfg.comp).forEach(m => delete m[k.id]); rpSave(); rpOpen();
+}
+function rpAddScheme(type) {
+  const c = _rp.cfg, id = 's' + Date.now().toString(36);
+  c.schemes.push(type === 'pallet' ? { id, name: 'Новая схема · паллета', type, palletRub: 175000, pct: 15, show: true }
+    : { id, name: 'Новая схема · машина', type, truckRub: c.bigRub, truckBoxes: c.bigBoxes, pct: 8, pctOn: 'rate', show: true });
+  rpSave(); rpOpen();
+}
+function rpDelScheme(i) {
+  const c = _rp.cfg, s = c.schemes[i]; if (!s || c.schemes.length < 2 || !confirm(`Удалить схему «${s.name}»?`)) return;
+  c.schemes.splice(i, 1); if (c.active === s.id) c.active = c.schemes[0].id; rpSave(); rpOpen();
+}
+function rpSetType(i, t) {
+  const c = _rp.cfg, s = c.schemes[i]; s.type = t;
+  if (t === 'pallet' && s.palletRub == null) s.palletRub = 175000;
+  if (t === 'truck' && s.truckRub == null) { s.truckRub = c.bigRub; s.truckBoxes = c.bigBoxes; s.pctOn = 'rate'; }
+  rpSave(); rpOpen();
+}
+function rpSetSrc(v) { _rp.src = v; rpOpen(); }
+async function rpSetWb(id) {
+  _rp.wbId = id; _rp.wbItems = [];
+  if (id) { const { data } = await sb.from('waybill_items').select('*').eq('waybill_id', id).order('sort_order'); _rp.wbItems = data || []; }
+  rpRefresh();
+}
+async function rpRateCbr() {
+  try { localStorage.removeItem('amma_cbr'); } catch (e) {}
+  FX.cbr = await fxFetchCbr();
+  if (FX.cbr?.cny_rub) { _rp.cfg.rate = +FX.cbr.cny_rub.toFixed(4); _rp.cfg.rateDate = FX.cbr.date || opToday(); rpSave(); rpOpen(); toast('Курс ЦБ: ' + _rp.cfg.rate); }
+  else toast('❌ Не удалось получить курс ЦБ');
+}
+
 // ── Страница ──
 async function calcOpen() {
   if (!calcAccess()) { document.getElementById('calc-content').innerHTML = '<div class="card">Нет доступа / 无权限</div>'; return; }
@@ -14243,10 +14535,11 @@ async function calcOpen() {
   calcRender();
 }
 function calcRender() {
-  const tabs = [['run', '🧮 Расчёт / 计算'], ['history', '🗂 История / 历史'], ['ref', '📚 Справочник / 参考']];
+  const tabs = [['run', '🧮 Расчёт / 计算'], ['price', '💐 Цена в РФ / 俄罗斯价格'], ['history', '🗂 История / 历史'], ['ref', '📚 Справочник / 参考']];
   document.getElementById('calc-tabs').innerHTML = tabs.map(([k, l]) =>
     `<button class="wh-tab ${_calc.tab === k ? 'active' : ''}" onclick="_calc.tab='${k}';${k === 'history' ? 'calcLoadRuns()' : 'calcRender()'}">${l}</button>`).join('');
   const el = document.getElementById('calc-content');
+  if (_calc.tab === 'price') { rpOpen(); return; }
   if (!_calc.ok) { el.innerHTML = `<div class="card" style="border-left:4px solid var(--gold)">${CALC_SQL_HINT}</div>`; return; }
   if (_calc.tab === 'ref') el.innerHTML = calcRefHTML();
   else if (_calc.tab === 'history') el.innerHTML = calcHistoryHTML();
