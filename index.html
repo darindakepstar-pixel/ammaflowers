@@ -14239,7 +14239,7 @@ function calcCompute(run) {
 const RP_SQL_HINT = 'Таблица настроек не создана — выполните sql_price_calc.sql в Supabase';
 const RP_DEF = () => ({
   rate: +(FX.cbr?.cny_rub || FX.cfg?.cbr?.cny_rub || 12.6).toFixed(4), rateDate: opToday(),
-  spoilPct: 5, loadPct: 95,
+  spoilPct: 5, loadPct: 95, fxCostPct: 8,
   bigRub: 3650000, bigBoxes: 880, avgBoxVol: 0.095, ourPallets: 26,
   pack20: 12, pack30: 14, extraPerM3: 204.51,
   schemes: [
@@ -14251,7 +14251,7 @@ const RP_DEF = () => ({
   ],
   active: 's1', competitors: [], comp: {},
 });
-let _rp = { cfg: null, ok: true, src: 'price', wbId: '', wbList: [], wbItems: [], q: '', sort: 'n', loaded: false };
+let _rp = { cfg: null, ok: true, src: 'price', wbId: '', wbList: [], wbItems: [], wbMarkup: 0, wbTracked: false, net: true, q: '', sort: 'n', loaded: false };
 
 async function rpLoad() {
   const { data, error } = await sb.from('calc_price_config').select('data').eq('id', 'main').maybeSingle();
@@ -14263,7 +14263,7 @@ async function rpLoad() {
   _rp.cfg.comp = _rp.cfg.comp || {};
   if (!flowers.length) { try { await loadFlowers(); } catch (e) {} }
   const { data: wbs } = await sb.from('waybills')
-    .select('id,waybill_number,created_at,client:users!waybills_client_id_fkey(company_name)')
+    .select('id,waybill_number,created_at,order_id,client_id,client:users!waybills_client_id_fkey(company_name,purchase_tracking)')
     .order('created_at', { ascending: false }).limit(100);
   _rp.wbList = wbs || [];
   _rp.loaded = true;
@@ -14293,9 +14293,14 @@ function rpItems() {
     return (_rp.wbItems || []).map((it, i) => {
       const s = it.flower_snapshot || {}, bpb = +it.bunches_per_box || +s.boxes_per_box || 0;
       const b = rpBoxInfo(s.box_size, +it.box_length, +it.box_width, +it.box_height);
+      // точные банчи и сумма (для закупа по факту коробки округлены); цена — за банч
+      const bunches = +it.total_bunches || (+it.qty_boxes || 0) * bpb;
+      const sum = it.subtotal != null ? +it.subtotal : (+it.price_per_box || 0) * (+it.qty_boxes || 0);
+      let ppb = bunches ? sum / bunches : (bpb ? (+it.price_per_box || 0) / bpb : 0);
+      if (_rp.net && _rp.wbMarkup) ppb = ppb / (1 + _rp.wbMarkup / 100);   // чистый закуп без наценки инвойса
       return { key: String(s.id || it.flower_id || s.ru || i), n: i + 1, name: s.ru || s.name || '—', cn: s.cn || '',
         weight: itemWeightBased(it), perBunch: +it.stems_per_bunch || +s.stems || 0, bpb,
-        priceCny: bpb ? (+it.price_per_box || 0) / bpb : 0, boxes: +it.qty_boxes || 0, vol: b.vol, height: b.height };
+        priceCny: ppb, boxes: +it.qty_boxes || 0, bunches, vol: b.vol, height: b.height };
     });
   }
   return flowers.filter(f => f.catalog !== 'supplies' && (+f.price_a > 0)).map((f, i) => {
@@ -14316,7 +14321,7 @@ function rpCalc(it, schId) {
   const v = it.vol, pack = it.height >= 30 ? c.pack30 : c.pack20;
   const G = it.priceCny * it.bpb * c.rate, E = (pack + c.extraPerM3 * v) * c.rate;
   const realLog = c.bigRub / (c.bigBoxes * c.avgBoxVol) / Math.max(0.05, (c.loadPct || 100) / 100) * v;
-  const cost = G + E + realLog, k1 = 1 + (+x.pct || 0) / 100, Lp = rpSchPerM3(x) * v;
+  const cost = (G + E) * (1 + (c.fxCostPct || 0) / 100) + realLog, k1 = 1 + (+x.pct || 0) / 100, Lp = rpSchPerM3(x) * v;
   let price, solveG;
   if (x.type === 'pallet') { price = G * k1 + E + Lp; solveG = T => (T - E - Lp) / k1; }
   else if (x.pctOn === 'all') { price = (G + E + Lp) * k1; solveG = T => T / k1 - E - Lp; }
@@ -14357,7 +14362,7 @@ function rpHTML() {
   const pm = c.bigRub / (c.bigBoxes * c.avgBoxVol);
   return `
     <div class="card" style="margin-bottom:12px;font-size:12px;color:var(--mid)">
-      <b style="color:var(--sage-d)">Себестоимость короба</b> = цветы (¥ × курс) + упаковка и расходы в Китае + место в нашей машине с учётом загрузки (растаможка входит).
+      <b style="color:var(--sage-d)">Себестоимость короба</b> = (цветы + упаковка и расходы в Китае) × курс × (1 + налоги и валюта %) + место в машине по <u>фактическим</u> расходам (транспорт + таможня, без прибыли) с учётом загрузки.
       <b style="color:var(--sage-d)">Цена клиенту</b> — по схеме: «машина» = (цветы + расходы) × курс × (1 + %) + цена машины ÷ вместимость за место короба (или % на всё);
       «паллета» = цветы × (1 + %) + расходы + цена паллеты ÷ её объём. <b style="color:var(--sage-d)">Маржа</b> = цена × (1 − брак %) − себестоимость.
     </div>
@@ -14369,14 +14374,15 @@ function rpHTML() {
         <label>Загрузка машины, % ${rpIn('loadPct', c.loadPct, 46, 'inputmode="decimal" title="Сколько мест в машине реально продано"')}</label>
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;font-size:12px;margin-top:10px">
-        <label>Наша машина, ₽ ${rpIn('bigRub', c.bigRub, 90)}</label>
+        <label title="Транспорт + таможня без нашей прибыли — для себестоимости и маржи">Машина, фактические расходы без прибыли, ₽ ${rpIn('bigRub', c.bigRub, 90)}</label>
+        <label title="Налоги, курсовая разница, покупка валюты — фактический %, для себестоимости">Налоги и валюта, % ${rpIn('fxCostPct', c.fxCostPct, 40)}</label>
         <label>вместимость, кор. ${rpIn('bigBoxes', c.bigBoxes, 54)}</label>
         <label>паллет ${rpIn('ourPallets', c.ourPallets, 44)}</label>
         <label>средний короб, м³ ${rpIn('avgBoxVol', c.avgBoxVol, 56)}</label>
         <label>упаковка 20 / 30 см, ¥ ${rpIn('pack20', c.pack20, 40)} ${rpIn('pack30', c.pack30, 40)}</label>
         <label>GPS, 报检, фумигация, паллеты, ¥/м³ ${rpIn('extraPerM3', c.extraPerM3, 62)}</label>
       </div>
-      <div style="font-size:11px;color:var(--mid);margin-top:6px">Место в полной машине: короб 20 см ${calcRub(pm * 0.08)}, 30 см ${calcRub(pm * 0.12)} · паллета ${calcRub(c.bigRub / (c.ourPallets || 26))} (~${Math.round(c.bigBoxes / (c.ourPallets || 26))} кор.)</div>
+      <div style="font-size:11px;color:var(--mid);margin-top:6px">В ценах схем (3,65 / 4,55 млн) уже есть транспорт, таможня и прибыль, в 8% — налоги и валюта. Для маржи впишите фактические расходы на машину. Место по фактическим расходам, полная машина: короб 20 см ${calcRub(pm * 0.08)}, 30 см ${calcRub(pm * 0.12)} · паллета ${calcRub(c.bigRub / (c.ourPallets || 26))} (~${Math.round(c.bigBoxes / (c.ourPallets || 26))} кор.)</div>
     </div>
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px"><b style="font-size:13px">🧾 Схемы расчёта цены</b><span style="flex:1"></span>
@@ -14450,7 +14456,12 @@ function rpTableHTML() {
   if (_rp.sort === 'margin') rows.sort((a, b) => (a.r?.margin ?? 9) - (b.r?.margin ?? 9));
   if (_rp.sort === 'diff') rows.sort((a, b) => (b.diff ?? -9) - (a.diff ?? -9));
   // итоги (для накладной — по коробам; для прайса — по 1 коробу каждой позиции)
-  const tot = shown.map(s => { let P = 0, C = 0, F = 0; rows.forEach(({ it }) => { const r = rpCalc(it, s.id); const n = _rp.src === 'waybill' ? it.boxes : 1; if (r) { P += r.price * n; C += r.cost * n; F += r.profit * n; } }); return { s, P, C, F }; });
+  const tot = shown.map(s => { let P = 0, C = 0, F = 0; rows.forEach(({ it }) => { const r = rpCalc(it, s.id); const n = _rp.src === 'waybill' ? (it.bpb ? it.bunches / it.bpb : it.boxes) : 1; if (r) { P += r.price * n; C += r.cost * n; F += r.profit * n; } }); return { s, P, C, F }; });
+  let buyCny = 0, buyBunches = 0, buyBoxes = 0; rows.forEach(({ it }) => { buyCny += it.priceCny * (_rp.src === 'waybill' ? it.bunches : 0); buyBunches += it.bunches || 0; buyBoxes += it.boxes || 0; });
+  const buyLine = _rp.src === 'waybill' ? `<div style="font-size:12px;margin-bottom:6px">🛒 <b>Цветы, ${_rp.net && _rp.wbMarkup ? 'чистый закуп' : 'как в накладной'}:</b> ¥${buyCny.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} = ${calcRub(buyCny * c.rate)} · ${buyBunches.toLocaleString('ru-RU')} банч. · ${buyBoxes} кор.
+      ${!_rp.wbTracked ? '<span style="color:#8a6a12">· у этого клиента нет журнала закупа: в накладной цены заказа (прайс), а не закуп</span>'
+        : _rp.wbMarkup ? `<label style="margin-left:10px;cursor:pointer"><input type="checkbox" ${_rp.net ? 'checked' : ''} onchange="_rp.net=this.checked;rpRefresh()"> без наценки инвойса ${_rp.wbMarkup}%</label>` : '<span style="color:var(--mid)">(закуп по журналу, наценки в инвойсе нет)</span>'}
+      <span style="color:var(--mid)"> · упаковка и расходы в Китае добавляются сверху по ставкам выше</span></div>` : '';
   const mgCls = m => m == null ? '' : m < 0 ? 'color:#b3372c' : m < 0.05 ? 'color:#8a6a12' : 'color:#1d7a45';
   const pct = m => m == null || !isFinite(m) ? '—' : (m * 100).toFixed(1).replace('.', ',') + '%';
   const sumRow = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">${tot.map(t => `<div style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:11px;${t.s.id === act ? 'background:var(--sage-l)' : ''}">
@@ -14464,7 +14475,7 @@ function rpTableHTML() {
     return `<tr><td style="color:var(--light);font-size:10px">${it.n}</td>
       <td class="L" style="white-space:normal;min-width:170px">${escHtml(it.name)}${it.cn ? `<div style="font-size:10px;color:var(--mid)">${escHtml(it.cn)}</div>` : ''}</td>
       <td class="L" style="font-size:11px;color:var(--mid)">${it.perBunch} ${u} × ${it.bpb} · ${it.height >= 30 ? '30' : '20'} см</td>
-      ${_rp.src === 'waybill' ? `<td>${it.boxes}</td>` : ''}
+      ${_rp.src === 'waybill' ? `<td>${it.boxes}<div style="font-size:10px;color:var(--mid)">${it.bunches} банч.</div></td>` : ''}
       <td>¥${(+it.priceCny).toFixed(2)}</td>
       <td style="font-size:11px">${r ? rpR(r.unitCost) + ' / ' + r.uLbl : '—'}</td>
       ${shown.map(s => { const x = rpCalc(it, s.id); return `<td style="${s.id === act ? 'background:var(--sage-l);font-weight:600' : ''}">${x ? rpR(x.unit) : '—'}</td>`; }).join('')}
@@ -14474,7 +14485,7 @@ function rpTableHTML() {
           ${d == null ? '' : `<span style="font-size:10px;font-weight:600;${d > 0 ? 'color:#b3372c' : 'color:#1d7a45'}">${d > 0 ? '+' : ''}${Math.round(d * 100)}%</span>`}</td>`; }).join('')}
       ${c.competitors.length ? `<td style="${r && min ? (it.priceCny <= r.maxCny(min) ? 'color:#1d7a45' : 'color:#b3372c') : ''}">${r && min ? '¥' + r.maxCny(min).toFixed(1) : '—'}</td>` : ''}</tr>`;
   }).join('');
-  return sumRow + `<div class="tbl-wrap"><table style="min-width:${900 + shown.length * 90 + c.competitors.length * 110}px"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+  return buyLine + sumRow + `<div class="tbl-wrap"><table style="min-width:${900 + shown.length * 90 + c.competitors.length * 110}px"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
 }
 
 // ── действия ──
@@ -14509,8 +14520,18 @@ function rpSetType(i, t) {
 }
 function rpSetSrc(v) { _rp.src = v; rpOpen(); }
 async function rpSetWb(id) {
-  _rp.wbId = id; _rp.wbItems = [];
-  if (id) { const { data } = await sb.from('waybill_items').select('*').eq('waybill_id', id).order('sort_order'); _rp.wbItems = data || []; }
+  _rp.wbId = id; _rp.wbItems = []; _rp.wbMarkup = 0;
+  if (id) {
+    const wb = _rp.wbList.find(w => String(w.id) === String(id));
+    const [{ data }, inv] = await Promise.all([
+      sb.from('waybill_items').select('*').eq('waybill_id', id).order('sort_order'),
+      wb?.order_id ? sb.from('invoices').select('markup_pct').eq('order_id', wb.order_id).maybeSingle() : Promise.resolve({ data: null }),
+    ]);
+    _rp.wbItems = data || [];
+    _rp.wbTracked = wb ? await opClientTracked(wb) : false;
+    // наценка инвойса «сидит» в ценах накладной только у клиентов с журналом закупа (накладная из факта закупа)
+    _rp.wbMarkup = _rp.wbTracked ? (parseFloat(inv?.data?.markup_pct) || 0) : 0;
+  }
   rpRefresh();
 }
 async function rpRateCbr() {
