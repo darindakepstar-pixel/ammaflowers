@@ -173,7 +173,9 @@ const CATALOGS = [['cut', 'Срезка'], ['potted', 'Горшечные'], ['s
 const PAGE = 40;
 
 const tg = window.Telegram?.WebApp;
-const inTg = !!(tg && tg.initData);
+const inTg = !!(tg && tg.initData);                                  // открыт с подписью Telegram
+const tgApp = !!(tg && tg.platform && tg.platform !== 'unknown');    // вообще внутри Telegram
+const viaKeyboard = tgApp && !inTg;   // старая кнопка нижней клавиатуры: подписи нет, есть только sendData
 const S = {
   me: { role: 'guest', markup: 1, rub: null, name: '' },
   cur: 'RUB', flowers: [], catOrder: [], catalog: 'cut', cat: '', q: '', shown: PAGE,
@@ -223,7 +225,7 @@ async function api(action, payload = {}) {
 let mainHandler = null;
 function mainButton(text, handler, opts = {}) {
   mainHandler = handler;
-  if (inTg) {
+  if (tgApp) {
     const mb = tg.MainButton;
     if (!text) { mb.hide(); return; }
     mb.setParams({ text, is_active: !opts.disabled, is_visible: true });
@@ -234,11 +236,11 @@ function mainButton(text, handler, opts = {}) {
   $('bar-btn').textContent = text || '';
   $('bar-btn').disabled = !!opts.disabled || !!opts.progress;
 }
-if (inTg) tg.MainButton.onClick(() => mainHandler && mainHandler());
+if (tgApp) tg.MainButton.onClick(() => mainHandler && mainHandler());
 $('bar-btn').onclick = () => mainHandler && mainHandler();
 
 function backButton(handler) {
-  if (!inTg) return;
+  if (!tgApp) return;
   tg.BackButton.offClick(backButton._h || (() => {}));
   backButton._h = handler;
   if (handler) { tg.BackButton.onClick(handler); tg.BackButton.show(); } else tg.BackButton.hide();
@@ -477,7 +479,7 @@ function renderBasket() {
   } else {
     html = `<div class="view-title">Подборка</div><div class="sub">Отправьте подборку в бот — там можно оставить заявку или узнать точные цены у менеджера.</div>
       ${items.map(f => lineHTML(f)).join('')}
-      ${inTg ? '' : `<div class="note">Чтобы отправить подборку, откройте каталог через бота <a href="https://t.me/${BOT}" style="color:var(--accent)">@${BOT}</a>.</div>`}
+      ${tgApp ? '' : `<div class="note">Чтобы отправить подборку, откройте каталог через бота <a href="https://t.me/${BOT}" style="color:var(--accent)">@${BOT}</a>.</div>`}
       <div class="err" id="err"></div>`;
   }
   $('basket').innerHTML = html;
@@ -492,11 +494,17 @@ function renderBasket() {
   $('basket').querySelectorAll('[data-lq]').forEach(inp => inp.onchange = () => {
     S.cart[+inp.dataset.lq].qty = Math.max(1, parseInt(inp.value) || 1); saveState(); renderBasket(); });
   if (isClient()) mainButton('Отправить заказ', submitOrder, { progress: S.sending });
-  else mainButton(inTg ? 'Отправить подборку в бот' : '', submitSelection, { progress: S.sending });
+  else mainButton(tgApp ? 'Отправить подборку в бот' : '', submitSelection, { progress: S.sending });
 }
 
 async function submitSelection() {
-  if (S.sending || !inTg) return;
+  if (S.sending || !tgApp) return;
+  if (viaKeyboard) {   // Telegram сам передаст подборку боту и закроет каталог
+    const ids = [...S.sel].slice(0, 60);
+    S.sel.clear(); saveState(); haptic('heavy');
+    tg.sendData(JSON.stringify({ a: 'sel', ids }));
+    return;
+  }
   S.sending = true; renderBasket();
   const r = await api('selection', { ids: [...S.sel] });
   S.sending = false;
