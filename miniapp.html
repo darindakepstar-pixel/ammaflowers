@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Каталог AMMA FLOWERS</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FAFAF8;--card:#fff;--ink:#2C2C2C;--mid:#6B6B6B;--light:#A3A3A3;--line:#E8E8E0;
+  --accent:#3D5C36;--accent-ink:#fff;--accent-soft:#E8EFE6;--gold:#B8955A;--gold-soft:#F5EDD9;--ph:#EEF1EA;
+  --red:#8B3A3A;--shadow:0 1px 3px rgba(0,0,0,.06),0 4px 14px rgba(0,0,0,.05);
+  --font-h:'Cormorant Garamond',Georgia,serif;--font-b:'Plus Jakarta Sans',system-ui,sans-serif;
+}
+:root[data-theme="dark"]{
+  --bg:#141714;--card:#1E221D;--ink:#ECEDE8;--mid:#A9ADA4;--light:#7B8076;--line:#2E332C;
+  --accent:#8FB584;--accent-ink:#10140F;--accent-soft:#25301F;--gold:#D4B57A;--gold-soft:#332B1D;--ph:#262B24;
+  --red:#E08A8A;--shadow:none;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--ink);font-family:var(--font-b);font-size:14px}
+body{min-height:100vh;padding-bottom:calc(84px + env(safe-area-inset-bottom))}
+button{font:inherit;color:inherit;border:none;background:none;cursor:pointer}
+input,textarea{font:inherit;color:var(--ink)}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px}
+
+/* header */
+.top{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 0 8px;border-bottom:1px solid transparent}
+.top.scrolled{border-bottom-color:var(--line)}
+.brand{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.brand h1{font-family:var(--font-h);font-size:26px;font-weight:700;letter-spacing:.5px;color:var(--accent)}
+.brand small{display:block;font-size:11.5px;color:var(--mid);margin-top:1px}
+.cur{display:flex;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px;flex-shrink:0}
+.cur button{padding:4px 11px;border-radius:999px;font-size:12.5px;font-weight:600;color:var(--mid)}
+.cur button.on{background:var(--accent);color:var(--accent-ink)}
+.seg{display:flex;gap:6px;margin-top:10px}
+.seg button{flex:1;padding:8px 6px;border-radius:10px;background:var(--card);border:1px solid var(--line);font-weight:600;font-size:13px;color:var(--mid)}
+.seg button.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.search{margin-top:10px;position:relative}
+.search input{width:100%;padding:10px 12px 10px 36px;border-radius:10px;border:1px solid var(--line);background:var(--card);outline:none}
+.search input:focus{border-color:var(--accent)}
+.search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--light)}
+.chips{display:flex;gap:6px;overflow-x:auto;margin:10px -16px 0;padding:0 16px 2px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{white-space:nowrap;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);font-size:12.5px;color:var(--mid)}
+.chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.who{margin-top:10px;font-size:12px;color:var(--mid);display:flex;align-items:center;gap:6px}
+.who b{color:var(--ink);font-weight:600}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+
+/* grid */
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+@media (min-width:560px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.card{background:var(--card);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--line);display:flex;flex-direction:column;text-align:left}
+.ph{aspect-ratio:1/1;background:var(--ph);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+.ph img{position:absolute;inset:0;z-index:1;width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .25s}
+.ph img.ld{opacity:1}
+.ph .em{font-size:30px;opacity:.55;position:absolute}
+.badge{z-index:2;position:absolute;top:7px;left:7px;background:var(--accent);color:var(--accent-ink);font-size:11px;font-weight:700;padding:2px 7px;border-radius:999px}
+.cb{padding:8px 10px 10px;display:flex;flex-direction:column;gap:3px;flex:1}
+.cn{font-weight:600;font-size:13px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cs{font-size:11.5px;color:var(--mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:auto;padding-top:5px}
+.price{font-weight:700;font-size:13.5px}
+.price small{font-weight:500;color:var(--mid);font-size:11px}
+.add{width:30px;height:30px;border-radius:9px;background:var(--accent-soft);color:var(--accent);font-size:19px;line-height:1;font-weight:600;flex-shrink:0}
+.add.on{background:var(--accent);color:var(--accent-ink);font-size:14px}
+.more{grid-column:1/-1;height:1px}
+.empty{grid-column:1/-1;text-align:center;color:var(--mid);padding:48px 0}
+.skel{background:linear-gradient(90deg,var(--ph),var(--line),var(--ph));background-size:200% 100%;animation:sk 1.2s infinite}
+@keyframes sk{to{background-position:-200% 0}}
+
+/* sheet */
+.veil{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:20;opacity:0;pointer-events:none;transition:opacity .2s}
+.veil.open{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--card);border-radius:18px 18px 0 0;max-height:92vh;overflow:auto;
+  transform:translateY(100%);visibility:hidden;transition:transform .25s ease,visibility 0s .25s;padding-bottom:calc(90px + env(safe-area-inset-bottom))}
+.sheet.open{transform:none;visibility:visible;transition:transform .25s ease}
+.sheet .ph{aspect-ratio:4/3}
+.sheet-in{max-width:720px;margin:0 auto}
+.sb{padding:14px 16px 0}
+.cat{font-size:11.5px;color:var(--gold);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.sb h2{font-family:var(--font-h);font-size:26px;font-weight:700;line-height:1.1;margin-top:3px}
+.sb .cnname{color:var(--mid);font-size:13px;margin-top:2px}
+.specs{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:12px}
+.specs div{background:var(--card);padding:8px 10px}
+.specs span{display:block;font-size:11px;color:var(--mid)}
+.specs b{font-weight:600;font-size:13px}
+.grades{display:flex;gap:8px;margin-top:12px}
+.grades button{flex:1;border:1.5px solid var(--line);border-radius:12px;padding:10px;text-align:left}
+.grades button.on{border-color:var(--accent);background:var(--accent-soft)}
+.grades .g{font-size:11.5px;color:var(--mid);font-weight:600}
+.grades .v{font-weight:700;font-size:15px;margin-top:2px}
+.grades .v small{font-weight:500;color:var(--mid);font-size:11.5px}
+.note{margin-top:12px;font-size:12.5px;color:var(--mid);background:var(--gold-soft);border-radius:10px;padding:10px 12px;line-height:1.45}
+.qtyrow{display:flex;align-items:center;justify-content:space-between;margin-top:14px}
+.step{display:flex;align-items:center;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.step button{width:40px;height:38px;font-size:20px;color:var(--accent)}
+.step input{width:52px;text-align:center;border:none;background:none;font-weight:700;font-size:15px;outline:none;-moz-appearance:textfield}
+.step input::-webkit-outer-spin-button,.step input::-webkit-inner-spin-button{-webkit-appearance:none}
+.x{position:absolute;top:10px;right:10px;width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,.45);color:#fff;font-size:18px;z-index:3}
+
+/* basket */
+.view-title{font-family:var(--font-h);font-size:26px;font-weight:700;margin:14px 0 4px}
+.sub{color:var(--mid);font-size:12.5px}
+.line{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.line .ph{width:56px;height:56px;border-radius:10px;flex-shrink:0;aspect-ratio:auto}
+.line .ph .em{font-size:20px}
+.li{flex:1;min-width:0}
+.li .cn{-webkit-line-clamp:1}
+.li .cs{margin-top:2px}
+.rm{color:var(--light);font-size:12px;padding:4px 0}
+.line .step button{width:32px;height:32px;font-size:17px}
+.line .step input{width:36px;font-size:14px}
+.tot{display:flex;justify-content:space-between;align-items:baseline;padding:14px 0 4px;font-weight:700;font-size:16px}
+.tot span{font-weight:500;color:var(--mid);font-size:12.5px}
+.field{margin-top:12px}
+.field label{display:block;font-size:12px;color:var(--mid);margin-bottom:5px;font-weight:600}
+.field input,.field textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);outline:none}
+.field textarea{min-height:70px;resize:vertical}
+.err{margin-top:12px;color:var(--red);font-size:13px;line-height:1.45}
+.done{text-align:center;padding:56px 12px}
+.done .ok{width:64px;height:64px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:30px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
+
+/* own bottom button (outside Telegram) */
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:15;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:linear-gradient(transparent,var(--bg) 30%);display:none}
+.bar button{display:block;width:100%;max-width:688px;margin:0 auto;padding:14px;border-radius:12px;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:15px}
+.bar button:disabled{opacity:.6}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div id="v-catalog">
+  <div class="top" id="top">
+    <div class="wrap">
+      <div class="brand">
+        <div><h1>AMMA FLOWERS</h1><small>Прямые поставки из Китая · фурой до Москвы за 7 дней</small></div>
+        <div class="cur" id="cur"></div>
+      </div>
+      <div class="seg" id="seg"></div>
+      <div class="search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" type="search" placeholder="Поиск: роза, эустома, фикус…" autocomplete="off">
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="who" id="who"></div>
+    </div>
+  </div>
+  <div class="wrap"><div class="grid" id="grid"></div></div>
+</div>
+
+<div id="v-basket" class="hidden"><div class="wrap" id="basket"></div></div>
+<div id="v-done" class="hidden"><div class="wrap" id="done"></div></div>
+
+<div class="veil" id="veil"></div>
+<div class="sheet" id="sheet"><div class="sheet-in" id="sheet-in"></div></div>
+<div class="bar" id="bar"><button id="bar-btn"></button></div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+//  Каталог AMMA FLOWERS внутри Telegram.
+//  Каталог читается напрямую из Supabase (как гостевой режим сайта),
+//  а всё личное — роль, наценка, заказ — идёт через функцию tg-app,
+//  которая проверяет подпись Telegram.
+// ══════════════════════════════════════════════════════════
+const SUPABASE_URL = 'https://pfixjbntcijetvjwlvhe.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmaXhqYm50Y2lqZXR2andsdmhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MDk4MjYsImV4cCI6MjA5NjQ4NTgyNn0.VH5zClAUq_RxZ4vngLxaMryUP7J0bNzStMqIuHe7SnQ';
+const BOT = 'Amma_Flowers_bot';
+const COLS = 'id,ru,cn,en,cat_ru,cat_en,price_a,price_ap,boxes_per_box,stems,pack,length,box_size,in_stock,catalog,is_weight';
+const CATALOGS = [['cut', 'Срезка'], ['potted', 'Горшечные'], ['supplies', 'Сопутка']];
+const PAGE = 40;
+
+const tg = window.Telegram?.WebApp;
+const inTg = !!(tg && tg.initData);
+const S = {
+  me: { role: 'guest', markup: 1, rub: null, name: '' },
+  cur: 'RUB', flowers: [], catOrder: [], catalog: 'cut', cat: '', q: '', shown: PAGE,
+  photos: {}, photoReq: new Set(), sel: new Set(), cart: {}, view: 'catalog', sheetId: null, sending: false,
+};
+
+// ── helpers ───────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const isClient = () => S.me.role === 'client';
+const catalogOf = f => f.catalog || 'cut';
+const isWeight = f => f.is_weight === true || (f.is_weight !== false && /зелень|листья|greenery|foliage/i.test(`${f.cat_ru} ${f.cat_en}`));
+function money(cny, digits) {
+  const n = +cny || 0;
+  if (S.cur === 'RUB' && S.me.rub) { const v = n * S.me.rub; return Math.round(v).toLocaleString('ru-RU') + ' ₽'; }
+  return '¥' + (digits === 0 ? Math.round(n).toLocaleString('ru-RU') : (Math.round(n * 10) / 10).toLocaleString('ru-RU'));
+}
+const unitPrice = (f, g) => (g === 'ap' ? f.price_ap : f.price_a) * (isClient() ? S.me.markup : 1);
+const boxPrice = (f, g) => unitPrice(f, g) * (f.boxes_per_box || 1);
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+};
+const haptic = t => { try { tg?.HapticFeedback?.impactOccurred(t || 'light'); } catch (e) {} };
+function emojiFor(f) {
+  const c = catalogOf(f);
+  if (c === 'potted') return '🪴';
+  if (c === 'supplies') return '📦';
+  return /зелень|лист/i.test(f.cat_ru || '') ? '🌿' : /роз/i.test(f.cat_ru || '') ? '🌹' : '🌸';
+}
+
+async function rest(path) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY } });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function api(action, payload = {}) {
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/tg-app`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY },
+    body: JSON.stringify({ initData: tg?.initData || '', action, ...payload }),
+  });
+  return r.json().catch(() => ({ ok: false, error: 'server' }));
+}
+
+// ── Нижняя кнопка: в Telegram — родная MainButton, в браузере — своя ──
+let mainHandler = null;
+function mainButton(text, handler, opts = {}) {
+  mainHandler = handler;
+  if (inTg) {
+    const mb = tg.MainButton;
+    if (!text) { mb.hide(); return; }
+    mb.setParams({ text, is_active: !opts.disabled, is_visible: true });
+    opts.progress ? mb.showProgress() : mb.hideProgress();
+    return;
+  }
+  $('bar').style.display = text ? 'block' : 'none';
+  $('bar-btn').textContent = text || '';
+  $('bar-btn').disabled = !!opts.disabled || !!opts.progress;
+}
+if (inTg) tg.MainButton.onClick(() => mainHandler && mainHandler());
+$('bar-btn').onclick = () => mainHandler && mainHandler();
+
+function backButton(handler) {
+  if (!inTg) return;
+  tg.BackButton.offClick(backButton._h || (() => {}));
+  backButton._h = handler;
+  if (handler) { tg.BackButton.onClick(handler); tg.BackButton.show(); } else tg.BackButton.hide();
+}
+
+// ── Загрузка ──────────────────────────────────────────────
+async function loadCatalog() {
+  const all = [];
+  let cols = COLS;
+  for (let from = 0; ; from += 1000) {
+    let part;
+    try { part = await rest(`flowers?select=${cols}&in_stock=eq.true&order=id&limit=1000&offset=${from}`); }
+    catch (e) {   // если каких-то колонок нет в базе — берём основные
+      if (cols === COLS) { cols = 'id,ru,cn,en,cat_ru,cat_en,price_a,price_ap,boxes_per_box,stems,pack,length,box_size,in_stock'; from -= 1000; continue; }
+      throw e;
+    }
+    all.push(...part);
+    if (part.length < 1000) break;
+  }
+  S.flowers = all;
+  try { S.catOrder = await rest('category_order?select=catalog,name_ru,sort_order&order=sort_order'); } catch (e) { S.catOrder = []; }
+  const rank = {};
+  S.catOrder.forEach(c => { rank[`${c.catalog}::${c.name_ru}`] = c.sort_order; });
+  const r = f => rank[`${catalogOf(f)}::${f.cat_ru || ''}`] ?? 1e5;
+  S.flowers.sort((a, b) => r(a) - r(b) || (a.cat_ru || '').localeCompare(b.cat_ru || '', 'ru') || (a.ru || '').localeCompare(b.ru || '', 'ru'));
+}
+
+// фото лежат в базе прямо в карточке товара, поэтому грузим их только для видимых карточек
+async function loadPhotos(ids) {
+  const need = ids.filter(id => !(id in S.photos) && !S.photoReq.has(id));
+  for (let i = 0; i < need.length; i += 8) {
+    const chunk = need.slice(i, i + 8);
+    chunk.forEach(id => S.photoReq.add(id));
+    rest(`flowers?select=id,photo_url&id=in.(${chunk.join(',')})`).then(rows => {
+      rows.forEach(x => { S.photos[x.id] = x.photo_url || null; paintPhoto(x.id); });
+      chunk.forEach(id => { if (!(id in S.photos)) S.photos[id] = null; });
+    }).catch(() => chunk.forEach(id => S.photoReq.delete(id)));
+  }
+}
+function photoHTML(f) {
+  const src = S.photos[f.id];
+  return `<span class="em">${emojiFor(f)}</span>${src ? `<img class="ld" src="${src}" alt="">` : ''}`;
+}
+function paintPhoto(id) {
+  const src = S.photos[id];
+  if (!src) return;
+  document.querySelectorAll(`[data-ph="${id}"]`).forEach(el => {
+    if (el.querySelector('img')) return;
+    const img = new Image(); img.alt = ''; img.onload = () => img.classList.add('ld'); img.src = src; el.appendChild(img);
+  });
+}
+
+// ── Каталог ───────────────────────────────────────────────
+function filtered() {
+  const q = S.q.trim().toLowerCase();
+  return S.flowers.filter(f => {
+    if (q) return [f.ru, f.cn, f.en, f.cat_ru].some(x => String(x || '').toLowerCase().includes(q));
+    return catalogOf(f) === S.catalog && (!S.cat || f.cat_ru === S.cat);
+  });
+}
+function renderHeader() {
+  const present = CATALOGS.filter(([k]) => S.flowers.some(f => catalogOf(f) === k));
+  $('seg').innerHTML = present.length > 1 ? present.map(([k, t]) =>
+    `<button class="${k === S.catalog ? 'on' : ''}" data-catalog="${k}">${t}</button>`).join('') : '';
+  const cats = [...new Set(S.flowers.filter(f => catalogOf(f) === S.catalog).map(f => f.cat_ru).filter(Boolean))];
+  $('chips').innerHTML = S.q ? '' : [`<button class="chip ${!S.cat ? 'on' : ''}" data-cat="">Все</button>`]
+    .concat(cats.map(c => `<button class="chip ${c === S.cat ? 'on' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`)).join('');
+  $('cur').innerHTML = S.me.rub ? [['RUB', '₽'], ['CNY', '¥']].map(([k, t]) =>
+    `<button class="${S.cur === k ? 'on' : ''}" data-cur="${k}">${t}</button>`).join('') : '';
+  const who = isClient()
+    ? `<span class="dot"></span>Цены для <b>${esc(S.me.name)}</b>`
+    : `<span class="dot" style="background:var(--gold)"></span>Цены «от» — точный расчёт пришлёт менеджер`;
+  $('who').innerHTML = who;
+}
+function cardHTML(f) {
+  const inCart = isClient() ? (S.cart[f.id]?.qty || 0) : (S.sel.has(f.id) ? 1 : 0);
+  const spec = [f.pack, f.length].filter(Boolean).join(' · ') || f.cat_ru || '';
+  const price = isClient()
+    ? `${money(boxPrice(f, 'a'), 0)} <small>/ кор</small>`
+    : `<small>от</small> ${money(unitPrice(f, 'a'))} <small>/ банч</small>`;
+  return `<div class="card" data-open="${f.id}">
+    <div class="ph" data-ph="${f.id}">${photoHTML(f)}${inCart && isClient() ? `<span class="badge">${inCart} кор</span>` : ''}</div>
+    <div class="cb">
+      <div class="cn">${esc(f.ru)}</div>
+      <div class="cs">${esc(spec)}</div>
+      <div class="cp"><div class="price">${price}</div>
+        <button class="add ${inCart ? 'on' : ''}" data-add="${f.id}" aria-label="Добавить">${inCart ? '✓' : '+'}</button></div>
+    </div></div>`;
+}
+let io;
+function renderGrid() {
+  const list = filtered();
+  const part = list.slice(0, S.shown);
+  $('grid').innerHTML = part.length ? part.map(cardHTML).join('') + (list.length > S.shown ? '<div class="more" id="more"></div>' : '')
+    : `<div class="empty">${S.flowers.length ? 'Ничего не нашлось' : 'Каталог пуст'}</div>`;
+  loadPhotos(part.map(f => f.id));
+  io?.disconnect();
+  const more = $('more');
+  if (more) {
+    io = new IntersectionObserver(e => { if (e[0].isIntersecting) { S.shown += PAGE; renderGrid(); } }, { rootMargin: '600px' });
+    io.observe(more);
+  }
+}
+function renderCatalog() { renderHeader(); renderGrid(); updateMain(); }
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-catalog],[data-cat],[data-cur],[data-add],[data-open]');
+  if (!t) return;
+  if (t.dataset.catalog) { S.catalog = t.dataset.catalog; S.cat = ''; S.shown = PAGE; scrollTo(0, 0); renderCatalog(); }
+  else if (t.dataset.cat !== undefined && t.classList.contains('chip')) { S.cat = t.dataset.cat; S.shown = PAGE; renderCatalog(); }
+  else if (t.dataset.cur) { S.cur = t.dataset.cur; store.set('amma-mini-cur', S.cur); rerender(); }
+  else if (t.dataset.add) { e.stopPropagation(); quickAdd(+t.dataset.add); }
+  else if (t.dataset.open) openSheet(+t.dataset.open);
+});
+let qTimer;
+$('q').addEventListener('input', e => { clearTimeout(qTimer); qTimer = setTimeout(() => { S.q = e.target.value; S.shown = PAGE; renderCatalog(); }, 180); });
+addEventListener('scroll', () => $('top').classList.toggle('scrolled', scrollY > 4), { passive: true });
+
+function quickAdd(id) {
+  const f = S.flowers.find(x => x.id === id); if (!f) return;
+  haptic();
+  if (isClient()) {
+    if (S.cart[id]) S.cart[id].qty += 1; else S.cart[id] = { qty: 1, grade: 'a' };
+  } else if (S.sel.has(id)) S.sel.delete(id); else S.sel.add(id);
+  saveState(); renderGrid(); updateMain();
+}
+function saveState() { store.set('amma-mini-cart', S.cart); store.set('amma-mini-sel', [...S.sel]); }
+function rerender() { if (S.view === 'catalog') renderCatalog(); else if (S.view === 'basket') renderBasket(); if (S.sheetId) openSheet(S.sheetId); }
+
+// ── Карточка товара ───────────────────────────────────────
+function openSheet(id) {
+  const f = S.flowers.find(x => x.id === id); if (!f) return;
+  S.sheetId = id;
+  const w = isWeight(f);
+  const specs = [
+    ['Упаковка', f.pack], ['Длина', f.length],
+    [w ? 'Вес в банче' : 'Стеблей в банче', f.stems ? (w ? f.stems + ' г' : f.stems) : ''],
+    ['Банчей в коробке', f.boxes_per_box], ['Размер коробки', f.box_size],
+  ].filter(x => x[1]);
+  const line = S.cart[id] || { qty: 1, grade: 'a' };
+  let body;
+  if (isClient()) {
+    body = `<div class="grades" id="grades">${['a', 'ap'].map(g => `<button class="${line.grade === g ? 'on' : ''}" data-g="${g}">
+        <div class="g">Грейд ${g === 'a' ? 'A' : 'A+'}</div><div class="v">${money(boxPrice(f, g), 0)} <small>/ кор</small></div>
+        <div class="g" style="font-weight:500">${money(unitPrice(f, g))} / банч</div></button>`).join('')}</div>
+      <div class="qtyrow"><div><b>Коробок</b><div class="sub">${f.boxes_per_box || 1} банч в коробке</div></div>
+        <div class="step"><button data-d="-1">−</button><input id="sq" type="number" inputmode="numeric" min="1" value="${line.qty}"><button data-d="1">+</button></div></div>`;
+  } else {
+    body = `<div class="grades"><button class="on" style="cursor:default">
+        <div class="g">Цена от</div><div class="v">${money(unitPrice(f, 'a'))} <small>/ банч</small></div>
+        <div class="g" style="font-weight:500">${money(boxPrice(f, 'a'), 0)} за коробку</div></button></div>
+      <div class="note">Точная цена зависит от объёма и сезона. Добавьте позицию в подборку — менеджер пришлёт расчёт. Минимальный заказ — от 1 паллеты.</div>`;
+  }
+  $('sheet-in').innerHTML = `<div class="ph" data-ph="${f.id}" style="position:relative">${photoHTML(f)}<button class="x" id="sx" aria-label="Закрыть">×</button></div>
+    <div class="sb"><div class="cat">${esc(f.cat_ru || '')}</div><h2>${esc(f.ru)}</h2>${f.cn ? `<div class="cnname">${esc(f.cn)}</div>` : ''}
+      ${specs.length ? `<div class="specs">${specs.map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>` : ''}
+      ${body}</div>`;
+  loadPhotos([f.id]);
+  $('sheet').classList.add('open'); $('veil').classList.add('open');
+  $('sx').onclick = closeSheet;
+  if (isClient()) {
+    let grade = line.grade;
+    $('grades').onclick = e => { const b = e.target.closest('[data-g]'); if (!b) return; grade = b.dataset.g;
+      [...$('grades').children].forEach(x => x.classList.toggle('on', x === b)); haptic(); };
+    $('sheet-in').querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
+      $('sq').value = Math.max(1, (parseInt($('sq').value) || 1) + +b.dataset.d); haptic(); });
+    mainButton(S.cart[id] ? 'Сохранить' : 'Добавить в корзину', () => {
+      S.cart[id] = { qty: Math.max(1, parseInt($('sq').value) || 1), grade }; saveState(); haptic('medium'); closeSheet();
+    });
+  } else {
+    const has = S.sel.has(id);
+    mainButton(has ? 'Убрать из подборки' : 'Добавить в подборку', () => {
+      has ? S.sel.delete(id) : S.sel.add(id); saveState(); haptic('medium'); closeSheet();
+    });
+  }
+  backButton(closeSheet);
+}
+function closeSheet() {
+  S.sheetId = null;
+  $('sheet').classList.remove('open'); $('veil').classList.remove('open');
+  if (S.view === 'catalog') { renderGrid(); updateMain(); backButton(null); }
+  else { renderBasket(); }
+}
+$('veil').onclick = closeSheet;
+
+// ── Нижняя кнопка каталога ────────────────────────────────
+function cartSummary() {
+  let boxes = 0, sum = 0;
+  Object.entries(S.cart).forEach(([id, l]) => { const f = S.flowers.find(x => x.id === +id); if (f) { boxes += l.qty; sum += boxPrice(f, l.grade) * l.qty; } });
+  return { boxes, sum };
+}
+function updateMain() {
+  if (S.view !== 'catalog' || S.sheetId) return;
+  if (isClient()) {
+    const { boxes, sum } = cartSummary();
+    mainButton(boxes ? `Корзина · ${boxes} кор · ${money(sum, 0)}` : '', () => showView('basket'));
+  } else {
+    mainButton(S.sel.size ? `Подборка · ${S.sel.size} поз.` : '', () => showView('basket'));
+  }
+}
+
+// ── Корзина / подборка ────────────────────────────────────
+function showView(v) {
+  S.view = v;
+  ['catalog', 'basket', 'done'].forEach(x => $('v-' + x).classList.toggle('hidden', x !== v));
+  scrollTo(0, 0);
+  if (v === 'catalog') { renderCatalog(); backButton(null); }
+  if (v === 'basket') { renderBasket(); backButton(() => showView('catalog')); }
+  if (v === 'done') backButton(null);
+}
+function lineHTML(f, l) {
+  const sub = isClient()
+    ? `${l.grade === 'ap' ? 'A+' : 'A'} · ${money(boxPrice(f, l.grade), 0)} / кор`
+    : `от ${money(unitPrice(f, 'a'))} / банч`;
+  const ctl = isClient()
+    ? `<div class="step"><button data-ld="${f.id}" data-v="-1">−</button><input data-lq="${f.id}" type="number" inputmode="numeric" min="1" value="${l.qty}"><button data-ld="${f.id}" data-v="1">+</button></div>`
+    : '';
+  return `<div class="line"><div class="ph" data-ph="${f.id}">${photoHTML(f)}</div>
+    <div class="li"><div class="cn">${esc(f.ru)}</div><div class="cs">${sub}</div><button class="rm" data-rm="${f.id}">Убрать</button></div>${ctl}</div>`;
+}
+function renderBasket() {
+  const ids = isClient() ? Object.keys(S.cart).map(Number) : [...S.sel];
+  const items = ids.map(id => S.flowers.find(f => f.id === id)).filter(Boolean);
+  if (!items.length) { showView('catalog'); return; }
+  let html;
+  if (isClient()) {
+    const { boxes, sum } = cartSummary();
+    const min = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+    const d = store.get('amma-mini-form', {});
+    html = `<div class="view-title">Корзина</div><div class="sub">Цены по вашему прайсу. Менеджер проверит заказ и подтвердит.</div>
+      ${items.map(f => lineHTML(f, S.cart[f.id])).join('')}
+      <div class="tot">Итого <div>${money(sum, 0)} <span>· ${boxes} кор</span></div></div>
+      <div class="field"><label for="ship">Желаемая дата отгрузки</label><input id="ship" type="date" min="${min}" value="${esc(d.ship || '')}"></div>
+      <div class="field"><label for="cmt">Комментарий к заказу</label><textarea id="cmt" placeholder="Например: распределение по магазинам, замены…">${esc(d.cmt || '')}</textarea></div>
+      <div class="err" id="err"></div>`;
+  } else {
+    html = `<div class="view-title">Подборка</div><div class="sub">Отправьте подборку в бот — там можно оставить заявку или узнать точные цены у менеджера.</div>
+      ${items.map(f => lineHTML(f)).join('')}
+      ${inTg ? '' : `<div class="note">Чтобы отправить подборку, откройте каталог через бота <a href="https://t.me/${BOT}" style="color:var(--accent)">@${BOT}</a>.</div>`}
+      <div class="err" id="err"></div>`;
+  }
+  $('basket').innerHTML = html;
+  loadPhotos(items.map(f => f.id));
+  const form = () => store.set('amma-mini-form', { ship: $('ship')?.value || '', cmt: $('cmt')?.value || '' });
+  $('ship')?.addEventListener('change', form); $('cmt')?.addEventListener('input', form);
+  $('basket').onclick = e => {
+    const rm = e.target.closest('[data-rm]'), ld = e.target.closest('[data-ld]');
+    if (rm) { const id = +rm.dataset.rm; isClient() ? delete S.cart[id] : S.sel.delete(id); saveState(); haptic(); renderBasket(); }
+    if (ld) { const id = +ld.dataset.ld; S.cart[id].qty = Math.max(1, S.cart[id].qty + +ld.dataset.v); saveState(); haptic(); renderBasket(); }
+  };
+  $('basket').querySelectorAll('[data-lq]').forEach(inp => inp.onchange = () => {
+    S.cart[+inp.dataset.lq].qty = Math.max(1, parseInt(inp.value) || 1); saveState(); renderBasket(); });
+  if (isClient()) mainButton('Отправить заказ', submitOrder, { progress: S.sending });
+  else mainButton(inTg ? 'Отправить подборку в бот' : '', submitSelection, { progress: S.sending });
+}
+
+async function submitSelection() {
+  if (S.sending || !inTg) return;
+  S.sending = true; renderBasket();
+  const r = await api('selection', { ids: [...S.sel] });
+  S.sending = false;
+  if (r.ok) { S.sel.clear(); saveState(); haptic('heavy'); tg.close(); return; }
+  renderBasket(); $('err').textContent = 'Не получилось отправить. Попробуйте ещё раз или напишите менеджеру в боте.';
+}
+async function submitOrder() {
+  if (S.sending) return;
+  if (!inTg) { $('err').textContent = 'Заказ можно отправить только из бота.'; return; }
+  const items = Object.entries(S.cart).map(([id, l]) => ({ id: +id, grade: l.grade, qty: l.qty }));
+  S.sending = true; renderBasket();
+  const r = await api('order', { items, ship_date: $('ship')?.value || '', comment: $('cmt')?.value || '' });
+  S.sending = false;
+  if (r.ok) {
+    S.cart = {}; saveState(); store.set('amma-mini-form', {}); haptic('heavy');
+    $('done').innerHTML = `<div class="done"><div class="ok">✓</div><div class="view-title" style="margin:0">Заказ ${esc(r.order_number)} отправлен</div>
+      <p class="sub" style="margin-top:8px">Менеджер проверит и подтвердит его. Статус — в боте, кнопка «📦 Мои заказы».</p></div>`;
+    showView('done'); mainButton('Закрыть', () => tg.close());
+    return;
+  }
+  renderBasket();
+  $('err').innerHTML = r.error === 'out_of_stock'
+    ? `Этих позиций уже нет в наличии: <b>${esc((r.items || []).join(', '))}</b>. Уберите их и отправьте снова.`
+    : r.error === 'not_client' ? 'Заказ доступен только клиентам с подключённым Telegram.'
+    : 'Не получилось отправить заказ. Попробуйте ещё раз или напишите менеджеру в боте.';
+}
+
+// ── Старт ─────────────────────────────────────────────────
+(async function init() {
+  if (tg) {
+    tg.ready(); tg.expand();
+    document.documentElement.dataset.theme = tg.colorScheme === 'dark' ? 'dark' : 'light';
+    tg.onEvent?.('themeChanged', () => { document.documentElement.dataset.theme = tg.colorScheme === 'dark' ? 'dark' : 'light'; });
+    try { tg.setHeaderColor?.('bg_color'); } catch (e) {}
+  } else if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.dataset.theme = 'dark';
+
+  $('grid').innerHTML = Array.from({ length: 6 }, () => `<div class="card"><div class="ph skel"></div><div class="cb"><div class="cn skel" style="height:14px;border-radius:4px"></div><div class="cs skel" style="height:11px;width:60%;border-radius:4px;margin-top:4px"></div></div></div>`).join('');
+  const [meRes] = await Promise.allSettled([inTg ? api('me') : Promise.resolve(null), loadCatalog().catch(e => { console.error(e); })]);
+  const me = meRes.value;
+  if (me?.ok) S.me = { ...S.me, ...me };
+  if (S.me.role === 'staff') S.me.role = 'guest';   // сотрудники работают в полной системе; здесь — витрина
+  S.cur = store.get('amma-mini-cur', null) || (S.me.currency === 'CNY' ? 'CNY' : 'RUB');
+  if (S.cur === 'RUB' && !S.me.rub) S.cur = 'CNY';
+  S.cart = store.get('amma-mini-cart', {});
+  S.sel = new Set(store.get('amma-mini-sel', []));
+  const ids = new Set(S.flowers.map(f => f.id));            // убираем то, чего больше нет в наличии
+  Object.keys(S.cart).forEach(id => { if (!ids.has(+id)) delete S.cart[id]; });
+  S.sel.forEach(id => { if (!ids.has(id)) S.sel.delete(id); });
+  if (!S.flowers.some(f => catalogOf(f) === S.catalog)) S.catalog = catalogOf(S.flowers[0] || {});
+  renderCatalog();
+  // ссылка на конкретную позицию: t.me/<бот>/<app>?startapp=item_123 или miniapp.html?item=123
+  const start = tg?.initDataUnsafe?.start_param || new URLSearchParams(location.search).get('item') || '';
+  const m = String(start).match(/(\d+)$/);
+  if (m && ids.has(+m[1])) { const f = S.flowers.find(x => x.id === +m[1]); S.catalog = catalogOf(f); renderCatalog(); openSheet(f.id); }
+})();
+</script>
+</body>
+</html>
