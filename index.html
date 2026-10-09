@@ -6196,7 +6196,7 @@ async function saveInvoice() {
   if (window._invCostMode) {
     payload.pricing_mode = 'cost';
     payload.lines = itemsCalc.map(i => ({ ru: i.flower_snapshot?.ru || '', cn: i.flower_snapshot?.cn || '',
-      orig_ru: i._cost?.orig_ru || '', supplier: i._cost?.supplier || '', dates: i._cost?.dates || '',
+      orig_ru: i._cost?.orig_ru || '', supplier: opSupRuOnly(i._cost?.supplier), dates: i._cost?.dates || '',
       pack: i._cost?.pack || '', bunches: i._cost?.bunches || 0,
       price: +i.bunchPriceWithMarkup.toFixed(2), sum: +i.subtotalWithMarkup.toFixed(2) }));
   }
@@ -6913,7 +6913,7 @@ async function viewClientInvoice(invId) {
         <td class="L"><b>${escHtml(l.ru)}</b><br><span style="color:var(--mid);font-size:10px">${escHtml(l.cn || '')}</span>
           ${l.orig_ru ? `<br><span style="color:#7c3aed;font-size:10px">замена позиции «${escHtml(l.orig_ru)}»</span>` : ''}
           ${l.pack ? `<br><span style="color:var(--light);font-size:10px">${escHtml(l.pack)}/банч</span>` : ''}</td>
-        <td class="L" style="font-size:11px">${escHtml(l.supplier || '—')}</td>
+        <td class="L" style="font-size:11px">${escHtml(opSupRuOnly(l.supplier) || '—')}</td>
         <td style="font-size:11px;color:var(--mid)">${escHtml(l.dates || '')}</td>
         <td style="font-weight:700">${l.bunches}</td>
         <td>${cM(+l.price,2)}</td>
@@ -12212,14 +12212,23 @@ function opItemKey(it) {
 function opSupName(id, withCn) {
   const sp = _op.sups.find(x => String(x.id) === String(id));
   if (!sp) return id ? '(поставщик #' + id + ')' : '(не указан / 未指定)';
+  if (opIsClientView()) withCn = false;
   return sp.name_ru + (withCn && sp.name_cn ? ' / ' + sp.name_cn : '');
 }
 function opIsMissingTable(err) {
   return err && (err.code === '42P01' || err.code === 'PGRST205' || /order_purchases/.test(err.message || ''));
 }
 
+// Клиент (Диантус) получает только русское название поставщика: без китайского имени и телефона,
+// чтобы по документам нельзя было выйти на поставщика напрямую.
+function opIsClientView() { return currentUser?.role === 'client' || _op.mode === 'client'; }
+// Для уже сохранённых документов: «Имя / 中文名, Имя2 / 中文名2» → «Имя, Имя2»
+function opSupRuOnly(s) {
+  return String(s || '').split(',').map(x => x.split(' / ')[0].trim()).filter(Boolean).join(', ');
+}
 async function opLoadSups() {
-  const { data } = await sb.from('suppliers').select('id, name_ru, name_cn, phone, active').order('name_ru');
+  const cols = opIsClientView() ? 'id, name_ru, active' : 'id, name_ru, name_cn, phone, active';
+  const { data } = await sb.from('suppliers').select(cols).order('name_ru');
   _op.sups = data || [];
   suppliersData = _op.sups.filter(s => s.active !== false);
 }
@@ -13091,7 +13100,8 @@ function opFactLines(items, lots, bySupplier) {
     });
     Object.values(acc).forEach(a => {
       a.pack = a.packs.size ? [...a.packs].join(' / ') : (g.pack || '');
-      a.supNames = [...a.sups].map(id => opSupName(id, true)).join(', ');
+      // Инвойс и накладная уходят клиенту — поставщик только по-русски
+      a.supNames = [...a.sups].map(id => opSupName(id, false)).join(', ');
       a.dateStr = [...a.dates].sort().map(opFmtDate).join(', ');
       lines.push(a);
     });
@@ -13152,7 +13162,7 @@ function invRowsHTML(itemsCalc) {
         <span style="color:var(--mid);font-size:10px">${escHtml(item.flower_snapshot?.cn || '')}</span>
         ${c.orig_ru ? `<br><span style="color:#7c3aed;font-size:9px">замена позиции «${escHtml(c.orig_ru)}»</span>` : ''}
         ${c.pack ? `<br><span style="color:var(--light);font-size:9px">${escHtml(c.pack)}/банч</span>` : ''}</td>
-      <td class="L" style="font-size:11px">${escHtml(c.supplier || '—')}</td>
+      <td class="L" style="font-size:11px">${escHtml(opSupRuOnly(c.supplier) || '—')}</td>
       <td style="font-size:11px;color:var(--mid)">${escHtml(c.dates || '')}</td>
       <td style="font-weight:700">${c.bunches}</td>
       <td style="font-weight:700;color:var(--sage-d)">${invM(item.bunchPriceWithMarkup,2)}</td>
@@ -13183,7 +13193,7 @@ function exportInvCostExcel(order, itemsCalc, totals) {
   ];
   itemsCalc.forEach((it, i) => {
     const c = it._cost || {};
-    aoa.push([i + 1, it.flower_snapshot?.ru || '', it.flower_snapshot?.cn || '', c.orig_ru || '', c.supplier || '', c.dates || '',
+    aoa.push([i + 1, it.flower_snapshot?.ru || '', it.flower_snapshot?.cn || '', c.orig_ru || '', opSupRuOnly(c.supplier), c.dates || '',
       c.pack || '', c.bunches, +it.bunchPriceWithMarkup.toFixed(2), +it.subtotalWithMarkup.toFixed(2)]);
   });
   aoa.push([]);
@@ -13203,7 +13213,7 @@ function wbParseBox(s) {
 }
 function wbFactNote(f) {
   const x = f?.fact; if (!x) return '';
-  return `${x.orig_ru ? `<div style="font-size:10px;color:#7c3aed">🔄 вместо «${escHtml(x.orig_ru)}»</div>` : ''}${x.suppliers ? `<div style="font-size:10px;color:var(--mid)">🏭 ${escHtml(x.suppliers)}${x.dates ? ' · ' + escHtml(x.dates) : ''}</div>` : ''}`;
+  return `${x.orig_ru ? `<div style="font-size:10px;color:#7c3aed">🔄 вместо «${escHtml(x.orig_ru)}»</div>` : ''}${x.suppliers ? `<div style="font-size:10px;color:var(--mid)">🏭 ${escHtml(opSupRuOnly(x.suppliers))}${x.dates ? ' · ' + escHtml(x.dates) : ''}</div>` : ''}`;
 }
 function wbRowBunches(r) { return r.fact_bunches != null ? opNum(r.fact_bunches) : (parseInt(r.qty_boxes) || 0) * (parseInt(r.bunches_per_box) || 0); }
 function wbRowStems(r) { return wbRowBunches(r) * (parseInt(r.stems_per_bunch) || 0); }
