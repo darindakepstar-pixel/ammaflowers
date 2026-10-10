@@ -128,40 +128,6 @@ btn,button{font-family:var(--font-b);cursor:pointer}
 .freq-card-price{font-family:var(--font-h);font-size:13px;color:var(--sage-d);font-weight:600;margin-top:3px}
 .page-sub{font-size:12px;color:var(--mid);margin-bottom:20px}
 
-/* ═══ ВИТРИНА (новинки сопутки · топ срезки · горшечные) ═══ */
-.sc-wrap{margin-bottom:22px;display:flex;flex-direction:column;gap:16px}
-.sc-banner{display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:14px;cursor:pointer;
-  background:linear-gradient(100deg,var(--gold-l),var(--sage-l));border:1px solid var(--border);transition:border-color .15s}
-.sc-banner:hover{border-color:var(--gold)}
-.sc-banner-ic{font-size:26px;line-height:1}
-.sc-banner-t{font-weight:700;font-size:13.5px;color:var(--charcoal)}
-.sc-banner-s{font-size:11.5px;color:var(--mid);margin-top:2px}
-.sc-banner-go{margin-left:auto;white-space:nowrap;font-size:12px;font-weight:700;color:var(--sage-d)}
-.sc-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:8px}
-.sc-head .freq-title{margin:0}
-.sc-more{font-size:11.5px;font-weight:600;color:var(--sage-d);cursor:pointer;white-space:nowrap;background:none;border:none;font-family:inherit;padding:0}
-.sc-more:hover{text-decoration:underline}
-.sc-row{display:grid;grid-template-columns:repeat(5,minmax(0,168px));gap:12px}
-@media (max-width:820px){.sc-row{display:flex;overflow-x:auto;padding-bottom:6px}.sc-row .freq-card{flex:0 0 138px}}
-.sc-row .freq-card{position:relative;background:var(--white)}
-.sc-tag{position:absolute;top:7px;left:7px;z-index:1;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--sage-d);color:#fff;letter-spacing:.2px}
-.sc-tag.gold{background:var(--gold);color:#2b2414}
-.freq-card-sub{font-size:10px;color:var(--light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-.sc-all{align-self:center;padding:9px 22px;border-radius:999px;border:1.5px solid var(--sage);background:transparent;color:var(--sage-d);font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit}
-.sc-all:hover{background:var(--sage-l)}
-.sc-hide{font-size:11px;color:var(--light);background:none;border:none;cursor:pointer;font-family:inherit;align-self:flex-end;margin-top:-10px}
-.sc-ed-item{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px}
-.sc-ed-item img,.sc-ed-item .ph{width:34px;height:34px;border-radius:6px;object-fit:cover;background:var(--sage-l);flex-shrink:0;display:flex;align-items:center;justify-content:center}
-.ci-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
-.ci-sum div{border:1px solid var(--border);border-radius:10px;padding:8px 10px}
-.ci-sum b{display:block;font-size:20px;font-family:var(--font-h);color:var(--sage-d)}
-.ci-sum span{font-size:11px;color:var(--mid)}
-.ci-list{max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:10px}
-.ci-list table{width:100%;font-size:11px}
-.ci-list td{padding:4px 8px;border-bottom:1px solid var(--border);text-align:left}
-.ci-bar{height:8px;border-radius:99px;background:var(--sage-l);overflow:hidden;margin-top:10px}
-.ci-bar i{display:block;height:100%;width:0;background:var(--sage);transition:width .2s}
-
 
 /* ═══ CONTROLS BAR ═══ */
 .ctrl-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
@@ -800,7 +766,6 @@ document.addEventListener('DOMContentLoaded', function(){
     <div class="page-inner">
       <div class="page-title">Прайс-лист / 价格单 / Price List</div>
       <div class="page-sub" id="price-updated">Актуальные цены AMMA FLOWERS</div>
-      <div id="showcase" class="sc-wrap" style="display:none"></div>
       <div id="freq-section" style="display:none;margin-bottom:20px">
         <div class="freq-title">🔥 Часто заказываемое / 常购商品</div>
         <div class="freq-row" id="freq-row"></div>
@@ -824,8 +789,6 @@ document.addEventListener('DOMContentLoaded', function(){
         <button class="btn btn-secondary" id="btn-hide-out" onclick="toggleHide()">👁 Скрыть нет в наличии / 隐藏无货</button>
         <span class="btn btn-secondary mgr-only" onclick="saveAllPrices()" id="btn-save-prices" style="display:none">💾 Сохранить цены / 保存价格</span>
         <span class="btn btn-secondary mgr-only" onclick="openPriceImport()" id="btn-import-prices" style="display:none">📥 Импорт цен / 导入价格</span>
-        <span class="btn btn-secondary mgr-only" onclick="openCatalogImport()" id="btn-import-catalog" style="display:none" title="Добавить/обновить позиции с фото из пакета импорта (.json)">📦 Импорт каталога / 导入目录</span>
-        <span class="btn btn-secondary mgr-only" onclick="openShowcaseEditor()" id="btn-showcase-edit" style="display:none" title="Что показывать в витрине над прайсом и в каталоге бота">⭐ Витрина / 橱窗</span>
         <span class="btn btn-secondary" onclick="exportPriceExcel()" id="btn-export-excel">📊 Excel</span>
         <span class="btn btn-secondary" onclick="exportPricePDF()" id="btn-export-pdf">📄 PDF</span>
         <span class="mgr-only" id="markup-controls" style="display:none;align-items:center;gap:8px;background:var(--sage-l);border:1px solid var(--border);border-radius:var(--r);padding:5px 12px;font-size:12px">
@@ -1476,6 +1439,14 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
   </div>
 
+  <div class="page" id="page-channel">
+    <div class="page-inner">
+      <div class="page-title">📣 Telegram-канал</div>
+      <div class="page-sub">Посты из системы с кнопками в бота, расписание и черновики рубрик / 频道发布</div>
+      <div id="ch-content"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
   <div class="page" id="page-dashboard">
     <div class="page-inner">
       <div class="page-title">Дашборд / 数据看板 / Dashboard</div>
@@ -1906,12 +1877,11 @@ async function initApp() {
     document.getElementById('markup-controls').style.display = full ? 'flex' : 'none';
     document.getElementById('btn-add-flower').style.display = full ? 'inline-flex' : 'none';
     document.getElementById('btn-manage-cats').style.display = full ? 'inline-flex' : 'none';
-    document.getElementById('btn-import-catalog').style.display = full ? 'inline-flex' : 'none';
-    document.getElementById('btn-showcase-edit').style.display = full ? 'inline-flex' : 'none';
     ['btn-add-manager', 'btn-add-warehouse'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = full ? '' : 'none'; });
     const at = document.getElementById('admin-app-tools'); if (at) at.style.display = currentUser?.is_admin ? 'flex' : 'none';
     if (!full) document.getElementById('top-role').textContent = '💼 Клиентский менеджер / 客户经理';
     if (calcAccess()) document.getElementById('tab-notif')?.insertAdjacentHTML('beforebegin', `<div class="nav-tab" onclick="showPage('calc',this)">🧮 Калькулятор</div>`);
+    if (full) document.getElementById('tab-notif')?.insertAdjacentHTML('beforebegin', `<div class="nav-tab" onclick="showPage('channel',this)">📣 Канал</div>`);
     loadClients().then(() => crmBadge()).catch(() => {});
   } else if (isWh) {
     tabs.innerHTML = `
@@ -1957,7 +1927,6 @@ async function initApp() {
   if (!isWh) {
     await loadFlowers();
     renderPrice();
-    loadShowcaseCfg().then(renderShowcase).catch(() => {});
   }
 
   // Subscribe to realtime flower updates
@@ -2029,6 +1998,7 @@ function showPage(name, tabEl) {
   if (name === 'crm') crmOpen();
   if (name === 'calc') calcOpen();
   if (name === 'claims') loadClaims();
+  if (name === 'channel') CH.open();
   if (name === 'my-claims') loadMyClaims();
 }
 
@@ -3151,7 +3121,6 @@ function renderPrice() {
   document.getElementById('srch').oninput = renderPrice;
   document.getElementById('cat-filter').onchange = renderPrice;
   renderFrequentItems();
-  renderShowcase();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -3222,465 +3191,6 @@ function renderFrequentItems() {
       </div>
     </div>`;
   }).join('');
-}
-
-// ══════════════════════════════════════════════════════════
-//  ВИТРИНА над прайсом: новинки сопутки · топ срезки · горшечные
-//  Настройка (топ-позиции) хранится в публичном файле showcase.json
-//  в бакете фото — его же читает каталог бота (miniapp.html).
-// ══════════════════════════════════════════════════════════
-const SHOWCASE_FILE = 'showcase.json';
-const SHOWCASE_N = 5;
-let showcaseCfg = null;         // { top_cut:[id], top_potted:[id], mode:'auto'|'manual', updated_at }
-let _scNewPick = null;          // случайный выбор новинок — фиксируем на сессию, чтобы не прыгал
-let _scFallback = {};
-const isFullMgr = () => currentUser?.role === 'manager' && !isScopedMgr();
-
-async function loadShowcaseCfg() {
-  try {
-    const url = sb.storage.from(PHOTO_BUCKET).getPublicUrl(SHOWCASE_FILE).data.publicUrl;
-    const r = await fetch(url + '?t=' + Date.now(), { cache: 'no-store' });
-    if (r.ok) showcaseCfg = await r.json();
-  } catch (e) {}
-  if (!showcaseCfg) {
-    try {
-      const { data } = await sb.from('app_settings').select('value').eq('key', 'showcase').maybeSingle();
-      if (data?.value) showcaseCfg = data.value;
-    } catch (e) {}
-  }
-  // Менеджер раз в неделю тихо пересчитывает топ по продажам (если витрину не правили вручную)
-  const age = showcaseCfg?.updated_at ? Date.now() - new Date(showcaseCfg.updated_at).getTime() : Infinity;
-  if (isFullMgr() && showcaseCfg?.mode !== 'manual' && age > 7 * 864e5) {
-    try {
-      const top = await computeShowcaseTop(90);
-      if (top.top_cut.length || top.top_potted.length) {
-        showcaseCfg = { ...top, mode: 'auto', updated_at: new Date().toISOString() };
-        await saveShowcaseCfg(showcaseCfg, true);
-      }
-    } catch (e) { console.warn('showcase auto', e); }
-  }
-}
-
-async function saveShowcaseCfg(cfg, silent) {
-  const body = JSON.stringify(cfg);
-  let ok = false;
-  try {
-    const { error } = await sb.storage.from(PHOTO_BUCKET)
-      .upload(SHOWCASE_FILE, new Blob([body], { type: 'application/json' }), { upsert: true, contentType: 'application/json', cacheControl: '60' });
-    if (error) throw error;
-    ok = true;
-  } catch (e) { console.warn('showcase → storage:', e.message); }
-  try {
-    const { error } = await sb.from('app_settings').upsert({ key: 'showcase', value: cfg, updated_at: new Date().toISOString() });
-    if (!error) ok = true;
-  } catch (e) {}
-  if (!silent) toast(ok ? '✅ Витрина сохранена / 已保存' : '❌ Не удалось сохранить витрину');
-  return ok;
-}
-
-// Топ по продажам: сколько коробок заказали за N дней (отменённые не считаем)
-async function computeShowcaseTop(days) {
-  const since = new Date(Date.now() - days * 864e5).toISOString();
-  const { data, error } = await sb.from('orders').select('status,created_at,order_items(flower_id,qty_boxes)').gte('created_at', since);
-  if (error) throw error;
-  const score = {};
-  (data || []).forEach(o => {
-    if (o.status === 'cancelled') return;
-    (o.order_items || []).forEach(it => {
-      if (!it.flower_id) return;
-      score[it.flower_id] = (score[it.flower_id] || 0) + (parseFloat(it.qty_boxes) || 1);
-    });
-  });
-  const ranked = Object.entries(score).sort((a, b) => b[1] - a[1]).map(([id]) => parseInt(id));
-  const pick = cat => ranked.filter(id => { const f = flowers.find(x => x.id === id); return f && flowerCatalog(f) === cat && f.in_stock; }).slice(0, 12);
-  return { top_cut: pick('cut'), top_potted: pick('potted') };
-}
-
-function _scShuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
-const _scOk = f => f && f.in_stock && (+f.price_a > 0);
-const isKunmingItem = f => /куньмин/i.test(f?.pack || '');
-
-// Новинки сопутки: случайные из недавно добавленных (по id), минимум одна — сухоцвет из Куньмина
-function showcaseNewSupplies() {
-  if (_scNewPick?.length && _scNewPick.every(id => _scOk(flowers.find(f => f.id === id)))) return _scNewPick.map(id => flowers.find(f => f.id === id));
-  // два пула: сухоцветы из Куньмина и остальная сопутка — чтобы одни не вытесняли другие
-  const seenPh = new Set();   // одна фотография может стоять на нескольких вариантах — берём по одному
-  const all = flowers.filter(f => flowerCatalog(f) === 'supplies' && _scOk(f) && f.photo_url).sort((a, b) => b.id - a.id)
-    .filter(f => { const base = String(f.ru || '').replace(/\s*[—(].*$/, ''); if (seenPh.has(f.photo_url) || seenPh.has(base)) return false; seenPh.add(f.photo_url); seenPh.add(base); return true; });
-  const km = _scShuffle(all.filter(isKunmingItem).slice(0, 60));
-  const rest = _scShuffle(all.filter(f => !isKunmingItem(f)).slice(0, 60));
-  const nKm = rest.length ? Math.min(2, km.length) : km.length;
-  const pick = _scShuffle(km.slice(0, nKm).concat(rest.slice(0, SHOWCASE_N - nKm))).slice(0, SHOWCASE_N);
-  _scNewPick = pick.map(f => f.id);
-  return pick;
-}
-
-// Топ: настройка витрины → иначе запасной вариант (позиции с фото), тоже фиксируем на сессию
-function showcaseTop(cat) {
-  const ids = (showcaseCfg?.['top_' + cat] || []);
-  let list = ids.map(id => flowers.find(f => f.id === id)).filter(f => _scOk(f) && flowerCatalog(f) === cat);
-  if (list.length < SHOWCASE_N) {
-    if (!_scFallback[cat]) {
-      const pool = flowers.filter(f => flowerCatalog(f) === cat && _scOk(f) && f.photo_url);
-      _scFallback[cat] = _scShuffle(pool).slice(0, 12).map(f => f.id);
-    }
-    const extra = _scFallback[cat].map(id => flowers.find(f => f.id === id)).filter(f => _scOk(f) && !list.includes(f));
-    list = list.concat(extra);
-  }
-  return list.slice(0, SHOWCASE_N);
-}
-
-function _scUnit(f) { const c = flowerCatalog(f); return c === 'cut' ? '/банч' : c === 'potted' ? '/шт' : '/уп'; }
-
-function _scCard(f, tag, gold) {
-  const isMgr = currentUser?.role === 'manager';
-  const mk = (!isMgr && (currentUser?.show_markup || globalMarkupActive)) ? 1.15 : 1;
-  const thumb = f.photo_url || THUMBS[f.en];
-  const img = thumb ? `<img src="${thumb}" alt="${escHtml(f.ru)}" loading="lazy">` : `<div class="fimg-ph">${flowerCatalog(f) === 'potted' ? '🪴' : flowerCatalog(f) === 'supplies' ? '📦' : '🌸'}</div>`;
-  const sub = isKunmingItem(f) ? '📍 Куньмин · ' + (f.cat_ru || '') : (f.cat_ru || '');
-  return `<div class="freq-card" onclick="showFlowerDetailModal(${f.id})">
-    ${tag ? `<span class="sc-tag${gold ? ' gold' : ''}">${tag}</span>` : ''}
-    <div class="freq-card-img">${img}</div>
-    <div class="freq-card-body">
-      <div class="freq-card-name" title="${escHtml(f.ru)}">${escHtml(f.ru)}</div>
-      <div class="freq-card-sub">${escHtml(sub)}</div>
-      <div class="freq-card-price">${money((f.price_a * mk).toFixed(1), 1)}<span style="font-size:9px;color:var(--light);font-weight:400"> ${_scUnit(f)}</span></div>
-    </div>
-  </div>`;
-}
-
-function renderShowcase() {
-  const box = document.getElementById('showcase');
-  if (!box) return;
-  const role = currentUser?.role;
-  let hidden = false;
-  try { hidden = localStorage.getItem('amma-sc-hidden') === '1'; } catch (e) {}
-  if (role === 'warehouse' || !flowers.length) { box.style.display = 'none'; return; }
-  if (hidden) {
-    box.style.display = 'flex';
-    box.innerHTML = `<button class="sc-hide" style="margin:0" onclick="toggleShowcase(false)">✨ Показать витрину: новинки и топ позиций</button>`;
-    return;
-  }
-  const rows = [
-    { key: 'supplies', title: '📦 Новое в сопутке / 新品辅材', items: showcaseNewSupplies(), tag: 'NEW', gold: true, more: 'Вся упаковка и сопутка →' },
-    { key: 'cut', title: '🌹 Топ срезки / 热销鲜切花', items: showcaseTop('cut'), tag: 'ТОП', more: 'Вся срезка →' },
-    { key: 'potted', title: '🪴 Горшечные растения / 盆栽', items: showcaseTop('potted'), tag: '', more: 'Все горшечные →' },
-  ].filter(r => r.items.length);
-  if (!rows.length) { box.style.display = 'none'; return; }
-
-  const km = flowers.filter(f => flowerCatalog(f) === 'supplies' && _scOk(f) && isKunmingItem(f));
-  const kmCat = km.length ? (Object.entries(km.reduce((m, f) => (m[f.cat_ru] = (m[f.cat_ru] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1])[0][0]) : '';
-  const banner = km.length ? `<div class="sc-banner" onclick="showcaseGo('supplies', '${escHtml(kmCat).replace(/'/g, "\\'")}')">
-      <div class="sc-banner-ic">🌾</div>
-      <div><div class="sc-banner-t">Сухоцветы и стабилизированные цветы — уже на складе в Куньмине</div>
-        <div class="sc-banner-s">${km.length} позиций · можно добавить к заказу цветов · 干花永生花 昆明现货</div></div>
-      <div class="sc-banner-go">Смотреть →</div></div>` : '';
-
-  box.style.display = 'flex';
-  box.innerHTML = banner + rows.map((r, i) => `<div>
-      <div class="sc-head"><div class="freq-title">${r.title}</div>
-        <button class="sc-more" onclick="showcaseGo('${r.key}')">${r.more}</button></div>
-      <div class="sc-row">${r.items.map((f, j) => _scCard(f, r.tag && (r.key !== 'cut' || j < 3) ? r.tag : '', r.gold)).join('')}</div>
-    </div>`).join('') +
-    `<button class="sc-all" onclick="showcaseGo(null)">Смотреть весь ассортимент ↓ / 查看全部</button>
-     <button class="sc-hide" onclick="toggleShowcase(true)">Скрыть витрину</button>`;
-}
-
-function toggleShowcase(hide) {
-  try { localStorage.setItem('amma-sc-hidden', hide ? '1' : '0'); } catch (e) {}
-  renderShowcase();
-}
-
-// Переход из витрины в нужный каталог (и категорию) прайса
-function showcaseGo(catalog, catName) {
-  if (catalog) {
-    const btn = document.querySelector(`#catalog-tabs .wh-tab[data-cat="${catalog}"]`);
-    switchCatalog(catalog, btn);
-    const sel = document.getElementById('cat-filter');
-    if (sel) sel.value = catName || '';
-    if (priceViewMode !== 'cards') setPriceView('cards'); else renderPrice();
-  }
-  document.querySelector('#page-price .ctrl-bar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-// ── Редактор витрины (менеджер) ──
-let _scEdit = null;
-function openShowcaseEditor() {
-  _scEdit = { top_cut: [...(showcaseCfg?.top_cut || [])], top_potted: [...(showcaseCfg?.top_potted || [])] };
-  _renderShowcaseEditor();
-  openModal();
-}
-function _renderShowcaseEditor() {
-  const sec = (cat, title) => {
-    const ids = _scEdit['top_' + cat];
-    const opts = flowers.filter(f => flowerCatalog(f) === cat && f.in_stock && !ids.includes(f.id))
-      .map(f => `<option value="${f.id}">${escHtml(f.ru)} · ${escHtml(f.cat_ru || '')} (#${f.id})</option>`).join('');
-    return `<div style="margin-bottom:14px"><div class="freq-title">${title}</div>
-      ${ids.map((id, i) => { const f = flowers.find(x => x.id === id); if (!f) return '';
-        return `<div class="sc-ed-item">${f.photo_url ? `<img src="${f.photo_url}">` : '<span class="ph">🌸</span>'}
-          <span style="flex:1">${i < SHOWCASE_N ? '<b>' + (i + 1) + '.</b> ' : '<span style="color:var(--light)">запас · </span>'}${escHtml(f.ru)} <span style="color:var(--light)">#${f.id}${f.in_stock ? '' : ' · нет в наличии'}</span></span>
-          <button class="btn-icon" onclick="_scMove('${cat}',${i},-1)" title="Выше">↑</button>
-          <button class="btn-icon" onclick="_scMove('${cat}',${i},1)" title="Ниже">↓</button>
-          <button class="btn-icon" onclick="_scMove('${cat}',${i},0)" title="Убрать">✕</button></div>`; }).join('') || '<div style="font-size:12px;color:var(--light)">Пусто — будут показаны случайные позиции с фото</div>'}
-      <div style="display:flex;gap:6px;margin-top:6px"><select class="inp" id="sc-add-${cat}" style="flex:1"><option value="">+ Добавить позицию…</option>${opts}</select>
-        <button class="btn btn-secondary btn-sm" onclick="_scAdd('${cat}')">Добавить</button></div></div>`;
-  };
-  document.getElementById('modal-content').innerHTML = `
-    <div class="modal-title">⭐ Витрина над прайсом / 橱窗</div>
-    <p style="font-size:12px;color:var(--mid);margin-bottom:12px">Показывается клиентам, гостям и в каталоге бота. «Новое в сопутке» собирается само — случайные 5 из недавно добавленных. Топ срезки и горшечные — отсюда (первые ${SHOWCASE_N}, остальные — запас на случай, если что-то закончится).<br>
-      Без ручной правки топ раз в неделю пересчитывается по продажам за 90 дней.</p>
-    <button class="btn btn-secondary btn-sm" style="margin-bottom:14px" onclick="_scRecalc()">🔄 Пересчитать по продажам за 90 дней</button>
-    ${sec('cut', '🌹 Топ срезки')}
-    ${sec('potted', '🪴 Горшечные')}
-    <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
-      <button class="btn btn-primary" onclick="_scSave()">💾 Сохранить</button></div>`;
-}
-function _scMove(cat, i, d) {
-  const a = _scEdit['top_' + cat];
-  _scEdit._auto = false;
-  if (d === 0) a.splice(i, 1);
-  else { const j = i + d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; }
-  _renderShowcaseEditor();
-}
-function _scAdd(cat) {
-  const v = parseInt(document.getElementById('sc-add-' + cat).value);
-  if (!v) return;
-  _scEdit['top_' + cat].push(v);
-  _scEdit._auto = false;
-  _renderShowcaseEditor();
-}
-async function _scRecalc() {
-  try {
-    const top = await computeShowcaseTop(90);
-    _scEdit = top;
-    _scEdit._auto = true;
-    _renderShowcaseEditor();
-    toast(`Найдено по продажам: срезка ${top.top_cut.length}, горшечные ${top.top_potted.length}`);
-  } catch (e) { toast('❌ ' + e.message); }
-}
-async function _scSave() {
-  const cfg = { top_cut: _scEdit.top_cut, top_potted: _scEdit.top_potted, mode: _scEdit._auto ? 'auto' : 'manual', updated_at: new Date().toISOString() };
-  if (await saveShowcaseCfg(cfg)) {
-    showcaseCfg = cfg; _scFallback = {};
-    logActivity('showcase_update', 'app', null, 'showcase', 'Обновлена витрина прайса');
-    closeModal(); renderShowcase();
-  }
-}
-
-// ══════════════════════════════════════════════════════════
-//  ИМПОРТ КАТАЛОГА из пакета .json (позиции + фото)
-//  Пакет собирается из Excel-прайса поставщика. Повторный импорт того же пакета
-//  не создаёт дублей: позиции сопоставляются с уже существующими.
-// ══════════════════════════════════════════════════════════
-let _ci = null; // { pkg, plan:[{it, f, changes}], outIds:[] }
-
-function openCatalogImport() {
-  _ci = null;
-  document.getElementById('modal-content').innerHTML = `
-    <div class="modal-title">📦 Импорт каталога / 导入目录</div>
-    <p style="font-size:12px;color:var(--mid);margin-bottom:12px">Выберите пакет импорта <b>.json</b> (например, <i>amma-import-dried.json</i> или <i>amma-import-supplies.json</i>).
-      Сначала покажу, что добавится и что обновится — в базу ничего не пишется до подтверждения.</p>
-    <input type="file" accept=".json,application/json" class="inp" style="width:100%" onchange="ciReadFile(this)">
-    <div id="ci-body" style="margin-top:12px"></div>
-    <div class="modal-btns" id="ci-btns"><button class="btn btn-secondary" onclick="closeModal()">Закрыть / 关闭</button></div>`;
-  document.getElementById('modal-content').classList.add('op-wide');
-  openModal();
-}
-
-const _ciNorm = s => String(s ?? '').toLowerCase().replace(/[×x*х]\s*(?=\d)/g, '×').replace(/\s+/g, ' ').replace(/[«»"“”]/g, '').trim();
-
-async function ciReadFile(input) {
-  const file = input.files?.[0];
-  if (!file) return;
-  const body = document.getElementById('ci-body');
-  body.innerHTML = '⏳ Читаю файл…';
-  let pkg;
-  try { pkg = JSON.parse(await file.text()); } catch (e) { body.innerHTML = '❌ Это не JSON-файл'; return; }
-  if (pkg?.kind !== 'amma-catalog-import' || !Array.isArray(pkg.items)) { body.innerHTML = '❌ Это не пакет импорта каталога AMMA'; return; }
-
-  // ── Сопоставление с текущим прайсом ──
-  const catalog = pkg.items[0]?.catalog || 'supplies';
-  const dried = pkg.scope === 'dried';
-  const pkgCats = new Set(pkg.items.map(i => i.cat_ru));
-  const existing = flowers.filter(f => flowerCatalog(f) === catalog);
-  const byRuPack = {}, byCnPack = {}, byCn = {};
-  existing.forEach(f => {
-    byRuPack[_ciNorm(f.ru) + '|' + _ciNorm(f.pack)] ??= f;
-    if (f.cn) byCnPack[_ciNorm(f.cn) + '|' + _ciNorm(f.pack)] ??= f;
-    if (f.cn) (byCn[_ciNorm(f.cn)] ||= []).push(f);
-  });
-  const pkgCnCount = {};
-  pkg.items.forEach(it => { const k = _ciNorm(it.cn); pkgCnCount[k] = (pkgCnCount[k] || 0) + 1; });
-  const used = new Set();
-  const FIELDS = ['ru', 'cn', 'en', 'cat_ru', 'cat_en', 'pack', 'price_a', 'price_ap', 'boxes_per_box', 'order_qty', 'box_size'];
-  const plan = pkg.items.map(it => {
-    let f = byRuPack[_ciNorm(it.ru) + '|' + _ciNorm(it.pack)] || (it.cn && byCnPack[_ciNorm(it.cn) + '|' + _ciNorm(it.pack)]);
-    if (!f && it.cn && pkgCnCount[_ciNorm(it.cn)] === 1 && byCn[_ciNorm(it.cn)]?.length === 1) f = byCn[_ciNorm(it.cn)][0];
-    if (f && used.has(f.id)) f = null;
-    if (f) used.add(f.id);
-    let changes = null;
-    if (f) {
-      changes = {};
-      FIELDS.forEach(k => {
-        const nv = it[k], ov = f[k];
-        if (k === 'en' && !nv) return;
-        const same = typeof nv === 'number' ? Math.abs((+ov || 0) - nv) < 1e-9 : String(ov ?? '') === String(nv ?? '');
-        if (!same) changes[k] = nv;
-      });
-      if (!f.in_stock) changes.in_stock = true;
-    }
-    return { it, f, changes };
-  });
-  // Позиции, которых нет в новом прайсе (в пределах того же раздела)
-  const outIds = existing.filter(f => f.in_stock && !used.has(f.id) &&
-    (dried ? pkgCats.has(f.cat_ru) : !['Сухоцветы'].includes(f.cat_ru))).map(f => f.id);
-  _ci = { pkg, plan, outIds, catalog };
-
-  const nNew = plan.filter(p => !p.f).length;
-  const nUpd = plan.filter(p => p.f && Object.keys(p.changes).length).length;
-  const nSame = plan.length - nNew - nUpd;
-  const nPrice = plan.filter(p => p.f && ('price_a' in p.changes || 'price_ap' in p.changes)).length;
-  const imgCount = Object.keys(pkg.images || {}).length;
-  const rowsHtml = plan.filter(p => !p.f || Object.keys(p.changes).length).slice(0, 400).map(p => {
-    const img = p.it.img && pkg.images?.[p.it.img];
-    const LBL = { ru: 'название', cn: 'название CN', en: 'название EN', cat_ru: 'категория', cat_en: 'категория EN', pack: 'фасовка',
-      boxes_per_box: 'в коробке', order_qty: 'заказ. кол-во', box_size: 'размер кор.', in_stock: 'снова в наличии' };
-    const what = !p.f ? '<span style="color:var(--sage-d);font-weight:700">новая</span>'
-      : Object.keys(p.changes).filter(k => k !== 'price_ap' || !('price_a' in p.changes))
-          .map(k => k === 'price_a' ? `цена ${p.f.price_a} → <b>${p.changes.price_a}</b>` : k === 'price_ap' ? `цена A+ → <b>${p.changes.price_ap}</b>` : LBL[k] || k).join(', ');
-    return `<tr><td style="width:40px">${img ? `<img src="${img}" style="width:34px;height:34px;object-fit:cover;border-radius:6px">` : ''}</td>
-      <td>${escHtml(p.it.ru)}<div style="color:var(--light)">${escHtml(p.it.cat_ru)} · ${escHtml(p.it.pack)}</div></td>
-      <td style="white-space:nowrap">¥${p.it.price_a}</td><td>${what}</td></tr>`;
-  }).join('');
-
-  body.innerHTML = `
-    <div style="font-size:12px"><b>${escHtml(pkg.source || file.name)}</b> → каталог «${CATALOG_FILE_LABELS?.[catalog] || catalog}», категорий: ${pkgCats.size}, фото: ${imgCount}</div>
-    <div class="ci-sum">
-      <div><b>${nNew}</b><span>новых позиций</span></div>
-      <div><b>${nUpd}</b><span>обновятся (цена у ${nPrice})</span></div>
-      <div><b>${nSame}</b><span>без изменений</span></div>
-      <div><b>${outIds.length}</b><span>есть в прайсе, нет в файле</span></div>
-    </div>
-    ${outIds.length ? `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;margin-bottom:6px;cursor:pointer">
-      <input type="checkbox" id="ci-out" style="margin-top:2px"> <span>Отметить «нет в наличии» ${outIds.length} поз., которых нет в новом файле
-      <span style="color:var(--light)">(${dried ? 'в тех же категориях' : 'в упаковке, кроме сухоцветов'}; позиции не удаляются)</span></span></label>` : ''}
-    <label style="display:flex;gap:8px;align-items:center;font-size:12px;margin-bottom:10px;cursor:pointer">
-      <input type="checkbox" id="ci-photo"> Заменить фото и у уже существующих позиций (по умолчанию — только если фото нет)</label>
-    ${rowsHtml ? `<div class="ci-list"><table>${rowsHtml}</table></div>` : '<div style="font-size:12px;color:var(--mid)">Всё уже актуально — менять нечего.</div>'}
-    <div id="ci-progress" style="display:none"><div class="ci-bar"><i id="ci-bar"></i></div><div id="ci-status" style="font-size:12px;color:var(--mid);margin-top:6px"></div></div>`;
-  document.getElementById('ci-btns').innerHTML = `<button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
-    <button class="btn btn-primary" id="ci-go" onclick="ciApply()">✅ Импортировать (${nNew + nUpd})</button>`;
-}
-
-// Фото пакета → Storage (имя файла по ключу картинки — повторный импорт не плодит копии)
-async function _ciUploadImg(key, dataUrl) {
-  const blob = await (await fetch(dataUrl)).blob();
-  const path = `import-${key}.jpg`;
-  const { error } = await sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: true, cacheControl: '31536000' });
-  if (error) throw error;
-  return sb.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
-}
-
-async function ciApply() {
-  if (!_ci) return;
-  const { pkg, plan, outIds, catalog } = _ci;
-  const replacePhoto = document.getElementById('ci-photo')?.checked;
-  const markOut = document.getElementById('ci-out')?.checked;
-  const goBtn = document.getElementById('ci-go');
-  goBtn.disabled = true;
-  document.getElementById('ci-progress').style.display = 'block';
-  const bar = document.getElementById('ci-bar'), st = document.getElementById('ci-status');
-  const setP = (done, total, msg) => { bar.style.width = (total ? Math.round(done / total * 100) : 100) + '%'; st.textContent = msg; };
-
-  // 1) Фото: только нужные (новые позиции + без фото / замена)
-  const needImg = new Set();
-  plan.forEach(p => {
-    if (!p.it.img) return;
-    if (!p.f || replacePhoto || !p.f.photo_url) needImg.add(p.it.img);
-  });
-  const urls = {};
-  const keys = [...needImg];
-  let done = 0, imgFail = 0;
-  const worker = async () => {
-    while (keys.length) {
-      const k = keys.shift();
-      try { urls[k] = await _ciUploadImg(k, pkg.images[k]); } catch (e) { imgFail++; console.warn('img', k, e.message); }
-      done++; setP(done, needImg.size, `📷 Фото ${done} / ${needImg.size}${imgFail ? ' · ошибок ' + imgFail : ''}`);
-    }
-  };
-  await Promise.all([worker(), worker(), worker(), worker()]);
-  if (imgFail && imgFail === needImg.size && needImg.size) {
-    if (!confirm('Ни одно фото не загрузилось (см. консоль). Продолжить импорт без фото?')) { goBtn.disabled = false; return; }
-  }
-
-  // 2) Новые позиции — пачками
-  const now = new Date().toISOString();
-  const toRow = it => {
-    const r = { ru: it.ru, cn: it.cn || null, en: it.en || null, cat_ru: it.cat_ru, cat_en: it.cat_en || it.cat_ru,
-      price_a: it.price_a, price_ap: it.price_ap ?? it.price_a, boxes_per_box: it.boxes_per_box || 1,
-      pack: it.pack || null, order_qty: it.order_qty || null, box_size: it.box_size || null,
-      in_stock: true, catalog: it.catalog || catalog, updated_at: now,
-      photo_url: (it.img && urls[it.img]) || null };
-    if (it.is_weight != null) r.is_weight = it.is_weight;
-    return r;
-  };
-  const dropCols = new Set();
-  const clean = r => { const o = { ...r }; dropCols.forEach(c => delete o[c]); return o; };
-  const news = plan.filter(p => !p.f);
-  let ins = 0, insFail = 0;
-  for (let i = 0; i < news.length; i += 25) {
-    const chunk = news.slice(i, i + 25).map(p => toRow(p.it));
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const { data, error } = await sb.from('flowers').insert(chunk.map(clean)).select('*');
-      if (!error) { flowers.push(...(data || [])); ins += chunk.length; break; }
-      const col = error.message.match(/'([a-z_]+)' column/)?.[1];
-      if (col && !dropCols.has(col)) { dropCols.add(col); continue; }   // колонки нет в базе — пишем без неё
-      console.error('insert', error); insFail += chunk.length; break;
-    }
-    setP(i + 25, news.length, `➕ Добавлено ${ins} / ${news.length}${insFail ? ' · ошибок ' + insFail : ''}`);
-  }
-
-  // 3) Обновления существующих
-  const upds = plan.filter(p => p.f && (Object.keys(p.changes).length || (p.it.img && urls[p.it.img])));
-  let upd = 0, updFail = 0;
-  for (const p of upds) {
-    const ch = { ...p.changes, updated_at: now };
-    if (p.it.img && urls[p.it.img]) ch.photo_url = urls[p.it.img];
-    const { error } = await sb.from('flowers').update(clean(ch)).eq('id', p.f.id);
-    if (error) { updFail++; console.error('update', p.f.id, error); }
-    else { Object.assign(p.f, ch); upd++; }
-    setP(upd + updFail, upds.length, `✏️ Обновлено ${upd} / ${upds.length}`);
-  }
-
-  // 4) Нет в новом прайсе → «нет в наличии»
-  let outN = 0;
-  if (markOut && outIds.length) {
-    for (let i = 0; i < outIds.length; i += 100) {
-      const ids = outIds.slice(i, i + 100);
-      const { error } = await sb.from('flowers').update({ in_stock: false, updated_at: now }).in('id', ids);
-      if (!error) { outN += ids.length; ids.forEach(id => { const f = flowers.find(x => x.id === id); if (f) f.in_stock = false; }); }
-    }
-  }
-
-  // 5) Новые категории — в конец порядка категорий каталога
-  try {
-    const have = new Set(categoryOrder.filter(c => c.catalog === catalog).map(c => c.name_ru));
-    let maxOrder = Math.max(0, ...categoryOrder.map(c => c.sort_order || 0));
-    const cats = [...new Map(pkg.items.map(i => [i.cat_ru, i.cat_en])).entries()].filter(([ru]) => !have.has(ru));
-    for (const [ru, en] of cats) await sb.from('category_order').insert({ catalog, name_ru: ru, name_en: en || ru, sort_order: ++maxOrder });
-    if (cats.length) await loadCategoryOrder();
-  } catch (e) {}
-
-  sortFlowersByCategoryOrder();
-  fillCatFilterForCatalog();
-  _scNewPick = null;
-  renderPrice();
-  logActivity('catalog_import', 'flowers', null, pkg.source || 'import',
-    `Импорт каталога: +${ins} новых, обновлено ${upd}${outN ? ', нет в наличии ' + outN : ''}${imgFail ? ', фото с ошибкой ' + imgFail : ''}`);
-  setP(1, 1, `✅ Готово: добавлено ${ins}, обновлено ${upd}${outN ? ', снято с наличия ' + outN : ''}` +
-    (insFail || updFail || imgFail ? ` · ошибок: ${insFail + updFail} поз., ${imgFail} фото (подробно в консоли; можно запустить импорт ещё раз — дублей не будет)` : ''));
-  document.getElementById('ci-btns').innerHTML = `<button class="btn btn-primary" onclick="closeModal()">Готово / 完成</button>`;
-  toast(`✅ Импорт: +${ins} · обновлено ${upd}`);
 }
 
 function renderPriceTable() {
@@ -14599,6 +14109,211 @@ async function tgTest() {
   await sendNotification(currentUser.id, 'Тестовое уведомление / 测试通知', 'Если вы видите это в Telegram — всё работает 🌸', '✅');
   toast('✉️ Отправлено — проверьте Telegram');
 }
+
+
+// ══════════════════════════════════════════════════════════
+//  📣 TELEGRAM-КАНАЛ: посты с кнопками в бота, расписание, черновики рубрик.
+//  Всё идёт через функцию tg-bot (она проверяет вход менеджера) — таблица tg_posts
+//  напрямую со страницы не читается.
+// ══════════════════════════════════════════════════════════
+const CH_BTNS = { price: '💰 Узнать цену', cat: '🌸 Каталог', join: '📝 Стать клиентом', pre: '🎁 Предзаказ' };
+const CH_TITLES = ['🌸 Новинки недели', '🔥 Популярные позиции недели', '🎁 Предзаказ к празднику', '✨ В наличии на этой неделе'];
+const CH = {
+  st: null, posts: [], ed: null,
+  async api(op, payload = {}) {
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      const r = await fetch(SUPABASE_URL + '/functions/v1/tg-bot', { method: 'POST',
+        headers: { 'content-type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + (session?.access_token || '') },
+        body: JSON.stringify({ app: 'channel', op, ...payload }) });
+      return await r.json();
+    } catch (e) { return { ok: false, error: 'Нет связи с сервером: ' + e.message }; }
+  },
+  async open() {
+    const box = document.getElementById('ch-content');
+    box.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    const [st, ls] = await Promise.all([this.api('status'), this.api('list')]);
+    if (!st.ok) {
+      box.innerHTML = `<div class="card" style="border-left:4px solid var(--gold);font-size:13px">⚠️ ${escHtml(st.error || 'Канал недоступен')}<div style="font-size:11px;color:var(--mid);margin-top:6px">Проверьте, что выполнен sql_tg_channel.sql и обновлена функция tg-bot.</div></div>`;
+      return;
+    }
+    this.st = st; this.posts = ls.posts || [];
+    this.render();
+  },
+  render() {
+    const st = this.st, box = document.getElementById('ch-content');
+    const editor = st.editor_id ? (allClients.find(u => String(u.id) === String(st.editor_id)) || {}) : null;
+    const head = st.channel
+      ? `<div class="card" style="margin-bottom:12px;border-left:4px solid #229ED9;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div style="flex:1;min-width:220px"><b>✅ Канал подключён:</b> ${escHtml(st.channel_title || st.channel)}
+            <div style="font-size:11px;color:var(--mid);margin-top:2px">Черновики рубрик (пн — «Новинки», ср — «Популярное», 9:00 МСК) приходят в Telegram:
+              <b>${escHtml(editor ? (editor.company_name || editor.login) : 'никому')}</b></div></div>
+          ${String(st.editor_id) !== String(currentUser.id) ? `<button class="btn btn-secondary btn-sm" onclick="CH.setEditor()">Присылать черновики мне</button>` : ''}
+          <button class="btn btn-primary" onclick="CH.edit()">＋ Новый пост</button></div>`
+      : `<div class="card" style="margin-bottom:12px;border-left:4px solid var(--gold)">
+          <b>Подключите канал</b>
+          <ol style="font-size:12px;margin:6px 0 8px 18px;line-height:1.6">
+            <li>Откройте канал в Telegram → Управление каналом → Администраторы → Добавить → <b>@${escHtml(st.bot)}</b></li>
+            <li>Дайте права: публикация, редактирование и удаление сообщений</li>
+            <li>Бот запомнит канал сам. Если бот уже был админом — опубликуйте в канале любой пост (его потом можно удалить) и нажмите «Обновить», или впишите @имя канала и нажмите «Проверить»</li></ol>
+          <div style="display:flex;gap:6px;flex-wrap:wrap"><input class="inp" id="ch-ref" placeholder="@amma_flowers" style="max-width:240px">
+            <button class="btn btn-primary btn-sm" onclick="CH.setChannel()">Проверить и подключить</button>
+            <button class="btn btn-secondary btn-sm" onclick="CH.open()">↻ Обновить</button></div></div>`;
+    const stLabel = p => p.status === 'published' ? `<span class="badge" style="background:#dcfce7;color:#166534">Опубликован ${p.published_at ? new Date(p.published_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}</span>`
+      : p.status === 'scheduled' ? `<span class="badge" style="background:#e0f2fe;color:#075985">🕒 ${new Date(p.scheduled_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>`
+      : p.status === 'failed' ? `<span class="badge" style="background:#fee2e2;color:#991b1b" title="${escHtml(p.error || '')}">Ошибка</span>`
+      : `<span class="badge" style="background:var(--bg);color:var(--mid)">Черновик</span>`;
+    const kind = { new_items: 'Новинки', popular: 'Популярное' };
+    const rows = this.posts.map(p => `<tr>
+      <td>${stLabel(p)}${kind[p.kind] ? `<div style="font-size:10px;color:var(--gold);margin-top:3px">рубрика · ${kind[p.kind]}</div>` : ''}</td>
+      <td class="L" style="max-width:420px"><div style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(String(p.text || '').split('\n')[0] || '—')}</div>
+        <div style="font-size:10px;color:var(--light)">${(p.buttons || []).map(b => CH_BTNS[b]).join(' · ')}${p.status === 'failed' && p.error ? ` · <span style="color:#991b1b">${escHtml(p.error)}</span>` : ''}</div></td>
+      <td title="Переходы в бота по кнопкам">👆 ${p.clicks || 0}</td>
+      <td title="Заявок из бота с меткой этого поста">📝 ${p.leads || 0}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-secondary btn-sm" onclick="CH.edit(${p.id})">✏️</button>
+        ${p.status !== 'published' ? `<button class="btn btn-primary btn-sm" onclick="CH.publish(${p.id})">🚀 Опубликовать</button>` : ''}
+        <button class="btn btn-secondary btn-sm" onclick="CH.remove(${p.id})">🗑</button></td></tr>`).join('');
+    box.innerHTML = head + (this.posts.length
+      ? `<div class="card" style="padding:0;overflow-x:auto"><table style="width:100%;min-width:640px"><thead><tr><th>Статус</th><th class="L">Пост</th><th>Переходы</th><th>Заявки</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<div class="empty-state"><div class="icon">📣</div><p>Постов пока нет — создайте первый</p></div>`);
+  },
+  async setChannel() {
+    const r = await this.api('setChannel', { channel: document.getElementById('ch-ref')?.value || '' });
+    if (!r.ok) { toast('❌ ' + r.error); return; }
+    toast('✅ Канал подключён: ' + (r.channel_title || '')); this.open();
+  },
+  async setEditor() { const r = await this.api('setEditor'); if (r.ok) { toast('✅ Черновики будут приходить вам в Telegram'); this.open(); } },
+  async publish(id) {
+    if (!confirm('Опубликовать пост в канале сейчас? / 立即发布?')) return;
+    const p = this.posts.find(x => x.id === id);
+    const r = await this.api('publish', { post: p });
+    toast(r.ok ? '✅ Опубликовано' : '❌ ' + r.error); this.open();
+  },
+  async remove(id) {
+    const p = this.posts.find(x => x.id === id);
+    if (!confirm(p?.status === 'published' ? 'Удалить пост из канала? / 从频道删除?' : 'Удалить пост? / 删除?')) return;
+    const r = await this.api('delete', { id });
+    toast(r.ok ? '🗑 Удалено' : '❌ ' + r.error); this.open();
+  },
+
+  // ── Редактор ──
+  edit(id) {
+    const p = id ? this.posts.find(x => x.id === id) : null;
+    this.ed = p ? { ...p, flower_ids: [...(p.flower_ids || [])], buttons: [...(p.buttons || [])],
+      photoMode: p.photo_url ? 'own' : p.photo_flower ? 'flower' : 'none' }
+      : { text: '', flower_ids: [], buttons: ['price', 'cat'], photoMode: 'flower', photo_url: null, scheduled_at: null };
+    const pub = p?.status === 'published';
+    const local = d => { const x = new Date(d); return new Date(x - x.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
+    document.getElementById('modal-content').innerHTML = `
+      <div class="modal-title">${p ? (pub ? '✏️ Изменить опубликованный пост' : '✏️ Пост') : '＋ Новый пост'} / 频道帖子</div>
+      ${pub ? '<div style="font-size:11px;color:var(--mid);margin-bottom:8px">У опубликованного поста меняются текст и кнопки — прямо в канале. Фото поменять нельзя: удалите пост и создайте новый.</div>' : ''}
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div style="flex:1 1 340px;min-width:280px">
+          ${pub ? '' : `<div class="field"><label>Товары в посте</label>
+            <input class="inp" id="che-q" placeholder="🔍 Найти позицию в прайсе…" oninput="CH.search(this.value)" autocomplete="off">
+            <div id="che-found" style="max-height:150px;overflow:auto"></div><div id="che-chips" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px"></div>
+            <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap">
+              <select class="inp" id="che-title" style="width:auto;padding:4px 6px;font-size:12px">${CH_TITLES.map(t => `<option>${t}</option>`).join('')}</select>
+              <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="che-prices"> с ценами «от»</label>
+              <button class="btn btn-secondary btn-sm" onclick="CH.template()">✨ Текст по товарам</button></div></div>`}
+          <div class="field"><label>Текст поста <span id="che-cnt" style="color:var(--light);font-weight:400"></span></label>
+            <textarea class="inp" id="che-text" rows="9" oninput="CH.ed.text=this.value;CH.preview()">${escHtml(this.ed.text)}</textarea></div>
+          ${pub ? '' : `<div class="field"><label>Фото</label><div style="display:flex;gap:10px;flex-wrap:wrap;font-size:12px">
+              ${[['flower', 'Фото первого товара'], ['own', 'Своё фото'], ['none', 'Без фото']].map(([v, t]) => `<label style="display:flex;gap:4px;align-items:center"><input type="radio" name="che-ph" value="${v}" ${this.ed.photoMode === v ? 'checked' : ''} onchange="CH.ed.photoMode=this.value;CH.preview()"> ${t}</label>`).join('')}</div>
+            <input type="file" id="che-file" accept="image/*" style="margin-top:6px;font-size:12px" onchange="CH.upload(this)"></div>`}
+          <div class="field"><label>Кнопки под постом</label><div style="display:flex;gap:10px;flex-wrap:wrap;font-size:12px">
+            ${Object.entries(CH_BTNS).map(([k, t]) => `<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" value="${k}" ${this.ed.buttons.includes(k) ? 'checked' : ''} onchange="CH.toggleBtn('${k}',this.checked)"> ${t}</label>`).join('')}</div></div>
+          ${pub ? '' : `<div class="field"><label>Запланировать (ваше местное время)</label>
+            <input class="inp" type="datetime-local" id="che-when" value="${this.ed.scheduled_at ? local(this.ed.scheduled_at) : ''}" style="max-width:230px">
+            <div style="font-size:10px;color:var(--light)">Пусто — сохранится черновиком. Публикация «на время» — с точностью до 10 минут.</div></div>`}
+        </div>
+        <div style="flex:0 0 300px;max-width:100%">
+          <div style="font-size:11px;color:var(--mid);margin-bottom:4px">Так увидят в канале:</div>
+          <div id="che-prev" style="background:#e6ebe2;border-radius:14px;padding:12px"></div>
+        </div>
+      </div>
+      <div class="modal-btns">
+        <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+        <button class="btn btn-secondary" onclick="CH.save(false)">💾 ${pub ? 'Сохранить в канале' : 'Сохранить'}</button>
+        ${pub ? '' : `<button class="btn btn-primary" onclick="CH.save(true)">🚀 Опубликовать сейчас</button>`}
+      </div>`;
+    openModal();
+    this.chips(); this.preview();
+  },
+  search(q) {
+    q = q.trim().toLowerCase();
+    const box = document.getElementById('che-found');
+    if (!q) { box.innerHTML = ''; return; }
+    const list = flowers.filter(f => f.in_stock && [f.ru, f.cn, f.en].some(x => String(x || '').toLowerCase().includes(q))).slice(0, 12);
+    box.innerHTML = list.map(f => `<div style="padding:4px 6px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border)" onclick="CH.addFlower(${f.id})">＋ ${escHtml(f.ru)} <span style="color:var(--light)">${escHtml(f.cat_ru || '')}</span></div>`).join('') || '<div style="font-size:11px;color:var(--light);padding:4px">Ничего не найдено</div>';
+  },
+  addFlower(id) {
+    if (!this.ed.flower_ids.includes(id)) this.ed.flower_ids.push(id);
+    document.getElementById('che-q').value = ''; document.getElementById('che-found').innerHTML = '';
+    this.chips(); this.preview();
+  },
+  dropFlower(id) { this.ed.flower_ids = this.ed.flower_ids.filter(x => x !== id); this.chips(); this.preview(); },
+  chips() {
+    const el = document.getElementById('che-chips'); if (!el) return;
+    el.innerHTML = this.ed.flower_ids.map(id => { const f = flowers.find(x => x.id === id);
+      return `<span style="background:var(--sage-l);border-radius:12px;padding:2px 8px;font-size:11px">${escHtml(f?.ru || '#' + id)} <b style="cursor:pointer" onclick="CH.dropFlower(${id})">×</b></span>`; }).join('');
+  },
+  template() {
+    const title = document.getElementById('che-title').value, withP = document.getElementById('che-prices').checked;
+    const rub = FX.rates.RUB;
+    const lines = this.ed.flower_ids.map(id => flowers.find(x => x.id === id)).filter(Boolean).map(f =>
+      '• ' + f.ru + (withP && f.price_a ? ` — от ${rub ? Math.round(f.price_a * rub) + ' ₽' : '¥' + f.price_a}/банч` : ''));
+    if (!lines.length) { toast('Сначала добавьте товары'); return; }
+    this.ed.text = `${title}\n\n${lines.join('\n')}\n\nПрямые поставки из Китая, фурой до Москвы за 7 дней. Минимальный заказ — от 1 паллеты.\nЦены и наличие — по кнопкам ниже 👇`;
+    document.getElementById('che-text').value = this.ed.text; this.preview();
+  },
+  toggleBtn(k, on) { this.ed.buttons = on ? [...new Set([...this.ed.buttons, k])] : this.ed.buttons.filter(x => x !== k); this.preview(); },
+  async upload(input) {
+    const file = input.files?.[0]; if (!file) return;
+    toast('⏳ Загружаем фото…');
+    let blob = file; try { blob = await compressImage(file, 1280, 0.85); } catch (e) {}
+    const r = await this.api('upload', { data: await blobToDataURL(blob) });
+    if (!r.ok) { toast('❌ ' + r.error); return; }
+    this.ed.photo_url = r.url; this.ed.photoMode = 'own';
+    document.querySelectorAll('input[name="che-ph"]').forEach(x => x.checked = x.value === 'own');
+    toast('✅ Фото загружено'); this.preview();
+  },
+  photoSrc() {
+    if (this.ed.status === 'published') return this.ed.has_photo ? (this.ed.photo_url || (flowers.find(x => x.id === this.ed.photo_flower)?.photo_url) || null) : null;
+    if (this.ed.photoMode === 'own') return this.ed.photo_url || null;
+    if (this.ed.photoMode === 'flower') { const f = flowers.find(x => x.id === this.ed.flower_ids[0]); return f?.photo_url || null; }
+    return null;
+  },
+  preview() {
+    const el = document.getElementById('che-prev'); if (!el) return;
+    const src = this.photoSrc(), text = this.ed.text || '';
+    const limit = src || (this.ed.photoMode !== 'none' && this.ed.status !== 'published') ? 1024 : 4096;
+    const cnt = document.getElementById('che-cnt');
+    if (cnt) { cnt.textContent = `${text.length} / ${limit}`; cnt.style.color = text.length > limit ? '#c62828' : 'var(--light)'; }
+    const btns = this.ed.buttons.map(b => CH_BTNS[b]);
+    el.innerHTML = `<div style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.12)">
+        ${src ? `<img src="${src}" style="width:100%;display:block;max-height:240px;object-fit:cover">` : (this.ed.photoMode === 'own' && !this.ed.photo_url ? '<div style="padding:30px;text-align:center;color:var(--light);font-size:11px;background:var(--bg)">выберите файл</div>' : '')}
+        <div style="padding:8px 10px;font-size:12.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word">${escHtml(text) || '<span style="color:var(--light)">Текст поста…</span>'}</div></div>
+      ${btns.length ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:4px">${btns.map(t => `<div style="background:rgba(255,255,255,.75);border-radius:8px;padding:7px 4px;text-align:center;font-size:11.5px;font-weight:600;color:#2a6db0">${t}</div>`).join('')}</div>` : ''}`;
+  },
+  async save(publishNow) {
+    const e = this.ed;
+    const text = (document.getElementById('che-text')?.value || '').trim();
+    if (!text) { toast('Напишите текст поста'); return; }
+    const when = document.getElementById('che-when')?.value;
+    const post = { id: e.id || null, text, buttons: e.buttons, flower_ids: e.flower_ids,
+      photo_url: e.photoMode === 'own' ? e.photo_url : null,
+      photo_flower: e.photoMode === 'flower' ? (e.flower_ids[0] || null) : null,
+      scheduled_at: !publishNow && when ? new Date(when).toISOString() : null };
+    if (e.photoMode === 'own' && !e.photo_url && e.status !== 'published') { toast('Загрузите фото или выберите другой вариант'); return; }
+    if (publishNow && !confirm('Опубликовать в канале сейчас? / 立即发布?')) return;
+    const r = await this.api(publishNow ? 'publish' : 'save', { post });
+    if (!r.ok) { toast('❌ ' + r.error); if (r.id) { e.id = r.id; } return; }
+    toast(publishNow ? '✅ Опубликовано в канале' : r.edited ? '✅ Пост в канале обновлён' : post.scheduled_at ? '🕒 Запланировано' : '💾 Черновик сохранён');
+    closeModal(); this.open();
+  },
+};
 
 // Чекпоинт машины → уведомление клиентам, чьи заказы в этой машине
 async function notifyShipmentClients(shipmentId, title, note) {
