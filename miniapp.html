@@ -129,6 +129,21 @@ input,textarea{font:inherit;color:var(--ink)}
 .bar button{display:block;width:100%;max-width:688px;margin:0 auto;padding:14px;border-radius:12px;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:15px}
 .bar button:disabled{opacity:.6}
 .hidden{display:none!important}
+
+/* витрина: новинки сопутки · топ срезки · горшечные */
+#sc{margin-top:12px}
+#sc:empty{display:none}
+.kb{display:flex;gap:10px;align-items:center;padding:11px 12px;border-radius:12px;background:linear-gradient(100deg,var(--gold-soft),var(--accent-soft));border:1px solid var(--line);margin-bottom:14px;text-align:left;width:100%}
+.kb .i{font-size:24px}.kb b{font-size:13px;display:block;line-height:1.3}.kb span{font-size:11.5px;color:var(--mid)}.kb .go{margin-left:auto;color:var(--accent);font-weight:700;font-size:12.5px;white-space:nowrap}
+.sch{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:2px 0 8px}
+.sch h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--accent)}
+.sch button{font-size:12px;font-weight:600;color:var(--accent);white-space:nowrap}
+.scrow{display:flex;gap:10px;overflow-x:auto;margin:0 -16px 16px;padding:0 16px 4px;scrollbar-width:none}
+.scrow::-webkit-scrollbar{display:none}
+.scrow .card{flex:0 0 140px}
+.tag{z-index:2;position:absolute;top:7px;right:7px;background:var(--gold);color:#2b2414;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px}
+.allbtn{display:block;width:100%;padding:11px;border-radius:12px;border:1.5px solid var(--accent);color:var(--accent);font-weight:700;font-size:13.5px;margin-bottom:6px}
+.gridh{font-family:var(--font-h);font-size:22px;font-weight:700;margin-top:14px}
 </style>
 </head>
 <body>
@@ -148,7 +163,7 @@ input,textarea{font:inherit;color:var(--ink)}
       <div class="who" id="who"></div>
     </div>
   </div>
-  <div class="wrap"><div class="grid" id="grid"></div></div>
+  <div class="wrap"><div id="sc"></div><div class="gridh hidden" id="gridh"></div><div class="grid" id="grid"></div></div>
 </div>
 
 <div id="v-basket" class="hidden"><div class="wrap" id="basket"></div></div>
@@ -180,6 +195,7 @@ const S = {
   me: { role: 'guest', markup: 1, rub: null, name: '' },
   cur: 'RUB', flowers: [], catOrder: [], catalog: 'cut', cat: '', q: '', shown: PAGE,
   photos: {}, photoReq: new Set(), sel: new Set(), cart: {}, view: 'catalog', sheetId: null, sending: false,
+  sc: null, scPick: null,
 };
 
 // ── helpers ───────────────────────────────────────────────
@@ -193,6 +209,7 @@ function money(cny, digits) {
   if (S.cur === 'RUB' && S.me.rub) { const v = n * S.me.rub; return Math.round(v).toLocaleString('ru-RU') + ' ₽'; }
   return '¥' + (digits === 0 ? Math.round(n).toLocaleString('ru-RU') : (Math.round(n * 10) / 10).toLocaleString('ru-RU'));
 }
+const unitLbl = f => ({ potted: 'шт', supplies: 'уп' }[catalogOf(f)] || 'банч');
 const unitPrice = (f, g) => (g === 'ap' ? f.price_ap : f.price_a) * (isClient() ? S.me.markup : 1);
 const boxPrice = (f, g) => unitPrice(f, g) * (f.boxes_per_box || 1);
 const store = {
@@ -315,14 +332,14 @@ function renderHeader() {
     : `<span class="dot" style="background:var(--gold)"></span>Цены «от» — точный расчёт пришлёт менеджер`;
   $('who').innerHTML = who;
 }
-function cardHTML(f) {
+function cardHTML(f, tag) {
   const inCart = isClient() ? (S.cart[f.id]?.qty || 0) : (S.sel.has(f.id) ? 1 : 0);
   const spec = [f.pack, f.length].filter(Boolean).join(' · ') || f.cat_ru || '';
   const price = isClient()
     ? `${money(boxPrice(f, 'a'), 0)} <small>/ кор</small>`
-    : `<small>от</small> ${money(unitPrice(f, 'a'))} <small>/ банч</small>`;
+    : `<small>от</small> ${money(unitPrice(f, 'a'))} <small>/ ${unitLbl(f)}</small>`;
   return `<div class="card" data-open="${f.id}">
-    <div class="ph" data-ph="${f.id}">${photoHTML(f)}${inCart && isClient() ? `<span class="badge">${inCart} кор</span>` : ''}</div>
+    <div class="ph" data-ph="${f.id}">${photoHTML(f)}${inCart && isClient() ? `<span class="badge">${inCart} кор</span>` : ''}${tag ? `<span class="tag">${tag}</span>` : ''}</div>
     <div class="cb">
       <div class="cn">${esc(f.ru)}</div>
       <div class="cs">${esc(spec)}</div>
@@ -344,12 +361,67 @@ function renderGrid() {
     io.observe(more);
   }
 }
-function renderCatalog() { renderHeader(); renderGrid(); updateMain(); }
+function renderCatalog() { renderHeader(); renderShowcase(); renderGrid(); updateMain(); }
+
+// ── Витрина: новинки сопутки (случайные из недавно добавленных), топ срезки, горшечные ──
+// Топ берётся из showcase.json (его сохраняет менеджер в системе, кнопка «⭐ Витрина»).
+const SC_N = 5;
+const isKunming = f => /куньмин/i.test(f.pack || '');
+function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+async function loadShowcase() {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/public/flower-photos/showcase.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (r.ok) S.sc = await r.json();
+  } catch (e) {}
+}
+function scLists() {
+  if (S.scPick) return S.scPick;
+  const byId = id => S.flowers.find(f => f.id === id);
+  const seen = new Set();   // варианты одного товара (одно название) — показываем по одному
+  const sup = S.flowers.filter(f => catalogOf(f) === 'supplies').sort((a, b) => b.id - a.id)
+    .filter(f => { const k = String(f.ru || '').replace(/\s*[—(].*$/, ''); if (seen.has(k)) return false; seen.add(k); return true; });
+  const km = shuffle(sup.filter(isKunming).slice(0, 60)), rest = shuffle(sup.filter(f => !isKunming(f)).slice(0, 60));
+  const nKm = rest.length ? Math.min(2, km.length) : km.length;
+  const fresh = shuffle(km.slice(0, nKm).concat(rest.slice(0, SC_N - nKm))).slice(0, SC_N);
+  const top = cat => {
+    let l = (S.sc?.['top_' + cat] || []).map(byId).filter(f => f && catalogOf(f) === cat);
+    if (l.length < SC_N) l = l.concat(shuffle(S.flowers.filter(f => catalogOf(f) === cat && !l.includes(f))).slice(0, SC_N - l.length));
+    return l.slice(0, SC_N);
+  };
+  return (S.scPick = { supplies: fresh, cut: top('cut'), potted: top('potted') });
+}
+function renderShowcase() {
+  const show = !S.q && !S.cat;
+  $('gridh').classList.toggle('hidden', !show);
+  if (!show) { $('sc').innerHTML = ''; return; }
+  const L = scLists();
+  const name = Object.fromEntries(CATALOGS);
+  const rows = [
+    ['supplies', '📦 Новое в сопутке', L.supplies, 'NEW', 'Вся сопутка →'],
+    ['cut', '🌹 Топ срезки', L.cut, 'ТОП', 'Вся срезка →'],
+    ['potted', '🪴 Горшечные', L.potted, '', 'Все горшечные →'],
+  ].filter(r => r[2].length);
+  const km = S.flowers.filter(f => catalogOf(f) === 'supplies' && isKunming(f));
+  const kmCat = km.length ? Object.entries(km.reduce((m, f) => (m[f.cat_ru] = (m[f.cat_ru] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1])[0][0] : '';
+  $('sc').innerHTML = (km.length ? `<button class="kb" data-go="supplies" data-gocat="${esc(kmCat)}"><span class="i">🌾</span>
+      <span><b>Сухоцветы и стабилизированные цветы — на складе в Куньмине</b><span>${km.length} позиций · можно добавить к заказу цветов</span></span><span class="go">Смотреть →</span></button>` : '')
+    + rows.map(([k, t, list, tag, more]) => `<div class="sch"><h3>${t}</h3><button data-go="${k}">${more}</button></div>
+      <div class="scrow">${list.map((f, i) => cardHTML(f, tag && (k !== 'cut' || i < 3) ? tag : '')).join('')}</div>`).join('')
+    + `<button class="allbtn" data-go="${S.catalog}">Смотреть весь ассортимент ↓</button>`;
+  $('gridh').textContent = 'Весь ассортимент · ' + (name[S.catalog] || '');
+  loadPhotos(rows.flatMap(r => r[2].map(f => f.id)));
+}
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-catalog],[data-cat],[data-cur],[data-add],[data-open]');
+  const t = e.target.closest('[data-go],[data-catalog],[data-cat],[data-cur],[data-add],[data-open]');
   if (!t) return;
-  if (t.dataset.catalog) { S.catalog = t.dataset.catalog; S.cat = ''; S.shown = PAGE; scrollTo(0, 0); renderCatalog(); }
+  if (t.dataset.go) {   // из витрины — в нужный раздел (и категорию) каталога
+    S.catalog = t.dataset.go; S.cat = t.dataset.gocat || ''; S.shown = PAGE; renderCatalog(); haptic();
+    document.querySelector('.chip.on')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+    const el = S.cat ? $('grid') : $('gridh');
+    scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + scrollY - $('top').offsetHeight - 8), behavior: 'smooth' });
+  }
+  else if (t.dataset.catalog) { S.catalog = t.dataset.catalog; S.cat = ''; S.shown = PAGE; scrollTo(0, 0); renderCatalog(); }
   else if (t.dataset.cat !== undefined && t.classList.contains('chip')) { S.cat = t.dataset.cat; S.shown = PAGE; renderCatalog(); }
   else if (t.dataset.cur) { S.cur = t.dataset.cur; store.set('amma-mini-cur', S.cur); rerender(); }
   else if (t.dataset.add) { e.stopPropagation(); quickAdd(+t.dataset.add); }
@@ -390,7 +462,7 @@ function openSheet(id) {
         <div class="step"><button data-d="-1">−</button><input id="sq" type="number" inputmode="numeric" min="1" value="${line.qty}"><button data-d="1">+</button></div></div>`;
   } else {
     body = `<div class="grades"><button class="on" style="cursor:default">
-        <div class="g">Цена от</div><div class="v">${money(unitPrice(f, 'a'))} <small>/ банч</small></div>
+        <div class="g">Цена от</div><div class="v">${money(unitPrice(f, 'a'))} <small>/ ${unitLbl(f)}</small></div>
         <div class="g" style="font-weight:500">${money(boxPrice(f, 'a'), 0)} за коробку</div></button></div>
       <div class="note">Точная цена зависит от объёма и сезона. Добавьте позицию в подборку — менеджер пришлёт расчёт. Минимальный заказ — от 1 паллеты.</div>`;
   }
@@ -454,7 +526,7 @@ function showView(v) {
 function lineHTML(f, l) {
   const sub = isClient()
     ? `${l.grade === 'ap' ? 'A+' : 'A'} · ${money(boxPrice(f, l.grade), 0)} / кор`
-    : `от ${money(unitPrice(f, 'a'))} / банч`;
+    : `от ${money(unitPrice(f, 'a'))} / ${unitLbl(f)}`;
   const ctl = isClient()
     ? `<div class="step"><button data-ld="${f.id}" data-v="-1">−</button><input data-lq="${f.id}" type="number" inputmode="numeric" min="1" value="${l.qty}"><button data-ld="${f.id}" data-v="1">+</button></div>`
     : '';
@@ -542,7 +614,7 @@ async function submitOrder() {
   } else if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.dataset.theme = 'dark';
 
   $('grid').innerHTML = Array.from({ length: 6 }, () => `<div class="card"><div class="ph skel"></div><div class="cb"><div class="cn skel" style="height:14px;border-radius:4px"></div><div class="cs skel" style="height:11px;width:60%;border-radius:4px;margin-top:4px"></div></div></div>`).join('');
-  const [meRes] = await Promise.allSettled([inTg ? api('me') : Promise.resolve(null), loadCatalog().catch(e => { console.error(e); })]);
+  const [meRes] = await Promise.allSettled([inTg ? api('me') : Promise.resolve(null), loadCatalog().catch(e => { console.error(e); }), loadShowcase()]);
   const me = meRes.value;
   if (me?.ok) S.me = { ...S.me, ...me };
   if (S.me.role === 'staff') S.me.role = 'guest';   // сотрудники работают в полной системе; здесь — витрина
