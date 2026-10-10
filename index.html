@@ -13701,6 +13701,14 @@ async function crmConvert(id) {
   await sb.from('crm_leads').update({ stage: 'won', client_id: u.id, next_date: null, updated_at: new Date().toISOString() }).eq('id', id);
   await sb.from('crm_activities').update({ client_id: u.id }).eq('lead_id', id);   // история переходит в карточку клиента
   await crmAct({ lead_id: id, client_id: u.id }, 'note', `Стал клиентом, логин ${login}`);
+  // Лид пришёл из Telegram-бота → сразу привязываем его Telegram к новому аккаунту:
+  // в боте человек становится клиентом (свои цены, заказы, претензии) без кода привязки
+  if (l.tg_chat_id) {
+    const { error: tgErr } = await sb.from('users').update({ tg_chat_id: l.tg_chat_id }).eq('id', u.id);
+    if (tgErr) toast('⚠️ Telegram из заявки не подключился: ' + tgErr.message);
+    else await sendNotification(u.id, '🌸 Добро пожаловать в AMMA FLOWERS!',
+      'Ваш аккаунт клиента открыт. Нажмите /start в этом чате — откроется меню клиента: каталог с вашими ценами, заказы, претензии.', '🌸');
+  }
   logActivity('crm_convert', 'user', u.id, l.company, 'Лид стал клиентом');
   await loadClients();
   toast(`✅ ${l.company} теперь клиент. Логин: ${login} / 已转为客户`);
