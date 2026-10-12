@@ -8,7 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Manrope:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 :root{
   --bg:#FAFAF8;--white:#fff;
   --sage:#3D5C36;--sage-d:#2A3F24;--sage-l:#E8EFE6;--sage-m:#6B8F62;
@@ -699,19 +699,284 @@ html[data-theme="dark"] .inv-preview [style*="background:var(--sage-d)"]{backgro
     box-shadow:none!important;background:#fff!important}
   table,thead th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+
+/* ══════════════════════════════════════════════════════════
+   «ОРАНЖЕРЕЯ» — светлая эко-тема и новая раскладка (2026-10)
+   Боковое меню · мягкие карточки · фисташковый акцент · Manrope
+   Тёмная тема по-прежнему по кнопке 🌙
+   ══════════════════════════════════════════════════════════ */
+:root{
+  --font-b:'Manrope','Plus Jakarta Sans',system-ui,sans-serif;
+  --font-ui:'Manrope',system-ui,sans-serif;
+  --ink:#1D2A21;          /* лесная тушь: меню, главные кнопки, заголовки */
+  --pistachio:#DCEBA4;    /* акцент: активный раздел, подсветка */
+  --pistachio-d:#C6DB7E;
+  --canvas:#E7EBE2;       /* полотно — шалфейный туман */
+  --paper:#F7F8F3;        /* карточки */
+  --line:rgba(29,42,33,.09);
+  --side-w:252px;
+  --rad-xl:26px; --rad-l:20px; --rad-m:14px;
+}
+html[data-theme="light"]{
+  --bg:#E7EBE2; --white:#F7F8F3;
+  --sage:#4F7350; --sage-d:#22362A; --sage-l:#E2EAD6; --sage-m:#6B8F62;
+  --charcoal:#1D2A21; --mid:#66716A; --light:#9AA39C; --border:rgba(29,42,33,.10);
+  --surface:#F7F8F3; --surface-2:#FFFFFF; --glass-brd:rgba(29,42,33,.08); --glass-hi:rgba(255,255,255,.7);
+  --shadow:0 1px 2px rgba(29,42,33,.04);
+  --bg-grad:
+    radial-gradient(900px 500px at 100% -10%, rgba(220,235,164,.45), transparent 60%),
+    radial-gradient(700px 520px at 20% 110%, rgba(201,169,110,.12), transparent 60%),
+    #E7EBE2;
+}
+html[data-theme="dark"]{
+  --ink:#0B110D; --pistachio:#C9DB8A; --pistachio-d:#B5CB6E; --paper:#131C17; --line:rgba(255,255,255,.08);
+}
+html{--font-h:'Manrope',system-ui,sans-serif}
+#screen-login,.inv-preview{--font-h:'Cormorant Garamond',Georgia,serif}
+.page > .card{margin:22px 28px 110px}
+@media (max-width:900px){.page > .card{margin:14px 12px 120px}}
+body{font-family:var(--font-b);-webkit-font-smoothing:antialiased;letter-spacing:-.005em}
+.page-title,.card-title,.modal-title,.order-num,.order-sum,.cart-total,.flower-card-name,.flower-card-price,
+.flower-modal-title,.flower-modal-price,.freq-card-price,.empty-state p,.cat-row td,.ci-sum b{font-family:var(--font-ui)}
+
+/* ── Отключаем «пульсирующее свечение» — спокойный интерфейс ── */
+.btn:hover:not(:disabled),.nav-tab:hover,.add-btn:hover,.btn-login:hover,.btn-guest:hover{animation:none}
+
+/* ═══ РАСКЛАДКА: меню слева, содержимое справа ═══ */
+#screen-app[style*="flex"]{display:grid!important;grid-template-columns:var(--side-w) minmax(0,1fr);align-items:start}
+#screen-app > *{grid-column:2;min-width:0}
+#screen-app > #side{grid-column:1;grid-row:1 / span 60;align-self:stretch}
+.side-in{position:sticky;top:12px;height:calc(100vh - 24px);margin:12px 0 12px 12px;
+  background:var(--ink);border-radius:var(--rad-xl);display:flex;flex-direction:column;padding:22px 12px 14px;
+  box-shadow:0 18px 40px rgba(29,42,33,.18)}
+.side-logo{padding:0 12px 20px}
+.side-logo .logo-img{height:28px;width:auto;filter:brightness(0) invert(1);display:block}
+#side .nav-tabs{background:none;border:none;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
+  display:flex;flex-direction:column;flex-wrap:nowrap;gap:2px;padding:0;overflow-y:auto;overflow-x:hidden;flex:1;scrollbar-width:none}
+#side .nav-tabs::-webkit-scrollbar{display:none}
+#side .nav-tab{display:flex;align-items:center;gap:2px;flex-wrap:wrap;background:none;color:rgba(240,244,236,.74);border:none;
+  border-radius:var(--rad-m);padding:9px 12px;font-size:13px;font-weight:600;letter-spacing:0;white-space:normal;line-height:1.25;
+  transition:background .2s,color .2s}
+#side .nav-tab .nl{flex:1;min-width:0}
+#side .nav-tab .cn{display:block;font-size:10.5px;font-weight:500;opacity:.55;margin-top:1px}
+#side .nav-tab:hover:not(.active){background:rgba(255,255,255,.06);color:#fff;border:none}
+#side .nav-tab.active{background:var(--pistachio);color:var(--ink)}
+#side .nav-tab.active .cn{opacity:.7}
+#side .nav-tab .cnt{background:rgba(255,255,255,.14);color:#fff;margin-left:6px}
+#side .nav-tab.active .cnt{background:var(--ink);color:var(--pistachio)}
+#side .nav-tab .cnt.red{background:#D96B5F!important}
+#side #tab-notif{order:-1;margin-bottom:8px;background:rgba(255,255,255,.06)}
+#side #tab-notif.active{background:var(--pistachio)}
+#side #tab-notif .nl::after{content:'Уведомления';font-size:13px}
+.side-foot{border-top:1px solid rgba(255,255,255,.08);margin-top:10px;padding-top:12px;display:flex;flex-direction:column;gap:6px}
+.side-tour{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.06);border:none;color:#EEF3E6;border-radius:var(--rad-m);
+  padding:8px 10px;font:600 12.5px var(--font-ui);text-align:left;cursor:pointer;transition:background .2s}
+.side-tour:hover{background:rgba(220,235,164,.16)}
+.side-tour img{width:30px;height:30px;border-radius:50%;object-fit:cover;background:#2B3A2F;flex-shrink:0}
+.side-tour small{display:block;font-weight:500;opacity:.6;font-size:10.5px}
+
+/* ── Верхняя строка (в колонке содержимого) ── */
+.topbar,html[data-theme="light"] .topbar{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:none;border:none;
+  height:auto;min-height:72px;padding:14px 28px 6px;position:static}
+.topbar > .logo-img{display:none}
+.top-hello{font:300 15px var(--font-ui);color:var(--charcoal)}
+.top-hello b{font-weight:700}
+html[data-theme="light"] .topbar-date{color:var(--mid)}
+html[data-theme="light"] .user-pill{background:var(--paper);color:var(--charcoal);border:1px solid var(--line);padding:6px 12px}
+html[data-theme="light"] .user-pill.mgr{background:var(--pistachio);color:var(--ink);border-color:transparent}
+html[data-theme="light"] .btn-theme,html[data-theme="light"] .btn-logout{background:var(--paper);border:1px solid var(--line);color:var(--charcoal);
+  border-radius:999px;padding:6px 10px}
+html[data-theme="light"] .btn-logout{padding:6px 14px;font-size:12px;font-weight:600}
+html[data-theme="light"] .btn-theme:hover,html[data-theme="light"] .btn-logout:hover{border-color:var(--sage);color:var(--ink)}
+html[data-theme="light"] .cur-sel{background:var(--paper);border:1px solid var(--line);color:var(--charcoal);padding:5px 10px}
+
+.notice-bar,html[data-theme="light"] .notice-bar{margin:4px 28px 0;border-radius:var(--rad-m);border:none;padding:9px 16px;font-size:12px;
+  background:rgba(220,235,164,.55);color:var(--ink)}
+html[data-theme="dark"] .notice-bar{background:rgba(201,219,138,.10);color:var(--pistachio)}
+html[data-theme="dark"] .side-in{border:1px solid rgba(255,255,255,.07);box-shadow:none}
+html[data-theme="dark"] .view-toggle-btn{color:var(--mid)}
+html[data-theme="dark"] .view-toggle-btn.active{background:var(--pistachio);color:#0B110D}
+
+/* ── Страница ── */
+.page-inner{padding:22px 28px 110px}
+.page-title{font-weight:300;font-size:36px;letter-spacing:-.025em;line-height:1.1;color:var(--charcoal);margin-bottom:6px}
+.page-sub{font-size:13px;color:var(--mid);margin-bottom:22px}
+.page.active{animation:pageIn .38s cubic-bezier(.2,.7,.2,1)}
+@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* ── Поверхности ── */
+html[data-theme="light"] .card,html[data-theme="light"] .inv-section,html[data-theme="light"] .order-card{
+  background:var(--paper);border:1px solid var(--line);box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+.card,.inv-section{border-radius:var(--rad-xl);padding:22px 24px}
+.order-card{border-radius:var(--rad-l)}
+html[data-theme="light"] .order-card:hover{box-shadow:0 12px 30px rgba(29,42,33,.08);border-color:var(--pistachio-d)}
+.card-title{font-weight:700;font-size:16px;letter-spacing:-.01em;color:var(--charcoal)}
+.order-num{font-weight:700;font-size:16px}
+.order-sum{font-weight:700;font-size:16px;color:var(--charcoal)}
+html[data-theme="light"] .modal{background:var(--paper);border:1px solid var(--line);box-shadow:0 30px 80px rgba(29,42,33,.25)}
+.modal{border-radius:var(--rad-xl)}
+.modal-title{font-weight:700;font-size:20px;letter-spacing:-.015em;color:var(--charcoal)}
+html[data-theme="light"] .modal-overlay{background:rgba(29,42,33,.32)}
+
+/* ── Кнопки ── */
+.btn{font-family:var(--font-ui);font-weight:700;letter-spacing:0;padding:9px 18px;transition:background .2s,border-color .2s,color .2s,transform .12s}
+.btn:active:not(:disabled){transform:scale(.97)}
+html[data-theme="light"] .btn-primary,html[data-theme="light"] .add-btn,html[data-theme="light"] .btn-login{
+  background:var(--ink);border-color:var(--ink);color:#F2F6EA;box-shadow:none}
+html[data-theme="light"] .btn-primary:hover,html[data-theme="light"] .add-btn:hover,html[data-theme="light"] .btn-login:hover{background:#2E4334;filter:none}
+html[data-theme="light"] .btn-secondary,html[data-theme="light"] .btn-icon{background:var(--surface-2);color:var(--ink);border:1px solid var(--line)}
+html[data-theme="light"] .btn-secondary:hover,html[data-theme="light"] .btn-icon:hover{border-color:var(--sage-m);background:#fff}
+html[data-theme="light"] .btn-secondary.on,html[data-theme="light"] .ref-tab.active{background:var(--pistachio);color:var(--ink);border-color:transparent}
+html[data-theme="light"] .btn-gold,html[data-theme="light"] .add-btn.in-order{background:var(--pistachio);color:var(--ink);border-color:transparent;box-shadow:none}
+html[data-theme="light"] .btn-danger{background:#F6E6E2;color:#9A3B31;border:1px solid transparent}
+html[data-theme="light"] .btn-danger:hover{background:#9A3B31;color:#fff}
+.add-btn{border-radius:999px;font-weight:700}
+
+/* ── Поля ── */
+html[data-theme="light"] .inp,html[data-theme="light"] .field input,html[data-theme="light"] .field select,html[data-theme="light"] .field textarea,
+html[data-theme="light"] .form-group input,html[data-theme="light"] .price-inp,html[data-theme="light"] .inv-input,html[data-theme="light"] .grade-sel{
+  background:#fff;border:1px solid var(--line);border-radius:12px;color:var(--charcoal)}
+.inp{padding:9px 14px;font-size:12.5px}
+html[data-theme="light"] .inp:focus,html[data-theme="light"] .field input:focus,html[data-theme="light"] .field select:focus,
+html[data-theme="light"] .field textarea:focus,html[data-theme="light"] .price-inp:focus{border-color:var(--sage-m);box-shadow:0 0 0 3px rgba(220,235,164,.7)}
+.field label,.form-group label{text-transform:none;letter-spacing:0;font-size:11.5px;font-weight:600}
+:focus-visible{outline:2px solid var(--sage-m);outline-offset:2px}
+
+/* ── Вкладки внутри страниц (каталоги, склад) — сегменты ── */
+.wh-tab{border-radius:999px;border:1px solid transparent;margin-bottom:0;padding:8px 16px;font-family:var(--font-ui)}
+html[data-theme="light"] .wh-tab.active{background:var(--ink);color:#F2F6EA;border-color:var(--ink)}
+html[data-theme="light"] .wh-tab:hover:not(.active){background:var(--paper);border-color:var(--line)}
+html[data-theme="light"] .view-toggle{background:var(--paper);border-color:var(--line)}
+html[data-theme="light"] .view-toggle-btn.active{background:var(--ink);color:#F2F6EA;box-shadow:none}
+
+/* ── Таблицы: светлая шапка вместо тёмно-зелёных полос ── */
+.tbl-wrap{border-radius:var(--rad-l)}
+html[data-theme="light"] .tbl-wrap{background:var(--paper);border:1px solid var(--line);box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+html[data-theme="light"] thead th,html[data-theme="light"] .lbl-tbl th,html[data-theme="light"] .inv-table th{
+  background:#EDF0E6;color:#4A564D;backdrop-filter:none;border-right:1px solid var(--line);font-weight:700;font-size:11px}
+html[data-theme="light"] .inv-preview .inv-table th{background:#2A3F24;color:#fff}
+html[data-theme="light"] tbody tr{border-bottom:1px solid var(--line)}
+html[data-theme="light"] tbody tr:hover td{background:rgba(220,235,164,.32)!important}
+html[data-theme="light"] tbody tr.stripe td{background:rgba(29,42,33,.022)}
+html[data-theme="light"] .cat-row td{background:rgba(220,235,164,.6);color:var(--ink);font-weight:700;font-size:12px;text-align:left}
+html[data-theme="light"] .lbl-tbl tbody tr.section-row td{background:var(--ink)!important}
+html[data-theme="light"] .fimg,html[data-theme="light"] .fimg-ph{border-radius:12px;border-color:var(--line)}
+
+/* ── Бейджи и мелочи ── */
+.badge{text-transform:none;letter-spacing:0;font-size:11px;font-weight:700;padding:4px 11px;border-radius:999px}
+html[data-theme="light"] .badge{border:none}
+html[data-theme="light"] .badge-paid{background:var(--pistachio);color:var(--ink)}
+html[data-theme="light"] .sbtn.in{background:rgba(220,235,164,.7);color:var(--ink);border:none}
+html[data-theme="light"] .sbtn.out{background:#F6E6E2;color:#9A3B31;border:none}
+.flower-card{border-radius:var(--rad-l)}
+html[data-theme="light"] .flower-card{background:var(--paper);border:1px solid var(--line);box-shadow:none}
+html[data-theme="light"] .flower-card:hover{box-shadow:0 16px 36px rgba(29,42,33,.10);border-color:var(--pistachio-d)}
+.flower-card-name{font-weight:700;font-size:16px;letter-spacing:-.01em}
+.flower-card-price{font-weight:700;font-size:17px}
+.flower-card-cat,.flower-modal-cat{text-transform:none;letter-spacing:0;font-size:11px}
+.freq-title{text-transform:none;letter-spacing:0;font-size:13px;font-family:var(--font-ui)}
+html[data-theme="light"] .freq-card,html[data-theme="light"] .sc-row .freq-card{background:var(--paper);border-color:var(--line);border-radius:var(--rad-m)}
+html[data-theme="light"] .sc-banner{background:linear-gradient(100deg,rgba(220,235,164,.75),rgba(247,248,243,.9));border-color:transparent;border-radius:var(--rad-l)}
+html[data-theme="light"] .sc-tag{background:var(--ink);color:var(--pistachio)}
+html[data-theme="light"] .sc-tag.gold{background:var(--pistachio);color:var(--ink)}
+
+/* ── Корзина внизу — плавающая плашка ── */
+.cart-footer,html[data-theme="light"] .cart-footer{left:calc(var(--side-w) + 24px);right:24px;bottom:14px;border-radius:var(--rad-l);
+  background:var(--ink);border:none;box-shadow:0 16px 40px rgba(29,42,33,.28)}
+html[data-theme="light"] .cart-total{color:var(--pistachio)}
+#toast{bottom:96px}
+html[data-theme="light"] #toast{background:var(--ink);color:#F2F6EA;border:none}
+
+/* ── Скроллбары ── */
+html[data-theme="light"] ::-webkit-scrollbar-thumb{background:rgba(29,42,33,.18)}
+
+/* ── Плавная прокрутка (Lenis) ── */
+html.lenis,html.lenis body{height:auto}
+.lenis.lenis-smooth{scroll-behavior:auto!important}
+.lenis.lenis-smooth [data-lenis-prevent]{overscroll-behavior:contain}
+.lenis.lenis-stopped{overflow:hidden}
+
+/* ── Телефон и узкие экраны: меню — лентой сверху ── */
+@media (max-width:900px){
+  #screen-app[style*="flex"]{grid-template-columns:minmax(0,1fr)}
+  #screen-app > *,#screen-app > #side{grid-column:1;grid-row:auto}
+  #side{position:sticky;top:0;z-index:300}
+  .side-in{position:static;height:auto;margin:0;border-radius:0 0 var(--rad-l) var(--rad-l);padding:10px 10px 8px;flex-direction:column}
+  .side-logo{padding:2px 6px 8px;display:flex;align-items:center;justify-content:space-between}
+  .side-logo .logo-img{height:20px}
+  #side .nav-tabs{flex-direction:row;overflow-x:auto;gap:4px}
+  #side .nav-tab{flex:0 0 auto;white-space:nowrap;padding:8px 12px;font-size:12px}
+  #side .nav-tab .cn{display:none}
+  #side #tab-notif{order:0;margin:0}
+  #side #tab-notif .nl::after{content:''}
+  .side-foot{display:none}
+  .side-tour-mini{display:flex!important}
+  .topbar{padding:10px 14px 4px;min-height:0}
+  .topbar-right{flex-wrap:nowrap;overflow-x:auto;width:100%;scrollbar-width:none;margin-left:0}
+  .topbar-right::-webkit-scrollbar{display:none}
+  .topbar-right > *{flex-shrink:0}
+  .btn-logout{white-space:nowrap}
+  html[data-theme="light"] .user-pill{display:none}
+  .top-hello{display:none}
+  .notice-bar,html[data-theme="light"] .notice-bar{margin:4px 12px 0}
+  .page-inner{padding:14px 12px 120px}
+  .page-title{font-size:26px}
+  .cart-footer,html[data-theme="light"] .cart-footer{left:8px;right:8px;bottom:8px}
+}
+.side-tour-mini{display:none;align-items:center;gap:6px;background:rgba(255,255,255,.08);border:none;color:#EEF3E6;border-radius:999px;
+  padding:4px 10px 4px 4px;font:600 11px var(--font-ui);cursor:pointer}
+.side-tour-mini img{width:22px;height:22px;border-radius:50%;object-fit:cover}
+
+/* ═══ ЭКСКУРСИЯ С АММИКОМ ═══ */
+#tour{position:fixed;inset:0;z-index:2000;pointer-events:none}
+#tour.on{pointer-events:auto}
+.tour-hole{position:fixed;border-radius:16px;box-shadow:0 0 0 9999px rgba(16,24,19,.58);transition:all .42s cubic-bezier(.2,.7,.2,1);pointer-events:none}
+.tour-hole.none{top:50%!important;left:50%!important;width:0!important;height:0!important}
+.tour-hole::after{content:'';position:absolute;inset:-4px;border-radius:20px;border:2px solid var(--pistachio);opacity:.9}
+.tour-hole.none::after{display:none}
+.tour-card{position:fixed;width:min(360px,calc(100vw - 24px));background:var(--paper,#F7F8F3);color:var(--charcoal);border-radius:24px;
+  padding:18px 18px 14px;box-shadow:0 30px 70px rgba(10,16,12,.35);transition:top .42s cubic-bezier(.2,.7,.2,1),left .42s cubic-bezier(.2,.7,.2,1),opacity .2s;
+  font-family:var(--font-ui)}
+html[data-theme="dark"] .tour-card{background:#18221C}
+.tour-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.tour-ava{width:58px;height:58px;border-radius:50%;object-fit:cover;background:var(--pistachio);flex-shrink:0;
+  box-shadow:0 0 0 3px var(--pistachio);animation:ammikHi .6s cubic-bezier(.3,1.6,.5,1)}
+@keyframes ammikHi{from{transform:scale(.6) rotate(-12deg)}to{transform:none}}
+.tour-who{font-size:12px;color:var(--mid);font-weight:600}
+.tour-title{font-size:17px;font-weight:800;letter-spacing:-.015em;line-height:1.2}
+.tour-text{font-size:13.5px;line-height:1.55;color:var(--charcoal)}
+.tour-text b{font-weight:700}
+.tour-foot{display:flex;align-items:center;gap:8px;margin-top:14px}
+.tour-dots{display:flex;gap:4px;margin-right:auto}
+.tour-dots i{width:6px;height:6px;border-radius:50%;background:var(--border)}
+.tour-dots i.on{background:var(--ink);width:16px;border-radius:3px}
+html[data-theme="dark"] .tour-dots i.on{background:var(--pistachio)}
+.tour-btn{border:none;border-radius:999px;padding:9px 16px;font:700 12.5px var(--font-ui);cursor:pointer}
+.tour-btn.next{background:var(--ink);color:#F2F6EA}
+html[data-theme="dark"] .tour-btn.next{background:var(--pistachio);color:#0B110D}
+.tour-btn.back{background:transparent;color:var(--mid)}
+.tour-skip{position:absolute;top:12px;right:14px;background:none;border:none;color:var(--light);font:600 11.5px var(--font-ui);cursor:pointer}
+@media (max-width:900px){
+  .tour-card{left:12px!important;right:12px;bottom:12px;top:auto!important;width:auto}
+}
+@media (prefers-reduced-motion:reduce){
+  .page.active,.tour-ava{animation:none}
+  .tour-hole,.tour-card{transition:none}
+}
 </style>
 <script>
 /* Тема: применяем ДО отрисовки, чтобы не мигало */
 (function(){
-  var t = 'dark';
-  try { t = localStorage.getItem('amma_theme') || 'dark'; } catch(e){}
+  // Новая светлая тема «Оранжерея» по умолчанию; тёмная — по кнопке 🌙
+  var t = 'light';
+  try { t = localStorage.getItem('amma_theme_v2') || 'light'; } catch(e){}
   document.documentElement.dataset.theme = t;
 })();
 function toggleTheme(){
   var h = document.documentElement;
   var t = h.dataset.theme === 'dark' ? 'light' : 'dark';
   h.dataset.theme = t;
-  try { localStorage.setItem('amma_theme', t); } catch(e){}
+  try { localStorage.setItem('amma_theme_v2', t); } catch(e){}
   var b = document.getElementById('theme-toggle');
   if (b) b.textContent = t === 'dark' ? '☀️' : '🌙';
 }
@@ -2507,7 +2772,7 @@ function renderInfoWidget() {
     if (pos && pos.x != null) {
       el.style.left = Math.min(Math.max(0, pos.x), innerWidth - 60) + 'px';
       el.style.top  = Math.min(Math.max(0, pos.y), innerHeight - 60) + 'px';
-    } else { el.style.bottom = '16px'; el.style.left = '14px'; }
+    } else { el.style.bottom = '16px'; el.style.left = (innerWidth > 900 ? 280 : 14) + 'px'; }   // справа от бокового меню
     el.addEventListener('pointerdown', e => {
       const r = el.getBoundingClientRect();
       _iwDrag = { dx: e.clientX - r.left, dy: e.clientY - r.top, sx: e.clientX, sy: e.clientY, moved: false };
@@ -17870,6 +18135,219 @@ function exportPricePDF() {
       }
     }
   };
+})();
+</script>
+<script>
+/* ══════════════════════════════════════════════════════════
+   «ОРАНЖЕРЕЯ»: боковое меню, приветствие, плавная прокрутка,
+   экскурсия с Аммиком для новых пользователей
+   ══════════════════════════════════════════════════════════ */
+(function () {
+  const AMMIK = 'ammik.jpg';
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ── Боковое меню: логотип + разделы + кнопка экскурсии ──
+  function buildShell() {
+    const app = document.getElementById('screen-app');
+    const nav = document.getElementById('nav-tabs');
+    if (!app || !nav || document.getElementById('side')) return;
+    const side = document.createElement('aside');
+    side.id = 'side';
+    side.innerHTML = `<div class="side-in"><div class="side-logo"></div><div class="side-foot">
+      <button class="side-tour" type="button" onclick="AmmikTour.start(true)"><img src="${AMMIK}" alt="" onerror="this.style.visibility='hidden'">
+        <span>Экскурсия с Аммиком<small>Как устроена система</small></span></button></div></div>`;
+    const logo = app.querySelector('.topbar .logo-img');
+    if (logo) side.querySelector('.side-logo').appendChild(logo);
+    side.querySelector('.side-logo').insertAdjacentHTML('beforeend',
+      `<button class="side-tour-mini" type="button" onclick="AmmikTour.start(true)"><img src="${AMMIK}" alt="" onerror="this.style.visibility='hidden'">Экскурсия</button>`);
+    side.querySelector('.side-in').insertBefore(nav, side.querySelector('.side-foot'));
+    app.insertBefore(side, app.firstChild);
+    // приветствие слева в верхней строке
+    const top = app.querySelector('.topbar');
+    if (top && !document.getElementById('top-hello')) top.insertAdjacentHTML('afterbegin', '<div class="top-hello" id="top-hello"></div>');
+    // подписи разделов: «Прайс / 价格单» → русский крупно, китайский строкой ниже
+    new MutationObserver(splitTabs).observe(nav, { childList: true });
+    splitTabs();
+  }
+  function splitTabs() {
+    document.querySelectorAll('#nav-tabs .nav-tab:not([data-w])').forEach(t => {
+      t.dataset.w = '1';
+      const keep = [...t.children];   // счётчики
+      const txt = [...t.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim();
+      const [ru, ...cn] = txt.split(' / ');
+      t.textContent = '';
+      const nl = document.createElement('span'); nl.className = 'nl';
+      nl.textContent = ru;
+      if (cn.length) { const c = document.createElement('span'); c.className = 'cn'; c.textContent = cn.join(' / '); nl.appendChild(c); }
+      t.appendChild(nl);
+      keep.forEach(k => t.appendChild(k));
+    });
+  }
+  function hello() {
+    const el = document.getElementById('top-hello'); if (!el || typeof currentUser === 'undefined' || !currentUser) return;
+    const h = new Date().getHours();
+    const part = h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
+    const name = currentUser.role === 'guest' ? '' : (currentUser.company_name || currentUser.login || '');
+    el.innerHTML = `${part}${name ? ', <b>' + escHtml(name) + '</b>' : ''}`;
+  }
+
+  // ── Плавная прокрутка колёсиком (только мышь/тачпад, без «уменьшения движения») ──
+  function smoothScroll() {
+    if (reduced || !matchMedia('(pointer: fine)').matches) return;
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/lenis@1.1.20/dist/lenis.min.js';
+    s.onload = () => {
+      if (!window.Lenis) return;
+      const scrollable = n => {
+        if (n.matches?.('.modal-overlay,#tour,#side,.cart-footer,[data-lenis-prevent]')) return true;
+        const cs = getComputedStyle(n);
+        return /(auto|scroll)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 2;
+      };
+      const lenis = new Lenis({ lerp: 0.11, smoothWheel: true, prevent: scrollable });
+      window.ammaLenis = lenis;
+      const raf = t => { lenis.raf(t); requestAnimationFrame(raf); };
+      requestAnimationFrame(raf);
+      // при открытом окне прокрутка страницы замирает
+      new MutationObserver(() => {
+        const open = document.querySelector('.modal-overlay.show') || document.getElementById('tour')?.classList.contains('on');
+        open ? lenis.stop() : lenis.start();
+      }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
+    };
+    document.head.appendChild(s);
+  }
+
+  // ── Экскурсия ──
+  const nav = page => `#nav-tabs .nav-tab[onclick*="'${page}'"]`;
+  const STEPS = {
+    client: [
+      { t: 'Привет! Я Аммик 🌷', x: 'Помогу освоиться в системе AMMA FLOWERS. Покажу, где цены, заказы и документы, — займёт минуту.' },
+      { s: nav('price'), t: 'Прайс', x: 'Здесь все позиции с <b>вашими ценами</b>. Выберите грейд A или A+, количество коробок и нажмите <b>«В заказ»</b>. Вид можно переключить: карточки или таблица.' },
+      { s: nav('my-order'), t: 'Заказ', x: 'Всё, что вы добавили, собирается здесь. Проверьте коробки, укажите дату отгрузки и отправьте менеджеру. Тут же виден статус: проверка, подтверждение, отгрузка.' },
+      { s: nav('my-waybills'), t: 'Накладные', x: 'Когда заказ отгрузят, появится накладная — позиции, коробки, размеры. Её можно скачать в Excel.' },
+      { s: nav('my-invoices'), t: 'Счета', x: 'Счета на оплату по вашим заказам.' },
+      { s: nav('my-claims'), t: 'Претензии', x: 'Если что-то пришло не так — подайте претензию <b>в течение 3 дней</b> с прибытия машины, обязательно с фото. Ответим за 2 рабочих дня.' },
+      { s: nav('reference'), t: 'Справочник', x: 'Сезонность цветов, праздники в Китае, когда фермы отдыхают, и ответы на частые вопросы — в том числе как мы упаковываем.' },
+      { s: nav('chat'), t: 'Чат', x: 'Вопрос менеджеру — пишите прямо сюда.' },
+      { s: '#tab-notif', t: 'Уведомления', x: 'Статусы заказов, этапы пути машины и ответы по претензиям приходят сюда. А ещё — в Telegram-бот <b>@Amma_Flowers_bot</b>, если подключить его.' },
+      { t: 'Готово!', x: 'Если захотите пройти экскурсию ещё раз — кнопка <b>«Экскурсия с Аммиком»</b> внизу меню. Хороших заказов! 🌸' },
+    ],
+    manager: [
+      { t: 'Привет! Я Аммик 🌷', x: 'Коротко покажу, где что лежит в системе. Порядок разделов в меню — это путь заказа: от прайса до отгрузки.' },
+      { s: nav('price'), t: 'Прайс', x: 'Цены, наличие, фото и витрина для клиентов. Отсюда же — импорт, Excel и PDF прайса.' },
+      { s: nav('orders'), t: 'Заказы', x: 'Заказы клиентов: проверка, подтверждение, статусы. Число в кружке — новые заказы.' },
+      { s: nav('invoices'), t: 'Инвойсы и накладные', x: 'По подтверждённому заказу выставляем инвойс, а после сборки — накладную по факту.' },
+      { s: nav('shipments'), t: 'Отгрузки', x: 'Машины: какие заказы едут, этапы пути. Отмеченный этап сразу уходит клиентам в бот.' },
+      { s: nav('clients'), t: 'Клиенты и CRM', x: 'Карточки клиентов и наценки, а в CRM — лиды, задачи и заявки из Telegram-бота.' },
+      { s: nav('claims'), t: 'Претензии', x: 'Претензии клиентов с фото. Отвечаем в течение 2 рабочих дней — решение придёт клиенту уведомлением.' },
+      { s: nav('reference'), t: 'Справка', x: 'Сезонность, праздники КНР, регламент упаковки и «Вопрос-ответ» — его видят клиенты и бот, править можно прямо здесь.' },
+      { s: '#tab-notif', t: 'Уведомления', x: 'Новые заказы, вопросы и претензии. В Telegram-боте они приходят с кнопками «Взять себе» и «Ответить».' },
+      { t: 'Готово!', x: 'Экскурсию можно повторить кнопкой <b>«Экскурсия с Аммиком»</b> внизу меню. Удачной работы! 🌸' },
+    ],
+    warehouse: [
+      { t: 'Привет! Я Аммик 🌷', x: 'Покажу разделы склада — это быстро.' },
+      { s: nav('warehouse'), t: 'Сборка', x: 'Заказы к сборке: что собрать, сколько коробок, отметки по факту. Число в кружке — заказы в работе.' },
+      { s: nav('shipments'), t: 'Отгрузки', x: 'Машины и этапы пути. Отметил этап — клиенты машины сразу получают сообщение в боте.' },
+      { s: nav('labels'), t: 'Этикетки', x: 'Печать этикеток на коробки.' },
+      { s: nav('reference'), t: 'Справка', x: 'Сезонность, праздники КНР и регламент упаковки по каждой культуре.' },
+      { t: 'Готово!', x: 'Повторить экскурсию — кнопка <b>«Экскурсия с Аммиком»</b> внизу меню. 🌸' },
+    ],
+    guest: [
+      { t: 'Привет! Я Аммик 🌷', x: 'Это каталог AMMA FLOWERS: срезка, горшечные и сопутка напрямую из Китая. Цены здесь базовые.' },
+      { s: nav('price'), t: 'Каталог', x: 'Листайте разделы и категории. Чтобы увидеть свои цены и оформить заказ — войдите в аккаунт клиента или оставьте заявку менеджеру.' },
+      { t: 'Хорошего просмотра! 🌸', x: 'Вопросы можно задать в Telegram-боте <b>@Amma_Flowers_bot</b>.' },
+    ],
+  };
+  const key = () => `amma_tour_v1_${currentUser?.role}_${currentUser?.id || 'g'}`;
+  let steps = [], i = 0, box = null;
+
+  function el(sel) {
+    if (!sel) return null;
+    const e = document.querySelector(sel);
+    if (!e) return null;
+    const r = e.getBoundingClientRect();
+    return r.width && r.height ? e : null;
+  }
+  function render() {
+    const st = steps[i];
+    const target = el(st.s);
+    if (target) target.scrollIntoView({ block: 'nearest', inline: 'center' });
+    const hole = box.querySelector('.tour-hole'), card = box.querySelector('.tour-card');
+    card.querySelector('.tour-title').textContent = st.t;
+    card.querySelector('.tour-text').innerHTML = st.x;
+    card.querySelector('.tour-dots').innerHTML = steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
+    card.querySelector('.back').style.visibility = i ? 'visible' : 'hidden';
+    card.querySelector('.next').textContent = i === steps.length - 1 ? 'Начать работу' : i === 0 ? 'Поехали' : 'Дальше';
+    const W = card.offsetWidth, H = card.offsetHeight, vw = innerWidth, vh = innerHeight;
+    if (target) {
+      const r = target.getBoundingClientRect(), p = 6;
+      hole.classList.remove('none');
+      Object.assign(hole.style, { top: r.top - p + 'px', left: r.left - p + 'px', width: r.width + p * 2 + 'px', height: r.height + p * 2 + 'px' });
+      let left = r.right + 22, top = r.top + r.height / 2 - H / 2;          // справа от пункта меню
+      if (left + W > vw - 12) { left = Math.min(Math.max(12, r.left), vw - W - 12); top = r.bottom + 16; }   // или под ним
+      if (top + H > vh - 12) top = Math.max(12, r.top - H - 16);
+      card.style.left = left + 'px'; card.style.top = Math.max(12, Math.min(top, vh - H - 12)) + 'px';
+    } else {
+      hole.classList.add('none');
+      card.style.left = (vw - W) / 2 + 'px'; card.style.top = (vh - H) / 2 + 'px';
+    }
+    card.querySelector('.next').focus({ preventScroll: true });
+  }
+  function close(done) {
+    if (!box) return;
+    box.classList.remove('on'); box.remove(); box = null;
+    removeEventListener('keydown', onKey); removeEventListener('resize', render);
+    if (done) try { localStorage.setItem(key(), '1'); } catch (e) {}
+  }
+  function onKey(e) {
+    if (e.key === 'Escape') close(true);
+    if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); go(1); }
+    if (e.key === 'ArrowLeft') go(-1);
+  }
+  function go(d) {
+    i += d;
+    if (i >= steps.length) return close(true);
+    if (i < 0) i = 0;
+    render();
+  }
+  window.AmmikTour = {
+    start(force) {
+      if (typeof currentUser === 'undefined' || !currentUser || box) return;
+      if (!force) { try { if (localStorage.getItem(key())) return; } catch (e) { return; } }
+      steps = STEPS[currentUser.role] || STEPS.client;
+      i = 0;
+      box = document.createElement('div');
+      box.id = 'tour';
+      box.className = 'on';
+      box.setAttribute('role', 'dialog');
+      box.setAttribute('aria-label', 'Экскурсия по системе');
+      box.innerHTML = `<div class="tour-hole none"></div>
+        <div class="tour-card"><button class="tour-skip" type="button">Пропустить</button>
+          <div class="tour-head"><img class="tour-ava" src="${AMMIK}" alt="Аммик" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'tour-ava',textContent:''}))">
+            <div><div class="tour-who">Аммик · помощник AMMA FLOWERS</div><div class="tour-title"></div></div></div>
+          <div class="tour-text"></div>
+          <div class="tour-foot"><div class="tour-dots"></div>
+            <button class="tour-btn back" type="button">Назад</button><button class="tour-btn next" type="button">Дальше</button></div></div>`;
+      document.body.appendChild(box);
+      box.querySelector('.tour-skip').onclick = () => close(true);
+      box.querySelector('.back').onclick = () => go(-1);
+      box.querySelector('.next').onclick = () => go(1);
+      addEventListener('keydown', onKey); addEventListener('resize', render);
+      render();
+    },
+  };
+
+  // ── Подключение к существующему коду ──
+  const _showPage = window.showPage;
+  if (typeof _showPage === 'function') window.showPage = function () { const r = _showPage.apply(this, arguments); hello(); return r; };
+  const _initApp = window.initApp;
+  if (typeof _initApp === 'function') window.initApp = async function () {
+    const r = await _initApp.apply(this, arguments);
+    hello(); splitTabs();
+    setTimeout(() => AmmikTour.start(false), 900);
+    return r;
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { buildShell(); smoothScroll(); });
+  else { buildShell(); smoothScroll(); }
 })();
 </script>
 </body>
