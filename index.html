@@ -4,8 +4,28 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>AMMA FLOWERS — Система заказов</title>
+<!-- Иконка и запуск «как приложение» с экрана «Домой» (iPhone / Android) -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<meta name="theme-color" content="#1B2C20">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AMMA">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <script>window.__ammaRecovery = /type=recovery/.test(location.hash);</script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Библиотека Supabase лежит рядом (supabase.js): из Китая без VPN cdn.jsdelivr.net часто не открывается.
+     Если локального файла нет — пробуем CDN. -->
+<script src="supabase.js"></script>
+<script>window.supabase || document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"><\/script>')</script>
+<script>
+  // Если библиотека так и не загрузилась, система не запустится — говорим об этом прямо на экране входа
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.supabase) return;
+    const e = document.getElementById('login-err');
+    if (e) { e.style.display = 'block'; e.textContent = 'Не удалось загрузить систему: нет связи с сервером. Проверьте интернет; в Китае включите VPN и обновите страницу. / 无法连接服务器，请检查网络或开启VPN'; }
+  });
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Manrope:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
@@ -1023,6 +1043,17 @@ document.addEventListener('DOMContentLoaded', function(){
       </div>
       <button class="btn-login" id="btn-login" onclick="doLogin()">Войти / 登录 →</button>
       <div class="login-err" id="login-err">Неверный логин или пароль</div>
+      <div id="a2hs-hint" style="display:none;margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(201,169,110,.16);font-size:12px;line-height:1.5;text-align:left">
+        📲 <b>Добавьте AMMA на экран «Домой»</b>: нажмите <b>«Поделиться»</b> (квадрат со стрелкой вверх) внизу Safari → <b>«На экран „Домой“»</b>. Система будет открываться как приложение.
+        <a href="#" style="float:right" onclick="event.preventDefault();try{localStorage.setItem('amma_a2hs_off','1')}catch(e){};this.parentNode.style.display='none'">✕</a>
+      </div>
+      <script>(function () {
+        // Подсказка только в Safari на iPhone/iPad, если система открыта не с экрана «Домой»
+        var ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        var standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+        var off = false; try { off = localStorage.getItem('amma_a2hs_off') === '1'; } catch (e) {}
+        if (ios && !standalone && !off) document.getElementById('a2hs-hint').style.display = 'block';
+      })();</script>
       <div class="auth-links">
         <a href="#" onclick="event.preventDefault();authView('reset')">Забыли пароль? / 忘记密码</a>
         <a href="#" onclick="event.preventDefault();authView('request')">Запросить доступ / 申请开通</a>
@@ -1887,6 +1918,10 @@ async function sha256(msg) {
 // Логин без «@» превращается в служебный адрес login@amma.local; при первом входе после обновления
 // старый пароль переносится функцией auth-migrate.
 const AMMA_LOGIN_DOMAIN = 'amma.local';
+const AUTH_NET_MSG = 'Нет связи с сервером. Проверьте интернет; в Китае включите VPN. / 无法连接服务器，请检查网络或开启VPN';
+function authNetErr(e) {
+  return !navigator.onLine || e?.status === 0 || /fetch|network|timeout|load failed/i.test((e?.name || '') + ' ' + (e?.message || ''));
+}
 function authLoginEmail(login) {
   const l = String(login || '').trim().toLowerCase();
   if (/^[a-z0-9._-]+$/.test(l)) return l + '@' + AMMA_LOGIN_DOMAIN;
@@ -1895,8 +1930,11 @@ function authLoginEmail(login) {
 async function authSignIn(id, pass) {
   const isEmail = id.includes('@');
   const email = isEmail ? id.trim().toLowerCase() : authLoginEmail(id);
-  let { error } = await sb.auth.signInWithPassword({ email, password: pass });
+  let error;
+  try { ({ error } = await sb.auth.signInWithPassword({ email, password: pass })); }
+  catch (e) { error = e; }
   if (!error) return {};
+  if (authNetErr(error)) return { error: AUTH_NET_MSG };
   if (/banned/i.test(error.message)) return { error: 'Доступ закрыт. Обратитесь к менеджеру / 账号已停用' };
   if (isEmail) return { error: 'Неверный email или пароль / 邮箱或密码错误' };
   let j = {};
@@ -1905,7 +1943,7 @@ async function authSignIn(id, pass) {
       headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY },
       body: JSON.stringify({ login: id.trim(), password: pass }) });
     j = await r.json().catch(() => ({}));
-  } catch (e) { return { error: 'Нет связи с сервером / 网络错误' }; }
+  } catch (e) { return { error: AUTH_NET_MSG }; }
   if (j.status === 'ok') {
     ({ error } = await sb.auth.signInWithPassword({ email: j.email, password: pass }));
     return error ? { error: error.message } : {};
