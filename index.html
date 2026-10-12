@@ -3070,6 +3070,98 @@ async function processFlowerPhoto(file, flowerId) {
   }
 }
 
+// ── Фото позиций: кэш в браузере + фоновая догрузка ──
+const PHOTO_DB = { db: undefined, gen: 0, waiters: [] };
+function _phDb() {
+  if (PHOTO_DB.db !== undefined) return Promise.resolve(PHOTO_DB.db);
+  return new Promise(res => {
+    try {
+      const r = indexedDB.open('amma-photos', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('p');
+      r.onsuccess = () => res(PHOTO_DB.db = r.result);
+      r.onerror = () => res(PHOTO_DB.db = null);
+    } catch (e) { res(PHOTO_DB.db = null); }
+  });
+}
+function _phGetAll(db) {
+  return new Promise(res => {
+    const out = new Map();
+    try {
+      const rq = db.transaction('p').objectStore('p').openCursor();
+      rq.onsuccess = () => { const c = rq.result; if (c) { out.set(c.key, c.value); c.continue(); } else res(out); };
+      rq.onerror = () => res(out);
+    } catch (e) { res(out); }
+  });
+}
+function _phPut(db, rows) {
+  if (!db) return;
+  try { const st = db.transaction('p', 'readwrite').objectStore('p'); rows.forEach(r => st.put({ u: r.u || '', p: r.p || '' }, r.id)); } catch (e) {}
+}
+// Подставляем фото в уже нарисованные карточки и строки, не перерисовывая прайс (не сбиваем ввод цен)
+function patchFlowerPhotos(list) {
+  list.forEach(f => {
+    if (!f.photo_url) return;
+    document.querySelectorAll(`[data-fid="${f.id}"]`).forEach(el => {
+      if (el.tagName === 'IMG') { if (el.getAttribute('src') !== f.photo_url) el.src = f.photo_url; return; }
+      const img = document.createElement('img');
+      img.src = f.photo_url; img.alt = f.ru || ''; img.loading = 'lazy'; img.dataset.fid = f.id;
+      if (el.classList.contains('fimg-ph') && el.closest('td')) img.className = 'fimg';
+      el.replaceWith(img);
+    });
+  });
+}
+async function loadFlowerPhotos() {
+  const gen = ++PHOTO_DB.gen;
+  const db = await _phDb();
+  const cache = db ? await _phGetAll(db) : new Map();
+  const byId = new Map(flowers.map(f => [f.id, f]));
+  const need = [];
+  flowers.forEach(f => {
+    const c = cache.get(f.id);
+    if (c && c.u === (f.updated_at || '')) { f.photo_url = c.p || null; f._ph = 1; } else need.push(f);
+  });
+  patchFlowerPhotos(flowers.filter(f => f._ph));
+  // сначала открытый раздел, затем остальные
+  need.sort((a, b) => (flowerCatalog(a) === currentCatalog ? 0 : 1) - (flowerCatalog(b) === currentCatalog ? 0 : 1));
+  const queue = need.map(f => f.id);
+  let doneN = 0;
+  const worker = async () => {
+    while (queue.length && gen === PHOTO_DB.gen) {
+      const ids = queue.splice(0, 6);
+      let data = null;
+      for (let attempt = 0; attempt < 2 && !data; attempt++) {
+        const r = await sb.from('flowers').select('id,photo_url,updated_at').in('id', ids);
+        if (!r.error) data = r.data;
+      }
+      if (gen !== PHOTO_DB.gen) return;
+      const got = [];
+      (data || []).forEach(r => { const f = byId.get(r.id); if (f) { f.photo_url = r.photo_url || null; f._ph = 1; got.push(f); } });
+      ids.forEach(id => { const f = byId.get(id); if (f && !f._ph) f._ph = 1; });   // не удалось — больше не ждём
+      _phPut(db, (data || []).map(r => ({ id: r.id, u: r.updated_at, p: r.photo_url })));
+      patchFlowerPhotos(got);
+      if (++doneN % 6 === 0) { try { renderShowcase(); } catch (e) {} }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  if (gen !== PHOTO_DB.gen) return;
+  try { renderShowcase(); } catch (e) {}
+  PHOTO_DB.waiters.splice(0).forEach(fn => fn());
+}
+// Дождаться фото перед выгрузкой в Excel/PDF или открытием карточки
+async function ensureFlowerPhotos(ids) {
+  const list = ids ? ids.map(id => flowers.find(f => String(f.id) === String(id))).filter(Boolean) : flowers;
+  const miss = list.filter(f => !f._ph && f._ph !== undefined);
+  if (!miss.length) return;
+  if (miss.length <= 12) {
+    const { data } = await sb.from('flowers').select('id,photo_url,updated_at').in('id', miss.map(f => f.id));
+    (data || []).forEach(r => { const f = miss.find(x => x.id === r.id); if (f) { f.photo_url = r.photo_url || null; f._ph = 1; } });
+    _phPut(PHOTO_DB.db, (data || []).map(r => ({ id: r.id, u: r.updated_at, p: r.photo_url })));
+    return;
+  }
+  toast('⏳ Догружаем фото… / 正在加载图片');
+  await new Promise(res => PHOTO_DB.waiters.push(res));
+}
+
 // ── Миграция: base64-фото из таблицы → Storage ──
 async function migratePhotosToStorage() {
   if (!confirm('Перенести все фото из таблицы flowers в Supabase Storage?\n\nЭто разгрузит прайс и уберёт ошибку 500.\nПеред запуском создайте бакет — см. setup_storage.sql.\n\nПродолжить?')) return;
@@ -3363,45 +3455,54 @@ async function applyBulkCategoryMove() {
   toast(`✅ Перемещено ${ids.length} поз. в «${target}» / 已移动`);
 }
 
+// ══════════════════════════════════════════════════════════
+//  ЗАГРУЗКА ПРАЙСА: сначала текст и цены (быстро), фото — следом в фоне
+//  Фото многих позиций лежат прямо в таблице (base64, сотни КБ каждое) — если ждать их,
+//  прайс на телефоне открывается минутами. Поэтому: 1) все колонки, кроме photo_url, одним-двумя
+//  запросами → прайс сразу на экране; 2) фото порциями, сначала открытого раздела, и подставляются
+//  в карточки на месте; 3) фото запоминаются в браузере (IndexedDB) — повторный вход мгновенный.
+// ══════════════════════════════════════════════════════════
+const FLOWER_COLS_FALLBACK = 'id,ru,cn,en,cat_ru,cat_en,price_a,price_ap,boxes_per_box,stems,pack,length,order_qty,flower_weight,box_size,in_stock,updated_at,catalog,is_weight';
+async function flowerLightCols() {
+  try {
+    const c = JSON.parse(localStorage.getItem('amma_fcols_v1') || 'null');
+    if (c && Date.now() - c.t < 3 * 864e5) return c.cols;
+  } catch (e) {}
+  // Состав колонок узнаём по одной самой свежей позиции (у новых фото уже ссылкой — строка лёгкая).
+  // Сотрудникам нужны все колонки (правка позиций), поэтому они ждут; гостю и клиенту хватит
+  // базового набора — его показываем сразу, а полный список запоминаем на следующий раз.
+  const discover = async () => {
+    const { data, error } = await sb.from('flowers').select('*').order('id', { ascending: false }).limit(1);
+    if (error || !data?.[0]) return FLOWER_COLS_FALLBACK;
+    const cols = Object.keys(data[0]).filter(k => k !== 'photo_url').join(',');
+    try { localStorage.setItem('amma_fcols_v1', JSON.stringify({ t: Date.now(), cols })); } catch (e) {}
+    return cols;
+  };
+  if (['manager', 'warehouse'].includes(currentUser?.role)) return discover();
+  discover().catch(() => {});
+  return FLOWER_COLS_FALLBACK;
+}
+
 async function loadFlowers() {
-  // Порционная загрузка: base64-фото делают таблицу тяжёлой,
-  // один запрос select=* на всю таблицу падает с 500 (timeout/размер ответа)
   flowers = [];
-  const CHUNK = 25;
-  let from = 0;
-  while (true) {
-    let { data, error } = await sb.from('flowers')
-      .select('*').order('id').range(from, from + CHUNK - 1);
-    if (error) {
-      console.warn(`flowers chunk ${from}: ${error.message} — повтор без фото`);
-      // Запасной вариант: тот же диапазон, но без тяжёлого photo_url
-      const light = await sb.from('flowers')
-        .select('id,ru,cn,en,cat_ru,cat_en,price_a,price_ap,boxes_per_box,stems,pack,length,order_qty,flower_weight,box_size,in_stock,updated_at,catalog,is_weight')
-        .order('id').range(from, from + CHUNK - 1);
-      if (light.error) {
-        toast('❌ Прайс не загрузился: ' + light.error.message);
-        console.error('flowers load failed:', light.error);
-        break;
-      }
-      data = (light.data || []).map(f => ({ ...f, photo_url: null, _noPhoto: true }));
+  let cols = await flowerLightCols();
+  for (let from = 0; ; from += 1000) {
+    let { data, error } = await sb.from('flowers').select(cols).order('id').range(from, from + 999);
+    if (error && cols !== FLOWER_COLS_FALLBACK) {   // колонку переименовали/удалили — берём базовый набор
+      try { localStorage.removeItem('amma_fcols_v1'); } catch (e) {}
+      cols = FLOWER_COLS_FALLBACK;
+      ({ data, error } = await sb.from('flowers').select(cols).order('id').range(from, from + 999));
     }
-    if (!data || !data.length) break;
+    if (error) { toast('❌ Прайс не загрузился: ' + error.message); console.error('flowers load failed:', error); break; }
+    if (!data?.length) break;
+    data.forEach(f => { f.photo_url = null; f._ph = 0; });   // _ph: 0 — фото ещё не загружено, 1 — загружено
     flowers.push(...data);
-    if (data.length < CHUNK) break;
-    from += CHUNK;
+    if (data.length < 1000) break;
   }
 
   await loadCategoryOrder();
   sortFlowersByCategoryOrder();
-  // Части, загруженные без фото (медленный интернет, телефон), — фото догружаем в фоне маленькими порциями
-  const noPhoto = flowers.filter(f => f._noPhoto).map(f => f.id);
-  if (noPhoto.length) (async () => {
-    for (let i = 0; i < noPhoto.length; i += 5) {
-      const { data } = await sb.from('flowers').select('id,photo_url').in('id', noPhoto.slice(i, i + 5));
-      (data || []).forEach(r => { const f = flowers.find(x => x.id === r.id); if (f) { f.photo_url = r.photo_url; delete f._noPhoto; } });
-      if (i % 25 === 20 || i + 5 >= noPhoto.length) { try { if (document.getElementById('page-price')?.classList.contains('active')) renderPrice(); } catch (e) {} }
-    }
-  })();
+  loadFlowerPhotos();   // не ждём — прайс уже можно показывать
 
   document.getElementById('price-updated').textContent =
     `Актуальные цены AMMA FLOWERS · Обновлено: ${localStorage.getItem('ammaPriceUpdated') || '—'}`;
@@ -3649,7 +3750,7 @@ function renderFrequentItems() {
 
   row.innerHTML = items.map(f => {
     const thumb = f.photo_url || THUMBS[f.en];
-    const imgH = thumb ? `<img src="${thumb}" alt="${f.ru}" loading="lazy">` : `<div class="fimg-ph">🌸</div>`;
+    const imgH = thumb ? `<img src="${thumb}" alt="${f.ru}" loading="lazy" data-fid="${f.id}">` : `<div class="fimg-ph" data-fid="${f.id}">🌸</div>`;
     const dpa = (f.price_a * clientMarkup).toFixed(1);
     return `<div class="freq-card" onclick="showFlowerDetailModal(${f.id})">
       <div class="freq-card-img">${imgH}</div>
@@ -3773,7 +3874,7 @@ function _scCard(f, tag, gold) {
   const isMgr = currentUser?.role === 'manager';
   const mk = (!isMgr && (currentUser?.show_markup || globalMarkupActive)) ? 1.15 : 1;
   const thumb = f.photo_url || THUMBS[f.en];
-  const img = thumb ? `<img src="${thumb}" alt="${escHtml(f.ru)}" loading="lazy">` : `<div class="fimg-ph">${flowerCatalog(f) === 'potted' ? '🪴' : flowerCatalog(f) === 'supplies' ? '📦' : '🌸'}</div>`;
+  const img = thumb ? `<img src="${thumb}" alt="${escHtml(f.ru)}" loading="lazy" data-fid="${f.id}">` : `<div class="fimg-ph" data-fid="${f.id}">${flowerCatalog(f) === 'potted' ? '🪴' : flowerCatalog(f) === 'supplies' ? '📦' : '🌸'}</div>`;
   const sub = isKunmingItem(f) ? '📍 Куньмин · ' + (f.cat_ru || '') : (f.cat_ru || '');
   return `<div class="freq-card" onclick="showFlowerDetailModal(${f.id})">
     ${tag ? `<span class="sc-tag${gold ? ' gold' : ''}">${tag}</span>` : ''}
@@ -4145,8 +4246,8 @@ function renderPriceTable() {
     const papb = (pap * f.boxes_per_box).toFixed(0);
     const thumb = f.photo_url || THUMBS[f.en];
     const imgH = thumb
-      ? `<img class="fimg" src="${thumb}" alt="${f.ru}" loading="lazy">`
-      : `<div class="fimg-ph">🌸</div>`;
+      ? `<img class="fimg" src="${thumb}" alt="${f.ru}" loading="lazy" data-fid="${f.id}">`
+      : `<div class="fimg-ph" data-fid="${f.id}">🌸</div>`;
 
     const stockCell = isMgr
       ? `<button class="sbtn ${inStock?'in':'out'}" onclick="toggleStock(${f.id})">${inStock?'✅ Есть/有货':'❌ Нет/无货'}</button>`
@@ -4245,8 +4346,8 @@ function renderPriceCards() {
     const hasRealPhoto = !!f.photo_url;
     const thumb = f.photo_url || THUMBS[f.en];
     const imgH = thumb
-      ? `<img src="${thumb}" alt="${f.ru}" loading="lazy">`
-      : `<div class="fimg-ph">🌸</div>`;
+      ? `<img src="${thumb}" alt="${f.ru}" loading="lazy" data-fid="${f.id}">`
+      : `<div class="fimg-ph" data-fid="${f.id}">🌸</div>`;
     const clientMarkup = (!isMgr && (currentUser?.show_markup || globalMarkupActive)) ? 1.15 : 1;
     const dpa  = (pa  * clientMarkup).toFixed(1);
     const dpap = (pap * clientMarkup).toFixed(1);
@@ -18249,6 +18350,7 @@ const CATALOG_FILE_LABELS = { cut: 'Срезы', potted: 'Горшечные', s
 const CATALOG_TITLES = { cut: 'Fresh Cut / 鲜切花', potted: 'Potted Plants / 绿植盆栽', supplies: 'Supplies / 包装辅材' };
 
 async function exportPriceExcel() {
+  await ensureFlowerPhotos();
   const list = flowers.filter(f => flowerCatalog(f) === currentCatalog && (!hiddenOut || f.in_stock));
   if (!list.length) { toast('В этой вкладке нет позиций / 该目录暂无数据'); return; }
   toast('⏳ Готовлю Excel с фото... / 生成中');
@@ -19130,6 +19232,14 @@ function exportPricePDF() {
       render();
     },
   };
+
+  // ── Фото по требованию: карточка товара и PDF-прайс ждут фото, если они ещё догружаются ──
+  const _sfd = window.showFlowerDetailModal;
+  if (typeof _sfd === 'function') window.showFlowerDetailModal = async function (id) {
+    try { await ensureFlowerPhotos([id]); } catch (e) {}
+    return _sfd.apply(this, arguments);
+  };
+  if (window.PG && typeof PG.open === 'function') { const _pg = PG.open; PG.open = async function () { try { await ensureFlowerPhotos(); } catch (e) {} return _pg.apply(this, arguments); }; }
 
   // ── Подключение к существующему коду ──
   const _showPage = window.showPage;
