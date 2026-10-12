@@ -157,7 +157,7 @@ input,textarea{font:inherit;color:var(--ink)}
       <div class="seg" id="seg"></div>
       <div class="search">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="q" type="search" placeholder="Поиск: роза, эустома, фикус…" autocomplete="off">
+        <input id="q" type="search" placeholder="Что ищете? Поиск по всему каталогу" autocomplete="off">
       </div>
       <div class="chips" id="chips"></div>
       <div class="who" id="who"></div>
@@ -247,9 +247,19 @@ function mainButton(text, handler, opts = {}) {
   mainHandler = handler;
   if (tgApp) {
     const mb = tg.MainButton;
-    if (!text) { mb.hide(); return; }
-    mb.setParams({ text, is_active: !opts.disabled, is_visible: true });
-    opts.progress ? mb.showProgress() : mb.hideProgress();
+    const apply = () => {
+      if (mainButton._t !== text) return;   // за это время кнопку уже переключили на другой экран
+      if (!text) { mb.hide(); return; }
+      mb.setText(text);
+      mb.setParams({ text, is_active: !opts.disabled, is_visible: true });
+      mb.show();
+      opts.progress ? mb.showProgress() : mb.hideProgress();
+    };
+    mainButton._t = text;
+    apply();
+    // Некоторые телефоны не меняют надпись, если она обновляется прямо во время нажатия «назад», —
+    // повторяем чуть позже, чтобы в каталоге всегда было «Мой запрос · N кор», а «Отправить…» — только в запросе
+    setTimeout(apply, 120);
     return;
   }
   $('bar').style.display = text ? 'block' : 'none';
