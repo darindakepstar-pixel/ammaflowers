@@ -7388,6 +7388,15 @@ function showEditClientModal(id) {
     <div style="margin-top:8px;padding:10px;background:#FFF3E0;border-radius:6px;font-size:12px;color:#E65100">
       ⚠ Логин нельзя изменить / 账号不可修改. Для нового — удалите и создайте заново / 如需新账号请删除后重新创建.
     </div>
+    ${currentUser?.is_admin && String(user.id) !== String(currentUser.id) && !user.is_admin ? `
+    <div class="field" style="margin-top:10px"><label>Роль в системе / 角色</label>
+      <select class="inp" id="ec-role" data-prev="${user.role}">
+        <option value="client" ${user.role === 'client' ? 'selected' : ''}>👤 Клиент / 客户</option>
+        <option value="manager" ${user.role === 'manager' ? 'selected' : ''}>💼 Менеджер / 经理</option>
+        <option value="warehouse" ${user.role === 'warehouse' ? 'selected' : ''}>🏭 Склад / 仓库</option>
+      </select>
+      <div style="font-size:10px;color:var(--mid);margin-top:2px">Новый менеджер получает полный доступ. Ограничить его своими клиентами (💼) можно после сохранения, открыв карточку ещё раз.</div>
+    </div>` : ''}
     <div style="margin-top:10px;padding:10px 12px;background:var(--sage-l);border-radius:6px;display:${isScopedMgr()||user.role!=='client'?'none':'flex'};align-items:center;gap:10px">
       <label style="font-weight:600;font-size:12px;color:var(--sage-d)">💰 Показывать цены с 15% наценкой / 显示加价15%价格:</label>
       <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px">
@@ -7450,6 +7459,15 @@ async function saveClient(id) {
   if (calcEl && currentUser?.is_admin) updates.calc_access = calcEl.checked;
   const scEl = document.getElementById('ec-scope-own');
   if (scEl) updates.client_scope = scEl.checked ? 'own' : null;
+  const roleEl = document.getElementById('ec-role');
+  if (roleEl && currentUser?.is_admin && roleEl.value !== roleEl.dataset.prev) {
+    const nr = roleEl.value;
+    if (!confirm(`Сменить роль «${roleEl.dataset.prev}» → «${nr}»? Пользователь увидит другие разделы при следующем входе.`)) return;
+    updates.role = nr;
+    if (nr !== 'client') updates.manager_id = null;          // сотрудник не закрепляется за менеджером
+    if (nr === 'manager') updates.client_scope = null;       // по умолчанию полный доступ менеджера
+    if (nr !== 'manager' && 'client_scope' in (allClients.find(c => String(c.id) === String(id)) || {})) updates.client_scope = null;
+  }
   const ptEl = document.getElementById('ec-purch-track');
   if (ptEl) {
     updates.purchase_tracking = ptEl.checked;
