@@ -1451,6 +1451,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         <button class="btn btn-secondary ref-tab active" id="ref-tab-season" onclick="showRefSection('season',this)">🌸 Сезонность / 花季</button>
         <button class="btn btn-secondary ref-tab" id="ref-tab-holidays" onclick="showRefSection('holidays',this)">📅 Праздники КНР / 节假日</button>
+        <button class="btn btn-secondary ref-tab" id="ref-tab-faq" onclick="showRefSection('faq',this)">❓ Вопрос-ответ / 常见问题</button>
         <button class="btn btn-secondary ref-tab" id="ref-tab-packing" onclick="showRefSection('packing',this)">📦 Упаковка / 包装要求</button>
       </div>
       <div id="ref-content"></div>
@@ -2365,7 +2366,10 @@ function showRefSection(sec, btn) {
       </tbody></table>`;
   }
 
+  if (sec === 'faq') { FAQ.open(box); return; }
+
   if (sec === 'packing') {
+    if (currentUser?.role === 'client') { showRefSection('faq', document.getElementById('ref-tab-faq')); return; }   // внутренний регламент — только сотрудникам
     box.innerHTML = `
       <div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;padding:12px;margin-bottom:14px">
         <b style="font-size:13px">Общие правила для ВСЕХ культур:</b>
@@ -2394,10 +2398,98 @@ function filterPackingGuide(q) {
 }
 
 function renderReference() {
-  const activeBtn = document.querySelector('.ref-tab.active') || document.getElementById('ref-tab-season');
-  const sec = activeBtn.id.replace('ref-tab', '').replace('-', '');
-  showRefSection(activeBtn.id === 'ref-tab-holidays' ? 'holidays' : activeBtn.id === 'ref-tab-packing' ? 'packing' : 'season', activeBtn);
+  // Клиентам — «Вопрос-ответ» вместо внутреннего регламента упаковки
+  const isCl = currentUser?.role === 'client';
+  const pk = document.getElementById('ref-tab-packing');
+  if (pk) pk.style.display = isCl ? 'none' : '';
+  let activeBtn = document.querySelector('.ref-tab.active') || document.getElementById('ref-tab-season');
+  if (isCl && activeBtn === pk) activeBtn = document.getElementById('ref-tab-faq');
+  showRefSection(activeBtn.id.replace('ref-tab-', ''), activeBtn);
 }
+
+// ── Вопрос-ответ: те же вопросы, что в Telegram-боте (таблица tg_faq) ──
+// Клиенты читают; менеджеры с полным доступом правят прямо здесь — изменения сразу видны и в боте.
+const FAQ = {
+  list: [], q: '',
+  canEdit() { return isFullMgr(); },
+  async open(box) {
+    box.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    let q = sb.from('tg_faq').select('id, sort, question, answer, active').order('sort');
+    if (!this.canEdit()) q = q.eq('active', true);
+    const { data, error } = await q;
+    if (error) { box.innerHTML = `<div style="font-size:12.5px;color:var(--mid)">Раздел пока недоступен. ${this.canEdit() ? 'Проверьте, что выполнен sql_tg_bot.sql.' : 'Задайте вопрос в «Чате» — менеджер ответит.'}</div>`; return; }
+    this.list = data || [];
+    this.box = box;
+    this.render();
+  },
+  render() {
+    const ed = this.canEdit();
+    const q = this.q.trim().toLowerCase();
+    const list = q ? this.list.filter(f => (f.question + ' ' + f.answer).toLowerCase().includes(q)) : this.list;
+    this.box.innerHTML = `
+      <div style="font-size:12.5px;color:var(--mid);margin-bottom:10px;line-height:1.5">${ed
+        ? 'Эти вопросы видят клиенты в «Справочнике» и в Telegram-боте. Изменения применяются сразу. Порядок — по номеру, скрытые вопросы видны только сотрудникам.'
+        : 'Ответы на частые вопросы о заказах, доставке, упаковке и претензиях. Не нашли ответ — напишите менеджеру в «Чат».'}</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <input class="inp" type="text" placeholder="🔍 Поиск по вопросам" value="${escHtml(this.q)}" style="flex:1;min-width:180px;padding:8px"
+          oninput="FAQ.q=this.value;FAQ.renderList()">
+        ${ed ? '<button class="btn btn-primary" onclick="FAQ.edit()">➕ Добавить вопрос</button>' : ''}
+      </div>
+      <div id="faq-list"></div>
+      ${ed ? '' : `<div style="margin-top:12px"><button class="btn btn-secondary" onclick="document.querySelectorAll('.nav-tab').forEach(t=>{if(t.getAttribute('onclick')?.includes(&quot;'chat'&quot;)) t.click()})">💬 Задать вопрос в чате</button></div>`}`;
+    this.renderList();
+  },
+  renderList() {
+    const ed = this.canEdit();
+    const q = this.q.trim().toLowerCase();
+    const list = q ? this.list.filter(f => (f.question + ' ' + f.answer).toLowerCase().includes(q)) : this.list;
+    const el = document.getElementById('faq-list'); if (!el) return;
+    el.innerHTML = list.length ? list.map(f => `
+      <details style="border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fff;${f.active === false ? 'opacity:.55' : ''}">
+        <summary style="padding:10px 12px;cursor:pointer;font-size:13px;font-weight:600">${ed ? `<span style="color:var(--light);font-weight:400">${f.sort}</span> ` : ''}${escHtml(f.question)}${f.active === false ? ' <span style="font-weight:400;color:var(--mid)">· скрыт</span>' : ''}</summary>
+        <div style="padding:2px 14px 12px;font-size:12.5px;line-height:1.6;white-space:pre-line;color:#374151">${escHtml(f.answer)}</div>
+        ${ed ? `<div style="padding:0 14px 12px;display:flex;gap:6px"><button class="btn btn-secondary" style="font-size:11.5px;padding:4px 10px" onclick="FAQ.edit(${f.id})">✏️ Изменить</button>
+          <button class="btn btn-secondary" style="font-size:11.5px;padding:4px 10px" onclick="FAQ.remove(${f.id})">🗑 Удалить</button></div>` : ''}
+      </details>`).join('')
+      : '<div style="color:var(--mid);font-size:12px;padding:10px">Ничего не найдено</div>';
+  },
+  edit(id) {
+    const f = this.list.find(x => x.id === id) || { sort: (Math.max(0, ...this.list.map(x => x.sort || 0)) + 10), question: '', answer: '', active: true };
+    const el = document.getElementById('faq-list');
+    el.innerHTML = `<div class="card" style="border:1.5px solid var(--sage-d)">
+      <b style="font-size:13px">${id ? 'Изменить вопрос' : 'Новый вопрос'}</b>
+      <label style="display:block;font-size:11.5px;color:var(--mid);margin-top:10px">Вопрос (можно начать с эмодзи)</label>
+      <input class="inp" id="faq-q" style="width:100%;padding:8px" maxlength="200" value="${escHtml(f.question)}">
+      <label style="display:block;font-size:11.5px;color:var(--mid);margin-top:10px">Ответ</label>
+      <textarea class="inp" id="faq-a" style="width:100%;padding:8px;min-height:140px" maxlength="3000">${escHtml(f.answer)}</textarea>
+      <div style="display:flex;gap:14px;align-items:center;margin-top:10px;flex-wrap:wrap;font-size:12.5px">
+        <label>Порядок <input class="inp" id="faq-s" type="number" style="width:80px;padding:6px" value="${f.sort}"></label>
+        <label><input type="checkbox" id="faq-on" ${f.active !== false ? 'checked' : ''}> Показывать клиентам</label>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-primary" id="faq-save" onclick="FAQ.save(${id || 0})">💾 Сохранить</button>
+        <button class="btn btn-secondary" onclick="FAQ.renderList()">Отмена</button>
+      </div></div>`;
+    el.scrollIntoView({ block: 'nearest' });
+  },
+  async save(id) {
+    const row = { id: id || null, question: document.getElementById('faq-q').value.trim(), answer: document.getElementById('faq-a').value.trim(),
+      sort: parseInt(document.getElementById('faq-s').value) || 0, active: document.getElementById('faq-on').checked };
+    if (!row.question || !row.answer) { toast('Заполните вопрос и ответ'); return; }
+    const b = document.getElementById('faq-save'); b.disabled = true;
+    const r = await CH.api('faqSave', { faq: row });
+    b.disabled = false;
+    if (!r.ok) { toast('❌ ' + (r.error || 'Не сохранилось')); return; }
+    toast('✅ Сохранено — уже видно клиентам и в боте');
+    this.open(this.box);
+  },
+  async remove(id) {
+    if (!confirm('Удалить вопрос? Он пропадёт и в боте. Чтобы просто убрать от клиентов — снимите галочку «Показывать клиентам».')) return;
+    const r = await CH.api('faqDelete', { id });
+    if (!r.ok) { toast('❌ ' + (r.error || 'Не удалилось')); return; }
+    this.open(this.box);
+  },
+};
 
 let _iwDrag = null;
 function renderInfoWidget() {
