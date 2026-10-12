@@ -752,7 +752,7 @@ html[data-theme="light"]{
 html[data-theme="dark"]{
   --ink:#0B110D; --pistachio:#C9DB8A; --pistachio-d:#B5CB6E; --paper:#131C17; --line:rgba(255,255,255,.08);
 }
-html{--font-h:'Manrope',system-ui,sans-serif}
+html[data-theme]{--font-h:'Manrope',system-ui,sans-serif}   /* сильнее :root — заголовки и цифры тоже Manrope */
 #screen-login,.inv-preview{--font-h:'Cormorant Garamond',Georgia,serif}
 .page > .card{margin:22px 28px 110px}
 @media (max-width:900px){.page > .card{margin:14px 12px 120px}}
@@ -944,6 +944,18 @@ html.lenis,html.lenis body{height:auto}
   .page-title{font-size:26px}
   .cart-footer,html[data-theme="light"] .cart-footer{left:8px;right:8px;bottom:8px}
 }
+/* ── Аммик в пустых экранах и подсказках ── */
+.amm-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:34px 16px 40px;color:var(--mid)}
+.amm-empty img{height:150px;width:auto;margin-bottom:10px;animation:ammBob 3.2s ease-in-out infinite}
+.amm-empty b{font:700 16px var(--font-ui);color:var(--charcoal);letter-spacing:-.01em}
+.amm-empty span{font-size:12.5px;margin-top:4px}
+@keyframes ammBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+.empty-state .icon{display:none}
+.empty-state::before{content:'';display:block;height:130px;margin:0 auto 10px;background:url(ammik-think.webp) center bottom/contain no-repeat}
+.amm-note{width:100%;margin-bottom:10px;padding:10px 16px 10px 10px;border-radius:var(--rad-l);background:rgba(220,235,164,.45);
+  display:flex;align-items:center;gap:12px;font-size:12.5px;line-height:1.5}
+.amm-note img{height:64px;width:auto;flex-shrink:0}
+html[data-theme="dark"] .amm-note{background:rgba(201,219,138,.10)}
 .side-tour-mini{display:none;align-items:center;gap:6px;background:rgba(255,255,255,.08);border:none;color:#EEF3E6;border-radius:999px;
   padding:4px 10px 4px 4px;font:600 11px var(--font-ui);cursor:pointer}
 .side-tour-mini img{width:22px;height:22px;border-radius:50%;object-fit:cover}
@@ -960,6 +972,13 @@ html.lenis,html.lenis body{height:auto}
   font-family:var(--font-ui)}
 html[data-theme="dark"] .tour-card{background:#18221C}
 .tour-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.tour-card.full{width:min(480px,calc(100vw - 24px));padding-left:168px;min-height:190px;overflow:visible}
+.tour-amm{position:absolute;left:4px;bottom:8px;height:214px;width:auto;pointer-events:none;filter:drop-shadow(0 10px 14px rgba(10,16,12,.25));
+  transition:transform .3s cubic-bezier(.3,1.5,.5,1)}
+.tour-amm.flip{transform:scaleX(-1)}
+.tour-amm.pop{animation:ammPop .45s cubic-bezier(.3,1.6,.5,1)}
+@keyframes ammPop{from{opacity:0;translate:0 14px}to{opacity:1;translate:0 0}}
+.tour-card.full .tour-ava{display:none}
 .tour-ava{width:58px;height:58px;border-radius:50%;object-fit:cover;background:var(--pistachio);flex-shrink:0;
   box-shadow:0 0 0 3px var(--pistachio);animation:ammikHi .6s cubic-bezier(.3,1.6,.5,1)}
 @keyframes ammikHi{from{transform:scale(.6) rotate(-12deg)}to{transform:none}}
@@ -967,8 +986,8 @@ html[data-theme="dark"] .tour-card{background:#18221C}
 .tour-title{font-size:17px;font-weight:800;letter-spacing:-.015em;line-height:1.2}
 .tour-text{font-size:13.5px;line-height:1.55;color:var(--charcoal)}
 .tour-text b{font-weight:700}
-.tour-foot{display:flex;align-items:center;gap:8px;margin-top:14px}
-.tour-dots{display:flex;gap:4px;margin-right:auto}
+.tour-foot{display:flex;align-items:center;gap:6px;margin-top:8px}
+.tour-dots{display:flex;gap:4px;margin-top:12px}
 .tour-dots i{width:6px;height:6px;border-radius:50%;background:var(--border)}
 .tour-dots i.on{background:var(--ink);width:16px;border-radius:3px}
 html[data-theme="dark"] .tour-dots i.on{background:var(--pistachio)}
@@ -976,12 +995,14 @@ html[data-theme="dark"] .tour-dots i.on{background:var(--pistachio)}
 .tour-btn.next{background:var(--ink);color:#F2F6EA}
 html[data-theme="dark"] .tour-btn.next{background:var(--pistachio);color:#0B110D}
 .tour-btn.back{background:transparent;color:var(--mid)}
-.tour-skip{position:absolute;top:12px;right:14px;background:none;border:none;color:var(--light);font:600 11.5px var(--font-ui);cursor:pointer}
+.tour-skip{background:none;border:none;color:var(--light);font:600 11.5px var(--font-ui);cursor:pointer;padding:9px 4px}
 @media (max-width:900px){
   .tour-card{left:12px!important;right:12px;bottom:12px;top:auto!important;width:auto}
+  .tour-card.full{padding-left:116px;min-height:160px}
+  .tour-amm{height:168px;left:0}
 }
 @media (prefers-reduced-motion:reduce){
-  .page.active,.tour-ava{animation:none}
+  .page.active,.tour-ava,.tour-amm.pop,.amm-empty img{animation:none}
   .tour-hole,.tour-card{transition:none}
 }
 </style>
@@ -1108,9 +1129,10 @@ document.addEventListener('DOMContentLoaded', function(){
           <button class="wh-tab" data-cat="potted" onclick="switchCatalog('potted',this)">🪴 Горшечные / 盆栽 <span style="font-size:9px">🚧</span></button>
           <button class="wh-tab" data-cat="supplies" onclick="switchCatalog('supplies',this)">📦 Упаковка / 包装辅材 <span style="font-size:9px">🚧</span></button>
         </div>
-        <div id="catalog-dev-note" style="display:none;width:100%;margin-bottom:8px;padding:8px 12px;background:#fff7ed;border-left:4px solid var(--gold);border-radius:8px;font-size:12px">
-          🚧 Раздел наполняется — ассортимент и цены уточняются. По вопросам пишите менеджеру.<br>
-          <span style="color:var(--mid)">🚧 目录完善中，品类与价格待更新，详询经理。</span>
+        <div id="catalog-dev-note" class="amm-note" style="display:none">
+          <img src="ammik-wonder.webp" alt="" onerror="this.remove()">
+          <div>Раздел наполняется — ассортимент и цены уточняются. По вопросам пишите менеджеру.<br>
+          <span style="color:var(--mid)">目录完善中，品类与价格待更新，详询经理。</span></div>
         </div>
         <input class="inp inp-search" type="text" id="srch" placeholder="🔍 Поиск RU / 中文 / EN...">
         <select class="inp inp-select" id="cat-filter"><option value="">Все категории</option></select>
@@ -3354,14 +3376,14 @@ async function loadFlowers() {
       console.warn(`flowers chunk ${from}: ${error.message} — повтор без фото`);
       // Запасной вариант: тот же диапазон, но без тяжёлого photo_url
       const light = await sb.from('flowers')
-        .select('id,ru,cn,en,cat_ru,cat_en,price_a,price_ap,boxes_per_box,stems,pack,length,order_qty,flower_weight,box_size,in_stock,updated_at')
+        .select('id,ru,cn,en,cat_ru,cat_en,price_a,price_ap,boxes_per_box,stems,pack,length,order_qty,flower_weight,box_size,in_stock,updated_at,catalog,is_weight')
         .order('id').range(from, from + CHUNK - 1);
       if (light.error) {
         toast('❌ Прайс не загрузился: ' + light.error.message);
         console.error('flowers load failed:', light.error);
         break;
       }
-      data = (light.data || []).map(f => ({ ...f, photo_url: null }));
+      data = (light.data || []).map(f => ({ ...f, photo_url: null, _noPhoto: true }));
     }
     if (!data || !data.length) break;
     flowers.push(...data);
@@ -3371,6 +3393,15 @@ async function loadFlowers() {
 
   await loadCategoryOrder();
   sortFlowersByCategoryOrder();
+  // Части, загруженные без фото (медленный интернет, телефон), — фото догружаем в фоне маленькими порциями
+  const noPhoto = flowers.filter(f => f._noPhoto).map(f => f.id);
+  if (noPhoto.length) (async () => {
+    for (let i = 0; i < noPhoto.length; i += 5) {
+      const { data } = await sb.from('flowers').select('id,photo_url').in('id', noPhoto.slice(i, i + 5));
+      (data || []).forEach(r => { const f = flowers.find(x => x.id === r.id); if (f) { f.photo_url = r.photo_url; delete f._noPhoto; } });
+      if (i % 25 === 20 || i + 5 >= noPhoto.length) { try { if (document.getElementById('page-price')?.classList.contains('active')) renderPrice(); } catch (e) {} }
+    }
+  })();
 
   document.getElementById('price-updated').textContent =
     `Актуальные цены AMMA FLOWERS · Обновлено: ${localStorage.getItem('ammaPriceUpdated') || '—'}`;
@@ -3504,7 +3535,7 @@ function switchCatalog(cat, btn) {
   clearBulkSelection();
   document.querySelectorAll('#catalog-tabs .wh-tab').forEach(b => b.classList.toggle('active', b === btn));
   const note = document.getElementById('catalog-dev-note');
-  if (note) note.style.display = cat === 'cut' ? 'none' : 'block';
+  if (note) note.style.display = cat === 'cut' ? 'none' : 'flex';
   fillCatFilterForCatalog();
   renderPrice();
 }
@@ -4187,6 +4218,7 @@ function renderPriceTable() {
     tbody.appendChild(tr);
   });
 
+  if (!vis) tbody.innerHTML = `<tr><td colspan="30" style="background:transparent">${ammikEmpty('Ничего не нашлось', 'Попробуйте другой запрос или раздел / 未找到')}</td></tr>`;
   document.getElementById('price-count').textContent = `${vis} из ${flowers.length}`;
 }
 
@@ -4202,7 +4234,7 @@ function renderPriceCards() {
   document.getElementById('price-count').textContent = `${list.length} из ${flowers.length}`;
 
   if (!list.length) {
-    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:50px 0;color:var(--light);font-size:13px">Ничего не найдено / 未找到</div>`;
+    grid.innerHTML = `<div style="grid-column:1/-1">${ammikEmpty('Ничего не нашлось', 'Попробуйте другой запрос или раздел / 未找到')}</div>`;
     return;
   }
 
@@ -19009,6 +19041,10 @@ function exportPricePDF() {
     ],
   };
   const key = () => `amma_tour_v1_${currentUser?.role}_${currentUser?.id || 'g'}`;
+  // Аммик для пустых экранов: ammikEmpty('Ничего не нашлось', 'подсказка', 'think')
+  window.ammikEmpty = (title, sub = '', pose = 'think') =>
+    `<div class="amm-empty"><img src="ammik-${pose}.webp" alt="" onerror="this.remove()"><b>${title}</b>${sub ? `<span>${sub}</span>` : ''}</div>`;
+  const POSE = (k, n, hasTarget) => k === 0 ? 'wave' : k === n - 1 ? 'joy' : hasTarget ? 'pointing' : 'think';
   let steps = [], i = 0, box = null;
 
   function el(sel) {
@@ -19023,6 +19059,9 @@ function exportPricePDF() {
     const target = el(st.s);
     if (target) target.scrollIntoView({ block: 'nearest', inline: 'center' });
     const hole = box.querySelector('.tour-hole'), card = box.querySelector('.tour-card');
+    const amm = card.querySelector('.tour-amm');
+    const pose = POSE(i, steps.length, !!target);
+    if (amm && amm.dataset.pose !== pose) { amm.dataset.pose = pose; amm.src = `ammik-${pose}.webp`; amm.classList.remove('pop'); void amm.offsetWidth; amm.classList.add('pop'); }
     card.querySelector('.tour-title').textContent = st.t;
     card.querySelector('.tour-text').innerHTML = st.x;
     card.querySelector('.tour-dots').innerHTML = steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
@@ -19037,8 +19076,11 @@ function exportPricePDF() {
       if (left + W > vw - 12) { left = Math.min(Math.max(12, r.left), vw - W - 12); top = r.bottom + 16; }   // или под ним
       if (top + H > vh - 12) top = Math.max(12, r.top - H - 16);
       card.style.left = left + 'px'; card.style.top = Math.max(12, Math.min(top, vh - H - 12)) + 'px';
+      // Аммик показывает рукой в сторону подсвеченного раздела
+      amm?.classList.toggle('flip', r.left + r.width / 2 < left + 60);
     } else {
       hole.classList.add('none');
+      amm?.classList.remove('flip');
       card.style.left = (vw - W) / 2 + 'px'; card.style.top = (vh - H) / 2 + 'px';
     }
     card.querySelector('.next').focus({ preventScroll: true });
@@ -19072,11 +19114,13 @@ function exportPricePDF() {
       box.setAttribute('role', 'dialog');
       box.setAttribute('aria-label', 'Экскурсия по системе');
       box.innerHTML = `<div class="tour-hole none"></div>
-        <div class="tour-card"><button class="tour-skip" type="button">Пропустить</button>
+        <div class="tour-card full">
+          <img class="tour-amm" alt="" onerror="this.closest('.tour-card').classList.remove('full');this.remove()">
           <div class="tour-head"><img class="tour-ava" src="${AMMIK}" alt="Аммик" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'tour-ava',textContent:''}))">
-            <div><div class="tour-who">Аммик · помощник AMMA FLOWERS</div><div class="tour-title"></div></div></div>
+            <div><div class="tour-who">Аммик · AMMA FLOWERS</div><div class="tour-title"></div></div></div>
           <div class="tour-text"></div>
-          <div class="tour-foot"><div class="tour-dots"></div>
+          <div class="tour-dots"></div>
+          <div class="tour-foot"><button class="tour-skip" type="button">Пропустить</button><span style="flex:1"></span>
             <button class="tour-btn back" type="button">Назад</button><button class="tour-btn next" type="button">Дальше</button></div></div>`;
       document.body.appendChild(box);
       box.querySelector('.tour-skip').onclick = () => close(true);
