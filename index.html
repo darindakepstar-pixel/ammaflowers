@@ -328,6 +328,7 @@ td.L{text-align:left}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;display:none;align-items:center;justify-content:center;padding:20px}
 .modal-overlay.show{display:flex}
 .modal.op-wide{max-width:1060px}
+@media(max-width:760px){.ml-grid{grid-template-columns:1fr!important}}
 .cur-sel{background:rgba(255,255,255,.14);color:inherit;border:1px solid rgba(255,255,255,.3);border-radius:14px;padding:3px 8px;font-size:12px;cursor:pointer}
 .cur-sel option{color:#222}
 .modal{background:#fff;border-radius:16px;padding:28px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)}
@@ -14314,12 +14315,12 @@ async function crmOpen(tab) {
 }
 
 function crmRender() {
-  const tabs = [['today', '📅 Сегодня / 今日'], ['base', '📇 База / 客户库'], ['pipeline', '🎯 Воронка / 销售漏斗'], ['clients', '👥 Клиенты / 客户']];
+  const tabs = [['today', '📅 Сегодня / 今日'], ['base', '📇 База / 客户库'], ['pipeline', '🎯 Воронка / 销售漏斗'], ['clients', '👥 Клиенты / 客户'], ['mail', '✉️ Письма / 邮件']];
   document.getElementById('crm-tabs').innerHTML = tabs.map(([k, l]) =>
     `<button class="wh-tab ${_crm.tab === k ? 'active' : ''}" onclick="_crm.tab='${k}';crmRender()">${l}</button>`).join('');
   const c = document.getElementById('crm-content');
   if (!_crm.ok) { c.innerHTML = `<div class="card" style="border-left:4px solid var(--gold)">${CRM_SQL_HINT}</div>`; return; }
-  c.innerHTML = _crm.tab === 'pipeline' ? crmPipelineHTML() : _crm.tab === 'clients' ? crmClientsHTML() : _crm.tab === 'base' ? baseHTML() : crmTodayHTML();
+  c.innerHTML = _crm.tab === 'pipeline' ? crmPipelineHTML() : _crm.tab === 'clients' ? crmClientsHTML() : _crm.tab === 'base' ? baseHTML() : _crm.tab === 'mail' ? mailTabHTML() : crmTodayHTML();
 }
 
 async function crmBadge() {
@@ -14499,6 +14500,7 @@ async function crmLeadModal(id) {
         <div id="crm-acts" style="max-height:44vh;overflow-y:auto;margin-top:8px"><div class="spinner"></div></div></div>` : ''}
     </div>
     <div class="modal-btns">
+      ${id ? `<button class="btn btn-secondary btn-sm" onclick="mlCompose({ lead_id: ${l.id} })">✉️ Письмо</button>` : ''}
       ${id && !l.client_id ? `<button class="btn btn-gold btn-sm" onclick="crmConvert(${l.id})">✅ Сделать клиентом / 转为客户</button>` : ''}
       ${id && !isScopedMgr() ? `<button class="btn btn-danger btn-sm" onclick="crmLeadDelete(${l.id})">🗑</button>` : ''}
       <div style="flex:1"></div>
@@ -14707,6 +14709,7 @@ async function crmClientCard(clientId) {
     </div>
     <div class="modal-btns">
       <button class="btn btn-secondary btn-sm" onclick="closeModal();crmOpenChat('${c.id}')">💬 Чат с клиентом</button>
+      <button class="btn btn-secondary btn-sm" onclick="mlCompose({ client_id: '${c.id}' })">✉️ Письмо</button>
       <div style="flex:1"></div>
       <button class="btn btn-primary" onclick="closeModal()">Закрыть / 关闭</button>
     </div>`;
@@ -14718,6 +14721,698 @@ function crmOpenChat(clientId) {
   window._pendingChatRoom = { room: 'client-' + clientId, clientId };
   const tab = Array.from(document.querySelectorAll('.nav-tab')).find(t => t.getAttribute('onclick')?.includes("'chat'"));
   showPage('chat', tab || undefined);
+}
+
+// ══════════════════════════════════════════════════════════
+//  ✉️ ПИСЬМА КЛИЕНТАМ: CRM → «Письма» и кнопка «✉️ Письмо» в карточке лида / клиента.
+//  Цепочки первых писем (3 письма), официальное письмо на бланке AMMA FLOWERS / SRB Global,
+//  подпись для Яндекс Почты. Отправка пишется в историю контактов (crm_activities):
+//  msg «✉️ Письмо N/3 …» и offer «📄 Письмо на бланке …». Новых таблиц не нужно.
+//  Реквизиты компаний — app_settings.key='mail' (правит админ), профиль менеджера — в этом браузере.
+//  Картинки бланка (mail-*.png/jpg) лежат рядом с index.html: в письме они грузятся по публичной ссылке.
+// ══════════════════════════════════════════════════════════
+const ML_BASE = 'https://darindakepstar-pixel.github.io/ammaflowers/';
+const ML_CO = {
+  amma: { name: 'AMMA FLOWERS', logo: ML_BASE + 'mail-amma-logo.png', logoH: 62, strip: ML_BASE + 'mail-amma-strip.jpg',
+    primary: '#1d2b57', accent: '#5b9a3a', site: 'https://www.ammaflowers.cn',
+    footer: 'Ваш надёжный мост в мир цветочного бизнеса Китая · входит в экосистему SRB Global' },
+  srb: { name: 'SRB Global', logo: ML_BASE + 'mail-srb-logo.png', logoH: 56, strip: null,
+    primary: '#051c64', accent: '#0fccce', site: '',
+    footer: 'Закупка · логистика · международные платежи · растаможка<br>Экосистема: ТЛТ М9 · ТЛТ Скандинавия · AMMA FLOWERS' },
+};
+const ML_REQ_DEFAULT = {
+  amma: { legal: 'Kunming Amma Flowers Co., Ltd.', addr: 'Куньмин, Китай', phone: '+7 (977) 166-77-88 · +86 (153) 98-53-9687', mail: 'ammaflowers@163.com', site: 'www.ammaflowers.cn', ids: '' },
+  srb: { legal: 'SRB Global', addr: '', phone: '', mail: '', site: '', ids: '' },
+};
+const ML_OPTOUT = 'Если сейчас это неактуально, просто ответьте на письмо — больше не буду беспокоить.';
+
+// Цепочки: 3 письма (день 1 / 4 / 10). [в скобках] — заменить; часть подставляется из карточки лида.
+const ML_CHAINS = {
+  shops: { co: 'amma', title: 'Магазины и студии (AMMA)', letters: [
+    { subj: 'Цветы напрямую из Куньмина для [компания]', body:
+`Здравствуйте, [Имя]!
+
+[Зацепка: увидела ваши работы / заходила в ваш магазин на … — очень понравились …].
+
+Меня зовут [Ваше имя], я менеджер AMMA FLOWERS. Мы поставляем цветы и растения оптом напрямую с плантаций Куньмина в Россию: наш офис в Куньмине сам закупает у проверенных плантаций, отбирает и отправляет.
+
+Что это даёт флористу:
+— цены ниже, чем у перекупщиков на базах, потому что нет посредников;
+— цены сразу в рублях с учётом доставки и растаможки, оплата в рублях по российскому договору;
+— свежесть: [N] дней от плантации до Москвы;
+— позиции, которых мало у конкурентов: [2–3 сорта сезона];
+— каждую партию проверяем на складе в Москве перед отгрузкой.
+
+Прикладываю фото партии этой недели. Можно начать с небольшой пробной поставки, чтобы вы сами оценили качество.
+
+Удобно созвониться на 10–15 минут на этой неделе?
+
+${ML_OPTOUT}` },
+    { subj: 'Re: Цветы напрямую из Куньмина для [компания]', body:
+`[Имя], добрый день!
+
+Возвращаюсь к письму про поставки из Куньмина. Если сейчас неудобно, подскажите, когда лучше написать.
+
+Если интересно, пришлю актуальный прайс в рублях на [неделю / месяц].` },
+    { subj: 'Новая партия [сорт] — фото со склада', body:
+`Здравствуйте, [Имя]!
+
+В Москву пришла партия [сорт / позиция], прикладываю фото со склада.
+
+К [8 Марта / сезону свадеб / Новому году] собираем предзаказы до [дата]. Если хотите попробовать, оставлю для вас [объём] по пробной цене.
+
+Ответьте на это письмо или напишите мне в Telegram: [мой контакт].` },
+  ] },
+  wholesale: { co: 'amma', title: 'Оптовики и сети (AMMA)', letters: [
+    { subj: 'Прямые поставки цветов из Китая для [компания]', body:
+`Здравствуйте, [Имя]!
+
+[Зацепка: вы работаете с … / видела ваш павильон на базе …].
+
+Меня зовут [Ваше имя], я представляю AMMA FLOWERS — оптового поставщика цветов и растений из Куньмина.
+
+Для оптовых покупателей мы предлагаем:
+— закупку напрямую у плантаций силами нашего офиса в Куньмине, без перекупщиков и лишних наценок;
+— регулярные отправки по графику: [периодичность];
+— договор с российской компанией нашей группы SRB Global и оплата в рублях; цены называем сразу в рублях с учётом доставки и растаможки;
+— контроль качества в Китае и на складе в Москве.
+
+Готовы обсудить условия под ваш объём и подготовить расчёт.
+
+Удобно созвониться в [день] или [день]?
+
+${ML_OPTOUT}` },
+    { subj: 'Re: Прямые поставки цветов из Китая для [компания]', body:
+`[Имя], добрый день!
+
+Напоминаю о письме про прямые поставки из Куньмина. Если пришлёте примерный объём и основные позиции, я подготовлю расчёт в рублях с доставкой и растаможкой, и вы сравните его с текущими поставщиками.` },
+    { subj: 'Расчёт поставки для [компания] на [месяц]', body:
+`Здравствуйте, [Имя]!
+
+Подготовила пример расчёта на типовую партию: [позиции, объём]. [Коротко: цена в рублях / срок доставки / что входит.]
+
+Под ваши позиции цифры могут отличаться, поэтому предлагаю короткий созвон, чтобы уточнить детали.
+
+Мой Telegram для связи: [мой контакт].` },
+  ] },
+  srbflowers: { co: 'srb', title: 'Цветы от имени SRB', letters: [
+    { subj: 'Цветы из Куньмина по прямому договору для [компания]', body:
+`Здравствуйте, [Имя]!
+
+[Зацепка: вы работаете с … / видела ваш магазин или павильон на …].
+
+Меня зовут [Ваше имя], я менеджер SRB Global. Мы поставляем срезанные цветы и растения напрямую с плантаций Куньмина (Китай) вместе с нашим партнёром AMMA FLOWERS, который закупает и отбирает продукцию на месте.
+
+Как это устроено для вас:
+— один договор с SRB Global, российской компанией, и оплата в рублях;
+— цены сразу в рублях с учётом доставки и растаможки, без расчётов в валюте;
+— таможенное оформление делаем сами, вы получаете товар уже растаможенным;
+— закупка без посредников, поэтому цена ниже, чем у перекупщиков;
+— качество проверяется в Китае и на складе в Москве.
+
+Прикладываю фото свежей партии. Удобно созвониться на 10–15 минут на этой неделе и обсудить ваш ассортимент и объёмы?
+
+${ML_OPTOUT}` },
+    { subj: 'Re: Цветы из Куньмина по прямому договору для [компания]', body:
+`[Имя], добрый день!
+
+Возвращаюсь к письму про поставки цветов из Куньмина. Если пришлёте основные позиции и примерный объём, подготовлю расчёт в рублях с доставкой и растаможкой, чтобы вы сравнили с текущим поставщиком.` },
+    { subj: 'Предзаказ к [празднику / сезону]: цветы из Куньмина', body:
+`Здравствуйте, [Имя]!
+
+К [8 Марта / сезону свадеб / Новому году] мы с AMMA FLOWERS собираем предзаказы до [дата]. Прикладываю фото актуальных позиций.
+
+Для первой поставки можем согласовать небольшую пробную партию. Ответьте на это письмо или напишите в Telegram: [мой контакт].` },
+  ] },
+  import: { co: 'srb', title: 'Импорт под ключ (SRB)', letters: [
+    { subj: 'Импорт из Китая под ключ: закупка, доставка, растаможка', body:
+`Здравствуйте, [Имя]!
+
+[Зацепка: вы возите … из Китая / открываете новое направление …].
+
+Меня зовут [Ваше имя], я менеджер SRB Global. Мы берём на себя весь цикл внешнеторговой сделки:
+— поиск и закупку товара у производителей в Китае;
+— международные переводы и оплату поставщику;
+— доставку до России;
+— таможенное оформление на собственных терминалах ТЛТ М9 (Псковская область) и ТЛТ Скандинавия (Выборгский район).
+
+Вместо четырёх подрядчиков у вас один договор и один ответственный менеджер.
+
+Расскажите, что сейчас возите и где возникают сложности. Я предложу схему и предварительный расчёт.
+
+${ML_OPTOUT}` },
+    { subj: 'Re: Импорт из Китая под ключ: закупка, доставка, растаможка', body:
+`[Имя], добрый день!
+
+Возвращаюсь к письму про поставки из Китая. Если сейчас есть груз в работе или в планах, пришлите коротко: что, откуда и примерный объём. Посчитаем, во сколько он обойдётся с доставкой и растаможкой.` },
+    { subj: 'Как мы привезли [товар] из [город] за [срок]', body:
+`Здравствуйте, [Имя]!
+
+Короткий пример из недавней работы: [клиент / отрасль] нужно было [задача]. Мы [что сделали], и груз был на складе клиента через [срок].
+
+Если у вас похожая задача, давайте созвонимся на 15 минут. Мой Telegram: [мой контакт].` },
+  ] },
+};
+const ML_DAYS = [0, 3, 6]; // через сколько дней после предыдущего письма следующее (день 1 → 4 → 10)
+
+// Официальные письма на бланке
+const ML_OFFICIAL = {
+  'amma-offer': { co: 'amma', partner: true, label: 'КП на поставку цветов (AMMA)',
+    title: 'Коммерческое предложение о прямых поставках цветов из Куньмина',
+    body: `Компания AMMA FLOWERS предлагает [компания] сотрудничество по прямым оптовым поставкам срезанных цветов и растений из Куньмина (провинция Юньнань, Китай), одного из крупнейших центров цветоводства Азии.
+
+Мы работаем без посредников: наш офис в Куньмине закупает продукцию напрямую у плантаций, контролирует качество на каждом этапе, а доставку и таможенное оформление организует компания нашей группы.
+
+Для [компания] мы предлагаем:
+— ассортимент из [N] позиций с еженедельным обновлением;
+— регулярные поставки по согласованному графику;
+— договор с российской компанией нашей группы SRB Global, оплата в рублях и полный пакет документов;
+— цены в рублях с учётом доставки и таможенного оформления, без расчётов в валюте;
+— персонального менеджера в Москве и контроль приёмки на складе.
+
+Будем рады обсудить условия и подготовить расчёт под ваши объёмы.`,
+    terms: `Отгрузка: [периодичность]
+Срок доставки до Москвы: [N] дней
+Минимальная партия: [объём]
+Цены: в рублях, с доставкой и растаможкой
+Оплата: в рублях по договору с SRB Global, [условия]` },
+  'srb-flowers': { co: 'srb', partner: true, label: 'КП на поставку цветов (SRB + AMMA)',
+    title: 'Коммерческое предложение на поставку срезанных цветов и растений',
+    body: `Компания SRB Global предлагает [компания] прямые поставки срезанных цветов и растений из Куньмина (провинция Юньнань, Китай), одного из крупнейших центров цветоводства Азии.
+
+Поставки выполняются совместно с нашим партнёром AMMA FLOWERS, компанией нашей группы в Куньмине. AMMA закупает продукцию напрямую у плантаций и контролирует качество на месте, а SRB Global заключает договор с покупателем, организует доставку и таможенное оформление.
+
+Для [компания] это означает:
+— один договор с российской компанией и оплата в рублях;
+— цены в рублях с учётом доставки и таможенного оформления, без расчётов в валюте;
+— товар поступает уже растаможенным, с полным пакетом документов;
+— цены без посредников и ассортимент из [N] позиций с еженедельным обновлением;
+— контроль качества в Китае и при приёмке на складе в Москве.
+
+Будем рады обсудить условия и подготовить расчёт под ваши объёмы.`,
+    terms: `Поставщик продукции: AMMA FLOWERS, Куньмин
+Отгрузка: [периодичность]
+Срок доставки до Москвы: [N] дней
+Минимальная партия: [объём]
+Цены: в рублях, с доставкой и растаможкой
+Оплата: в рублях по российскому договору, [условия]` },
+  'srb-import': { co: 'srb', partner: false, label: 'Импорт под ключ (SRB)',
+    title: 'Предложение о сотрудничестве во внешнеторговой деятельности',
+    body: `Компания SRB Global предлагает [компания] комплексное сопровождение импортных поставок из Китая.
+
+Мы закрываем полный цикл внешнеторговой сделки силами одной группы компаний:
+— поиск и закупка товара у производителей;
+— международные расчёты с поставщиками;
+— международная логистика;
+— таможенное оформление на собственных терминалах ТЛТ М9 (Псковская область) и ТЛТ Скандинавия (Ленинградская область).
+
+Такой подход сокращает сроки, снижает риски на стыках между подрядчиками и даёт вам одну точку ответственности за всю поставку.
+
+Предлагаем провести встречу, на которой мы разберём ваши текущие поставки и подготовим предварительный расчёт.`,
+    terms: `Направление: Китай → Россия
+Таможенное оформление: ТЛТ М9, ТЛТ Скандинавия
+Срок подготовки расчёта: [N] рабочих дня` },
+  'client-season': { co: null, partner: true, label: 'Действующему клиенту: новый сезон',
+    title: 'Условия поставок на [сезон / период]',
+    body: `Благодарим вас за сотрудничество с {co}.
+
+Сообщаем об условиях работы на [период]. [Коротко: что меняется — ассортимент, график, цены, новые возможности.]
+
+Для наших постоянных партнёров мы подготовили:
+— [предложение 1];
+— [предложение 2];
+— приоритетное бронирование объёмов до [дата].
+
+Будем рады продолжить совместную работу.`,
+    terms: `Период: [даты]
+Предзаказ до: [дата]
+Изменения: [кратко]` },
+};
+
+const ML_RULES = [
+  ['Первая строка — только про клиента', 'Чем он занимается, где вы его нашли, что понравилось. Без этой строки письмо выглядит как рассылка.'],
+  ['Каждое письмо — вручную одному адресату', 'Обращение по имени, предложение под его бизнес. Один текст по списку адресов — это уже реклама и путь в спам.'],
+  ['Не больше трёх писем без ответа', 'После третьего — пауза на несколько месяцев и только с новым поводом. Система предупредит.'],
+  ['Отказ — навсегда', 'Ответили «не пишите» — отметьте в карточке «🚫 Не звонить». Им больше не пишет никто: ни AMMA, ни SRB.'],
+  ['Одна компания — один менеджер', 'Перед письмом система проверяет, не ведёт ли этого клиента коллега.'],
+  ['Прайс — когда клиент ответил', 'Цены в рублях отправляйте официальным письмом на бланке, после ответа.'],
+  ['Не больше 20–30 писем в день с ящика', 'Иначе адрес попадёт в спам, и пострадают письма действующим клиентам.'],
+  ['Обещать только то, что выполним', 'Сроки и цены в письме должны совпадать с реальностью.'],
+];
+
+let _ml = { req: null, reqLoaded: false };
+
+// ── Профиль менеджера (подпись) — хранится в этом браузере ──
+function mlProfileKey() { return 'amma_mail_profile_' + (currentUser?.id || 'x'); }
+function mlProfile() {
+  let p = null;
+  try { p = JSON.parse(localStorage.getItem(mlProfileKey()) || 'null'); } catch (e) {}
+  return Object.assign({ co: 'amma', name: currentUser?.company_name || '', role: 'Менеджер по работе с клиентами',
+    phone: '', msg: '', email: currentUser?.email || '' }, p || {});
+}
+function mlSaveProfile(p) { try { localStorage.setItem(mlProfileKey(), JSON.stringify(p)); } catch (e) {} }
+
+async function mlLoadReq() {
+  if (_ml.reqLoaded) return _ml.req;
+  _ml.req = JSON.parse(JSON.stringify(ML_REQ_DEFAULT));
+  try {
+    const { data } = await sb.from('app_settings').select('value').eq('key', 'mail').maybeSingle();
+    if (data?.value) ['amma', 'srb'].forEach(k => Object.assign(_ml.req[k], data.value[k] || {}));
+  } catch (e) {}
+  _ml.reqLoaded = true;
+  return _ml.req;
+}
+
+// ── Подстановки из карточки ──
+function mlFill(text, ctx) {
+  const p = ctx.profile;
+  const map = {
+    'Имя': ctx.contact, 'компания': ctx.company, 'название компании': ctx.company, 'название магазина': ctx.company,
+    'Ваше имя': p.name, 'мой контакт': [p.msg, p.phone].filter(Boolean).join(', '), 'контакт': [p.msg, p.phone].filter(Boolean).join(', '),
+  };
+  return String(text).replace(/\{co\}/g, ML_CO[ctx.co]?.name || '')
+    .replace(/\[([^\]]+)\]/g, (m, k) => (map[k] ? map[k] : m));
+}
+function mlLeft(text) { return (String(text).match(/\[[^\]]+\]/g) || []).length; }
+function mlChainFor(segment, co) {
+  if (co === 'srb') return segment === 'Другое' ? 'import' : 'srbflowers';
+  return ['Оптовик', 'Сеть магазинов', 'Садовый центр'].includes(segment) ? 'wholesale' : 'shops';
+}
+
+// ── HTML подписи и бланка (inline-стили: Яндекс Почта вырезает <style>) ──
+function mlSigHTML(co, p) {
+  const c = ML_CO[co], e = escHtml;
+  const lines = [p.phone && 'Тел.: ' + e(p.phone), p.msg && 'Telegram / WhatsApp: ' + e(p.msg),
+    p.email && `<a href="mailto:${e(p.email)}" style="color:${c.primary};text-decoration:none">${e(p.email)}</a>`].filter(Boolean);
+  return `<table cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:#1f2a44;border-collapse:collapse"><tr>
+<td style="vertical-align:middle;padding:2px 16px 2px 0;border-right:3px solid ${c.accent}"><img src="${c.logo}" alt="${c.name}" height="44" style="display:block;height:44px;width:auto;border:0"></td>
+<td style="vertical-align:top;padding:2px 0 2px 16px"><div style="font-size:15px;font-weight:bold;color:${c.primary}">${e(p.name || '')}</div>
+<div style="color:#5a6680;margin-bottom:6px">${e(p.role || '')}${p.role ? ', ' : ''}${c.name}</div><div>${lines.join('<br>')}</div>
+<div style="margin-top:8px;font-size:11px;color:#8a93a6">${c.footer}</div></td></tr></table>`;
+}
+
+function mlLetterHTML(o, hl) {
+  // o: {co, partner, num, date, toCo, toPerson, greet, title, body, terms, profile, req}
+  const c = ML_CO[o.co], r = o.req[o.co] || {}, p = o.profile;
+  const t = s => { const h = escHtml(s || ''); return hl ? h.replace(/\[([^\]]+)\]/g, '<span style="background:#fff1b8">[$1]</span>') : h; };
+  const reqLines = [r.addr, r.phone, r.mail, r.site].filter(Boolean).map(t).join('<br>');
+  const band = c.strip
+    ? `<tr><td style="padding:0;line-height:0;font-size:0"><img src="${c.strip}" alt="" width="680" style="display:block;width:100%;max-width:680px;height:auto;border:0"></td></tr>
+<tr><td style="height:5px;background:${c.accent};font-size:0;line-height:0">&nbsp;</td></tr>`
+    : `<tr><td style="padding:0;font-size:0;line-height:0"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr><td width="72%" style="height:6px;background:${c.primary};font-size:0;line-height:0">&nbsp;</td><td style="height:6px;background:${c.accent};font-size:0;line-height:0">&nbsp;</td></tr></table></td></tr>`;
+  const paras = String(o.body || '').split(/\n\s*\n/).map(block => block.split('\n').map(line => {
+    const m = line.match(/^\s*[—–-]\s+(.*)$/);
+    return m ? `<div style="padding-left:18px;text-indent:-18px;margin:2px 0"><span style="color:${c.accent};font-weight:bold">—&nbsp;&nbsp;</span>${t(m[1])}</div>` : `<div>${t(line)}</div>`;
+  }).join('')).map(x => `<div style="margin:0 0 14px">${x}</div>`).join('');
+  const terms = String(o.terms || '').split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const i = l.indexOf(':'); const k = i > -1 ? l.slice(0, i) : l, v = i > -1 ? l.slice(i + 1).trim() : '';
+    return `<tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid #e3e8f0;color:#5a6680;width:42%;vertical-align:top">${t(k)}</td><td style="padding:9px 0;border-bottom:1px solid #e3e8f0;font-weight:bold;color:#1f2a44;vertical-align:top">${t(v)}</td></tr>`;
+  }).join('');
+  const ruD = d => { if (!d) return ''; const M = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']; const [y, m, dd] = d.split('-').map(Number); return `${dd} ${M[m - 1]} ${y} г.`; };
+  const meta = [o.num && 'Исх. № ' + t(o.num), o.date && 'от ' + ruD(o.date)].filter(Boolean).join(' ');
+  const to = [o.toCo, o.toPerson].filter(Boolean).map(t).join('<br>');
+  const contacts = [p.phone && 'Тел.: ' + escHtml(p.phone), p.msg && 'Telegram / WhatsApp: ' + escHtml(p.msg), p.email && escHtml(p.email)].filter(Boolean).join('<br>');
+  let partner = '';
+  if (o.partner) {
+    const oc = o.co === 'srb' ? 'amma' : 'srb';
+    const txt = o.co === 'srb'
+      ? '<b>Поставщик продукции — AMMA FLOWERS</b><br>Kunming Amma Flowers Co., Ltd., Куньмин. Закупка напрямую у плантаций и контроль качества на месте.'
+      : '<b>Договор и таможенное оформление — SRB Global</b><br>Российская компания нашей группы: договор с покупателем и расчёты в рублях, доставка и растаможка.';
+    partner = `<tr><td style="padding:22px 28px 0"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#f5f7fa"><tr>
+<td style="padding:12px 16px;vertical-align:middle;width:1%;white-space:nowrap"><img src="${ML_CO[oc].logo}" alt="${ML_CO[oc].name}" height="34" style="display:block;height:34px;width:auto;border:0"></td>
+<td style="padding:12px 16px 12px 4px;vertical-align:middle;font-size:12px;line-height:1.5;color:#5a6680">${txt}</td></tr></table></td></tr>`;
+  }
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:680px;margin:0 auto;border-collapse:collapse;background:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#1f2a44">
+<tr><td style="padding:4px 28px 20px"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr>
+<td style="vertical-align:middle"><img src="${c.logo}" alt="${c.name}" height="${c.logoH}" style="display:block;height:${c.logoH}px;width:auto;border:0"></td>
+<td style="vertical-align:middle;text-align:right;font-size:11px;line-height:1.7;color:#5a6680">${reqLines}</td></tr></table></td></tr>
+${band}
+<tr><td style="padding:28px 28px 8px">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-size:12px;color:#5a6680"><tr>
+<td style="vertical-align:top">${meta}</td><td style="vertical-align:top;text-align:right;color:#1f2a44">${to}</td></tr></table>
+${o.title ? `<div style="font-size:20px;font-weight:bold;line-height:1.3;color:${c.primary};margin:28px 0 18px">${t(o.title)}</div>` : '<div style="height:24px"></div>'}
+${o.greet ? `<div style="font-weight:bold;margin:0 0 14px">${t(o.greet)}</div>` : ''}
+${paras}
+${terms ? `<div style="font-size:11px;font-weight:bold;letter-spacing:2px;color:${c.primary};margin:22px 0 4px">КЛЮЧЕВЫЕ УСЛОВИЯ</div>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;border-top:2px solid ${c.accent};margin-bottom:22px">${terms}</table>` : ''}
+<div style="margin:26px 0 4px">С уважением,</div>
+<div style="font-weight:bold;font-size:15px;color:${c.primary}">${escHtml(p.name || '')}</div>
+<div style="color:#5a6680">${escHtml(p.role || '')}${p.role ? ', ' : ''}${c.name}</div>
+<div style="margin-top:6px;font-size:13px">${contacts}</div>
+</td></tr>
+${partner}
+<tr><td style="padding:20px 28px 24px"><div style="border-top:1px solid #e3e8f0;padding-top:12px;font-size:11px;line-height:1.6;color:#8a93a6">${r.legal ? t(r.legal) + '<br>' : ''}${r.ids ? t(r.ids) + '<br>' : ''}${c.footer}</div></td></tr>
+</table>`;
+}
+
+// ── Буфер обмена ──
+async function mlCopyHTML(html, okMsg) {
+  const tmp = document.createElement('div'); tmp.innerHTML = html;
+  try {
+    if (navigator.clipboard && window.ClipboardItem) {
+      await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([tmp.innerText], { type: 'text/plain' }) })]);
+      toast(okMsg || '✅ Скопировано'); return true;
+    }
+  } catch (e) {}
+  tmp.style.cssText = 'position:fixed;left:-9999px;top:0;background:#fff';
+  document.body.appendChild(tmp);
+  const rg = document.createRange(); rg.selectNodeContents(tmp); const s = getSelection(); s.removeAllRanges(); s.addRange(rg);
+  let ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+  s.removeAllRanges(); tmp.remove();
+  toast(ok ? (okMsg || '✅ Скопировано') : '❌ Не удалось скопировать — разрешите доступ к буферу обмена');
+  return ok;
+}
+async function mlCopyText(text, okMsg) {
+  try { await navigator.clipboard.writeText(text); toast(okMsg || '✅ Скопировано'); return true; }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px'; document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (x) {} ta.remove();
+    toast(ok ? (okMsg || '✅ Скопировано') : '❌ Не удалось скопировать'); return ok;
+  }
+}
+function mlPrint(html, title) {
+  const w = window.open('', '_blank');
+  if (!w) { toast('Разрешите всплывающие окна для печати PDF'); return; }
+  w.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>${escHtml(title || 'Письмо')}</title>
+<style>@page{size:A4;margin:10mm}body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}</style></head>
+<body>${html}<script>window.onload=()=>setTimeout(()=>window.print(),400)<\/script></body></html>`);
+  w.document.close();
+}
+
+// ── История писем по лиду / клиенту ──
+async function mlHistory(target) {
+  const col = target.client_id ? 'client_id' : 'lead_id', val = target.client_id || target.lead_id;
+  const { data } = await sb.from('crm_activities').select('kind, body, created_at').eq(col, val).order('created_at', { ascending: true }).limit(300);
+  const acts = data || [];
+  const letters = acts.filter(a => a.kind === 'msg' && /^✉️ Письмо \d/.test(a.body || ''));
+  const last = letters[letters.length - 1];
+  // ответ: после последнего письма есть звонок/встреча/переписка, которая не наше письмо
+  const replied = !!last && acts.some(a => a.created_at > last.created_at
+    && (['call', 'meet'].includes(a.kind) || (a.kind === 'msg' && !/^✉️/.test(a.body || ''))));
+  const official = acts.filter(a => a.kind === 'offer' && /^📄 Письмо на бланке/.test(a.body || ''));
+  return { letters, last, replied, official };
+}
+
+// Проверка дублей: тот же клиент у другого менеджера
+async function mlDupCheck(lead) {
+  if (!lead?.company) return [];
+  const key = baseCompanyKey(lead.company, '');
+  const out = [];
+  try {
+    let q = sb.from('crm_leads').select('id, company, city, manager_id, stage, email').neq('id', lead.id).limit(400);
+    const name = String(lead.company).replace(/[«»"']/g, '').replace(/^(ооо|ип|ао|зао|пао)\s+/i, '').trim().split(/\s+/)[0];
+    if (name && name.length > 2) q = q.ilike('company', '%' + name + '%');
+    const { data } = await q;
+    (data || []).forEach(x => {
+      if (baseCompanyKey(x.company, '') === key || (lead.email && x.email && x.email.toLowerCase() === lead.email.toLowerCase()))
+        out.push(`лид «${x.company}»${x.manager_id ? ' — ведёт ' + (mgrName(x.manager_id) || 'другой менеджер') : ''}`);
+    });
+  } catch (e) {}
+  (allClients || []).filter(c => c.role === 'client' && baseCompanyKey(c.company_name, '') === key && String(c.id) !== String(lead.client_id || ''))
+    .forEach(c => out.push(`уже клиент «${c.company_name}»${c.manager_id ? ' — менеджер ' + mgrName(c.manager_id) : ''}`));
+  return out;
+}
+
+// ══ Окно «Письмо» из карточки лида или клиента ══
+async function mlCompose(target) {
+  await mlLoadReq();
+  if (!allClients.length) await loadClients();
+  let lead = null, client = null;
+  if (target.lead_id) lead = _crm.leads.find(x => String(x.id) === String(target.lead_id)) || (await sb.from('crm_leads').select('*').eq('id', target.lead_id).maybeSingle()).data;
+  if (target.client_id) client = allClients.find(x => String(x.id) === String(target.client_id));
+  const p = mlProfile();
+  const hist = await mlHistory(target);
+  const isClient = !!client || lead?.stage === 'won';
+  const dups = lead ? await mlDupCheck(lead) : [];
+  const company = lead?.company || client?.company_name || '';
+  const contact = lead?.contact_name || '';
+  const n = hist.letters.length;
+  _ml.c = { target, lead, client, hist, company, contact, email: lead?.email || client?.email || '',
+    mode: isClient || hist.replied || n >= 3 ? 'official' : 'chain', chain: mlChainFor(lead?.segment, p.co), step: Math.min(n, 2),
+    official: isClient ? 'client-season' : (p.co === 'srb' ? 'srb-flowers' : 'amma-offer'), co: p.co };
+  const warn = [];
+  if (lead?.do_not_call) warn.push('🚫 В карточке отмечено «Не звонить» — клиент просил не беспокоить. Письмо не отправляйте.');
+  if (dups.length) warn.push('👥 Возможно, эту компанию уже ведут: ' + dups.map(escHtml).join('; ') + '. Договоритесь с коллегой, прежде чем писать.');
+  if (n >= 3 && !hist.replied) warn.push('✋ Уже отправлено 3 письма без ответа. Сделайте паузу на несколько месяцев и пишите только с новым поводом.');
+  if (n && !hist.replied && n < 3) {
+    const due = new Date(hist.last.created_at); due.setDate(due.getDate() + ML_DAYS[n]);
+    if (due > new Date()) warn.push(`⏳ Письмо ${n} ушло ${new Date(hist.last.created_at).toLocaleDateString('ru-RU')}. Следующее лучше отправить не раньше ${due.toLocaleDateString('ru-RU')}.`);
+  }
+  const mc = document.getElementById('modal-content');
+  mc.classList.add('op-wide');
+  mc.innerHTML = `
+    <div class="modal-title">✉️ Письмо: ${escHtml(company || 'клиент')}</div>
+    <div style="font-size:12px;color:var(--mid);margin:-6px 0 10px">
+      ${n ? `Писем из цепочки отправлено: <b>${n}</b>${hist.replied ? ' · клиент ответил' : ''}` : 'Писем ещё не было'}${hist.official.length ? ` · писем на бланке: ${hist.official.length}` : ''}
+      ${_ml.c.email ? ` · ${escHtml(_ml.c.email)}` : ' · email не указан в карточке'}</div>
+    ${warn.map(w => `<div style="margin-bottom:8px;padding:8px 12px;background:#fef3c7;color:#92400e;border-radius:8px;font-size:12px">${w}</div>`).join('')}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="wh-tab" id="ml-m-chain" onclick="_ml.c.mode='chain';mlComposeRender()">✉️ Обычное письмо (цепочка)</button>
+      <button class="wh-tab" id="ml-m-official" onclick="_ml.c.mode='official';mlComposeRender()">📄 На бланке (КП, условия)</button>
+      <span style="flex:1"></span>
+      <select class="inp" id="ml-co" style="width:auto;font-size:12px" onchange="_ml.c.co=this.value;mlComposeRender()">
+        <option value="amma">От AMMA FLOWERS</option><option value="srb">От SRB Global</option></select>
+    </div>
+    <div id="ml-body"></div>`;
+  document.getElementById('ml-co').value = _ml.c.co;
+  openModal();
+  mlComposeRender();
+}
+
+function mlComposeRender() {
+  const C = _ml.c, p = Object.assign(mlProfile(), { co: C.co });
+  ['chain', 'official'].forEach(m => document.getElementById('ml-m-' + m)?.classList.toggle('active', C.mode === m));
+  const box = document.getElementById('ml-body'); if (!box) return;
+  const ctx = { profile: p, company: C.company, contact: C.contact, co: C.co };
+  const profileWarn = !p.name || !(p.phone || p.msg) ? `<div style="margin-bottom:8px;padding:8px 12px;background:var(--gold-l);border-radius:8px;font-size:12px">Заполните свой профиль (имя, телефон, Telegram) во вкладке <a href="#" onclick="event.preventDefault();closeModal();crmOpen('mail')">CRM → Письма</a> — они подставятся в письма.</div>` : '';
+  if (C.mode === 'chain') {
+    const ch = ML_CHAINS[C.chain], L = ch.letters[C.step];
+    const subj = mlFill(L.subj, ctx), body = mlFill(L.body, ctx);
+    box.innerHTML = `${profileWarn}
+      <div class="field-row">
+        <div class="field"><label>Цепочка</label><select class="inp" id="ml-chain" onchange="_ml.c.chain=this.value;mlComposeRender()">
+          ${Object.entries(ML_CHAINS).map(([k, x]) => `<option value="${k}" ${k === C.chain ? 'selected' : ''}>${x.title}</option>`).join('')}</select></div>
+        <div class="field"><label>Письмо</label><select class="inp" id="ml-step" onchange="_ml.c.step=+this.value;mlComposeRender()">
+          ${['1 — первое', '2 — напоминание (через 3 дня)', '3 — новый повод (ещё через неделю)'].map((x, i) => `<option value="${i}" ${i === C.step ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+      </div>
+      ${ch.co !== C.co ? `<div style="font-size:12px;color:#92400e;margin:-4px 0 8px">Эта цепочка написана от имени ${ML_CO[ch.co].name}, а письмо отправляется от ${ML_CO[C.co].name}. Проверьте текст.</div>` : ''}
+      <div class="field"><label>Тема</label><input class="inp" id="ml-subj" value="${escHtml(subj)}" oninput="mlLeftCount()"></div>
+      <div class="field"><label>Текст <span style="font-weight:400;color:var(--mid)">— замените всё в [скобках]; подпись добавит Яндекс Почта</span></label>
+        <textarea class="inp" id="ml-text" style="min-height:300px;font-size:13px;line-height:1.5" oninput="mlLeftCount()">${escHtml(body)}</textarea></div>
+      <div id="ml-left" style="font-size:12px;margin:-4px 0 8px"></div>
+      <div class="modal-btns">
+        <button class="btn btn-secondary btn-sm" onclick="mlCopyText(document.getElementById('ml-subj').value,'✅ Тема скопирована')">📋 Тема</button>
+        <button class="btn btn-secondary btn-sm" onclick="mlCopyText(document.getElementById('ml-text').value,'✅ Текст скопирован')">📋 Текст</button>
+        ${C.email ? `<button class="btn btn-secondary btn-sm" onclick="mlCopyText('${escHtml(C.email)}','✅ Адрес скопирован')">📋 ${escHtml(C.email)}</button>` : ''}
+        <div style="flex:1"></div>
+        <button class="btn btn-secondary" onclick="closeModal()">Закрыть</button>
+        <button class="btn btn-primary" onclick="mlMarkSent()">✅ Отправила — записать в историю</button>
+      </div>`;
+  } else {
+    const pr = ML_OFFICIAL[C.official];
+    const greet = C.contact ? `Уважаем${/[ая]$/i.test((C.contact.split(/\s+/)[0] || '')) && !/ич$/i.test(C.contact) ? 'ая' : 'ый'} ${C.contact}!` : 'Уважаемые коллеги!';
+    const d = opToday();
+    box.innerHTML = `${profileWarn}
+      <div style="display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:14px" class="ml-grid">
+        <div>
+          <div class="field"><label>Шаблон</label><select class="inp" id="ml-off" onchange="_ml.c.official=this.value;const x=ML_OFFICIAL[this.value];if(x.co){_ml.c.co=x.co;document.getElementById('ml-co').value=x.co}mlComposeRender()">
+            ${Object.entries(ML_OFFICIAL).map(([k, x]) => `<option value="${k}" ${k === C.official ? 'selected' : ''}>${x.label}</option>`).join('')}</select></div>
+          <div class="field-row">
+            <div class="field"><label>Исх. №</label><input class="inp" id="ml-num" value="${escHtml(mlNextNum())}" oninput="mlPreview()"></div>
+            <div class="field"><label>Дата</label><input class="inp" type="date" id="ml-date" value="${d}" oninput="mlPreview()"></div>
+          </div>
+          <div class="field"><label>Компания получателя</label><input class="inp" id="ml-toco" value="${escHtml(C.company)}" oninput="mlPreview()"></div>
+          <div class="field"><label>Кому (должность, ФИО)</label><input class="inp" id="ml-toperson" value="${escHtml(C.lead?.decision_maker || C.contact || '')}" oninput="mlPreview()"></div>
+          <div class="field"><label>Обращение</label><input class="inp" id="ml-greet" value="${escHtml(greet)}" oninput="mlPreview()"></div>
+          <div class="field"><label>Заголовок</label><input class="inp" id="ml-title" value="${escHtml(mlFill(pr.title, ctx))}" oninput="mlPreview()"></div>
+          <div class="field"><label>Текст</label><textarea class="inp" id="ml-obody" style="min-height:220px;font-size:12px;line-height:1.5" oninput="mlPreview()">${escHtml(mlFill(pr.body, ctx))}</textarea></div>
+          <div class="field"><label>Ключевые условия <span style="font-weight:400;color:var(--mid)">(«Название: значение», пусто — без блока)</span></label>
+            <textarea class="inp" id="ml-terms" style="min-height:90px;font-size:12px" oninput="mlPreview()">${escHtml(mlFill(pr.terms, ctx))}</textarea></div>
+          <label style="font-size:12px;cursor:pointer"><input type="checkbox" id="ml-partner" ${pr.partner ? 'checked' : ''} onchange="mlPreview()"> Показать компанию-партнёра (AMMA у SRB, SRB у AMMA)</label>
+        </div>
+        <div style="min-width:0">
+          <div id="ml-left" style="font-size:12px;margin-bottom:6px"></div>
+          <div style="background:#e9edf3;border-radius:10px;padding:14px;overflow:auto;max-height:62vh"><div id="ml-preview" style="background:#fff;padding:20px 0;box-shadow:0 2px 10px rgba(0,0,0,.12)"></div></div>
+        </div>
+      </div>
+      <div class="modal-btns">
+        <button class="btn btn-secondary btn-sm" onclick="mlCopyHTML(mlCurrentLetter(false),'✅ Письмо скопировано — вставьте в Яндекс Почту и отключите в нём подпись')">📋 Копировать для Яндекс Почты</button>
+        <button class="btn btn-secondary btn-sm" onclick="mlPrint(mlCurrentLetter(false), document.getElementById('ml-title').value)">🖨 PDF / печать</button>
+        ${C.email ? `<button class="btn btn-secondary btn-sm" onclick="mlCopyText('${escHtml(C.email)}','✅ Адрес скопирован')">📋 ${escHtml(C.email)}</button>` : ''}
+        <div style="flex:1"></div>
+        <button class="btn btn-secondary" onclick="closeModal()">Закрыть</button>
+        ${C.free ? '' : '<button class="btn btn-primary" onclick="mlMarkSent()">✅ Отправила — записать в историю</button>'}
+      </div>`;
+    mlPreview();
+  }
+  mlLeftCount();
+}
+function mlNextNum() {
+  const k = 'amma_mail_num_' + (currentUser?.id || 'x') + '_' + new Date().getFullYear();
+  let n = 1; try { n = (parseInt(localStorage.getItem(k)) || 0) + 1; } catch (e) {}
+  const ini = (mlProfile().name || currentUser?.login || '').trim().split(/\s+/).map(s => s[0] || '').join('').toUpperCase().slice(0, 3);
+  return `${ini ? ini + '-' : ''}${n}/${String(new Date().getFullYear()).slice(2)}`;
+}
+function mlBumpNum() {
+  const k = 'amma_mail_num_' + (currentUser?.id || 'x') + '_' + new Date().getFullYear();
+  try { localStorage.setItem(k, String((parseInt(localStorage.getItem(k)) || 0) + 1)); } catch (e) {}
+}
+function mlCurrentLetter(hl) {
+  const v = id => document.getElementById(id)?.value || '';
+  return mlLetterHTML({ co: _ml.c.co, partner: document.getElementById('ml-partner')?.checked, num: v('ml-num'), date: v('ml-date'),
+    toCo: v('ml-toco'), toPerson: v('ml-toperson'), greet: v('ml-greet'), title: v('ml-title'), body: v('ml-obody'), terms: v('ml-terms'),
+    profile: mlProfile(), req: _ml.req }, hl);
+}
+function mlPreview() {
+  const el = document.getElementById('ml-preview'); if (el) el.innerHTML = mlCurrentLetter(true);
+  mlLeftCount();
+}
+function mlLeftCount() {
+  const el = document.getElementById('ml-left'); if (!el) return;
+  const ids = _ml.c.mode === 'chain' ? ['ml-subj', 'ml-text'] : ['ml-toco', 'ml-toperson', 'ml-greet', 'ml-title', 'ml-obody', 'ml-terms'];
+  const n = ids.reduce((s, id) => s + mlLeft(document.getElementById(id)?.value || ''), 0);
+  el.innerHTML = n ? `<span style="color:#b45309">Не заполнено мест в [скобках]: <b>${n}</b></span>` : '<span style="color:#15803d">✓ Все места заполнены</span>';
+}
+
+async function mlMarkSent() {
+  const C = _ml.c;
+  const text = C.mode === 'chain' ? (document.getElementById('ml-subj').value + '\n' + document.getElementById('ml-text').value)
+    : ['ml-toco', 'ml-greet', 'ml-title', 'ml-obody', 'ml-terms'].map(id => document.getElementById(id)?.value || '').join('\n');
+  const left = mlLeft(text);
+  if (left && !confirm(`В письме остались незаполненные места в [скобках]: ${left}. Точно отправили так?`)) return;
+  let kind, body;
+  if (C.mode === 'chain') {
+    kind = 'msg';
+    body = `✉️ Письмо ${C.step + 1}/3 от ${ML_CO[C.co].name}: «${document.getElementById('ml-subj').value.trim()}»`;
+  } else {
+    kind = 'offer';
+    body = `📄 Письмо на бланке ${ML_CO[C.co].name}, исх. № ${document.getElementById('ml-num').value.trim()}: «${document.getElementById('ml-title').value.trim()}»`;
+    mlBumpNum();
+  }
+  const err = await crmAct(C.target, kind, body);
+  if (err) { toast('❌ ' + (crmMissing(err) ? CRM_SQL_HINT : err.message)); return; }
+  // Следующий шаг лида: напоминание по цепочке или ожидание ответа
+  if (C.lead && !['won', 'lost'].includes(C.lead.stage)) {
+    const upd = { updated_at: new Date().toISOString() };
+    if (['cold', 'new'].includes(C.lead.stage)) upd.stage = 'contacted';
+    const d = new Date();
+    if (C.mode === 'chain' && C.step < 2) { d.setDate(d.getDate() + ML_DAYS[C.step + 1]); upd.next_action = `✉️ Письмо ${C.step + 2}/3, если не ответили`; }
+    else if (C.mode === 'chain') { d.setDate(d.getDate() + 90); upd.next_action = 'Нет ответа на 3 письма — пауза. Написать только с новым поводом'; }
+    else { d.setDate(d.getDate() + 3); upd.next_action = 'Позвонить: получили ли КП, есть ли вопросы'; }
+    upd.next_date = d.toLocaleDateString('sv-SE');
+    const { error } = await sb.from('crm_leads').update(upd).eq('id', C.lead.id);
+    if (error) toast('⚠️ История записана, но следующий шаг не обновлён: ' + error.message);
+  }
+  logActivity('crm_mail', C.target.lead_id ? 'lead' : 'user', C.target.lead_id || C.target.client_id, C.company, body);
+  toast('✅ Записано в историю контактов');
+  closeModal();
+  await crmLoad(); if (document.getElementById('page-crm')?.classList.contains('active')) crmRender(); crmBadge();
+}
+
+// ══ Вкладка CRM → «Письма»: профиль, подпись, реквизиты, библиотека шаблонов, правила ══
+function mailTabHTML() {
+  const p = mlProfile();
+  setTimeout(mlTabAfter, 0);
+  const isAdm = currentUser?.is_admin || isFullMgr();
+  return `
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px" class="ml-grid">
+    <div class="card">
+      <b style="font-size:14px">👤 Мой профиль для писем</b>
+      <div style="font-size:12px;color:var(--mid);margin:4px 0 10px">Подставляется в письма и подпись. Хранится в этом браузере.</div>
+      <div class="field"><label>От какой компании пишу по умолчанию</label><select class="inp" id="mp-co" onchange="mlProfileSave()">
+        <option value="amma" ${p.co === 'amma' ? 'selected' : ''}>AMMA FLOWERS</option><option value="srb" ${p.co === 'srb' ? 'selected' : ''}>SRB Global</option></select></div>
+      <div class="field-row">
+        <div class="field"><label>Имя и фамилия</label><input class="inp" id="mp-name" value="${escHtml(p.name)}" oninput="mlProfileSave()"></div>
+        <div class="field"><label>Должность</label><input class="inp" id="mp-role" value="${escHtml(p.role)}" oninput="mlProfileSave()"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Телефон</label><input class="inp" id="mp-phone" value="${escHtml(p.phone)}" placeholder="+7 …" oninput="mlProfileSave()"></div>
+        <div class="field"><label>Telegram / WhatsApp</label><input class="inp" id="mp-msg" value="${escHtml(p.msg)}" placeholder="@…" oninput="mlProfileSave()"></div>
+      </div>
+      <div class="field"><label>Рабочая почта</label><input class="inp" id="mp-email" value="${escHtml(p.email)}" oninput="mlProfileSave()"></div>
+    </div>
+    <div class="card">
+      <b style="font-size:14px">✍️ Подпись для Яндекс Почты</b>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:14px;margin:10px 0;overflow-x:auto" id="ml-sig"></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="mlCopyHTML(mlSigHTML(mlProfile().co, mlProfile()),'✅ Подпись скопирована')">📋 Скопировать подпись</button>
+      </div>
+      <ol style="font-size:12px;color:var(--mid);margin:10px 0 0;padding-left:18px;line-height:1.6">
+        <li>Яндекс Почта → ⚙️ → «Все настройки» → «Личные данные, подпись, портрет».</li>
+        <li>«Добавить подпись» → вставить (Ctrl+V) → сохранить.</li>
+        <li>Отправьте письмо себе на другой ящик и проверьте, что логотип виден.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <b style="font-size:14px">✉️ Как отправлять письма</b>
+    <div style="font-size:12px;color:var(--mid);margin:4px 0 10px">Откройте лида в <a href="#" onclick="event.preventDefault();_crm.tab='pipeline';crmRender()">Воронке</a> или <a href="#" onclick="event.preventDefault();_crm.tab='base';crmRender()">Базе</a> → кнопка <b>«✉️ Письмо»</b>. Система подставит компанию и имя, выберет нужное письмо цепочки, проверит, не ведёт ли клиента коллега, и после отправки запишет письмо в историю и поставит дату следующего шага. Для действующего клиента та же кнопка есть в карточке клиента.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px">
+      ${ML_RULES.map(([h, t]) => `<div style="padding:10px 12px;background:var(--sage-l);border-radius:8px"><div style="font-size:13px;font-weight:700">${h}</div><div style="font-size:12px;color:var(--mid);margin-top:3px">${t}</div></div>`).join('')}
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <b style="font-size:14px">📚 Шаблоны писем</b>
+    <div style="font-size:12px;color:var(--mid);margin:4px 0 10px">Для просмотра. Отправлять удобнее из карточки лида — там всё подставится само.</div>
+    ${Object.entries(ML_CHAINS).map(([k, ch]) => `<details style="margin-bottom:6px"><summary style="cursor:pointer;font-weight:600;font-size:13px">${ch.title}</summary>
+      ${ch.letters.map((L, i) => `<div style="margin:8px 0 12px;padding:10px 12px;border-left:3px solid var(--sage);background:var(--bg)">
+        <div style="font-size:11px;color:var(--mid)">Письмо ${i + 1} · ${['день 1', 'день 4', 'день 10'][i]}</div>
+        <div style="font-weight:700;font-size:13px;margin:2px 0 6px">${escHtml(L.subj)}</div>
+        <div style="white-space:pre-wrap;font-size:12px;line-height:1.5">${escHtml(L.body)}</div></div>`).join('')}</details>`).join('')}
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <b style="font-size:14px">📄 Бланк без привязки к лиду</b>
+    <div style="font-size:12px;color:var(--mid);margin:4px 0 10px">Для письма компании, которой нет в CRM. Без записи в историю.</div>
+    <button class="btn btn-secondary btn-sm" onclick="mlComposeFree()">Открыть бланк</button>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <b style="font-size:14px">🏢 Реквизиты на бланке</b>
+    <div style="font-size:12px;color:var(--mid);margin:4px 0 10px">${isAdm ? 'Общие для всех менеджеров.' : 'Меняет администратор.'}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px" id="ml-req"><div class="spinner"></div></div>
+  </div>`;
+}
+async function mlTabAfter() {
+  const s = document.getElementById('ml-sig'); if (s) s.innerHTML = mlSigHTML(mlProfile().co, mlProfile());
+  await mlLoadReq();
+  const box = document.getElementById('ml-req'); if (!box) return;
+  const isAdm = currentUser?.is_admin || isFullMgr();
+  const F = [['legal', 'Юридическое название'], ['addr', 'Адрес'], ['phone', 'Телефоны'], ['mail', 'Почта'], ['site', 'Сайт'], ['ids', 'ИНН / КПП / ОГРН (строкой)']];
+  box.innerHTML = ['amma', 'srb'].map(co => `<div><div style="font-weight:700;font-size:13px;margin-bottom:6px">${ML_CO[co].name}</div>
+    ${F.map(([k, l]) => `<div class="field"><label>${l}</label><input class="inp" id="mr-${co}-${k}" value="${escHtml(_ml.req[co][k] || '')}" ${isAdm ? '' : 'disabled'}></div>`).join('')}</div>`).join('')
+    + (isAdm ? `<div style="grid-column:1/-1"><button class="btn btn-primary btn-sm" onclick="mlReqSave()">💾 Сохранить реквизиты</button></div>` : '');
+}
+function mlProfileSave() {
+  const v = id => document.getElementById(id)?.value?.trim() || '';
+  mlSaveProfile({ co: v('mp-co') || 'amma', name: v('mp-name'), role: v('mp-role'), phone: v('mp-phone'), msg: v('mp-msg'), email: v('mp-email') });
+  const s = document.getElementById('ml-sig'); if (s) s.innerHTML = mlSigHTML(mlProfile().co, mlProfile());
+}
+async function mlReqSave() {
+  const val = {};
+  ['amma', 'srb'].forEach(co => { val[co] = {}; ['legal', 'addr', 'phone', 'mail', 'site', 'ids'].forEach(k => { val[co][k] = document.getElementById(`mr-${co}-${k}`)?.value.trim() || ''; }); });
+  const { error } = await sb.from('app_settings').upsert({ key: 'mail', value: val, updated_at: new Date().toISOString() });
+  if (error) { toast('❌ ' + error.message); return; }
+  _ml.req = val; _ml.reqLoaded = true;
+  toast('✅ Реквизиты сохранены');
+}
+async function mlComposeFree() {
+  await mlLoadReq();
+  const p = mlProfile();
+  _ml.c = { target: null, lead: null, client: null, hist: { letters: [], official: [] }, company: '', contact: '', email: '',
+    mode: 'official', chain: 'shops', step: 0, official: p.co === 'srb' ? 'srb-flowers' : 'amma-offer', co: p.co, free: true };
+  const mc = document.getElementById('modal-content');
+  mc.classList.add('op-wide');
+  mc.innerHTML = `<div class="modal-title">📄 Письмо на бланке</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px"><span style="flex:1"></span>
+      <select class="inp" id="ml-co" style="width:auto;font-size:12px" onchange="_ml.c.co=this.value;mlComposeRender()">
+        <option value="amma">От AMMA FLOWERS</option><option value="srb">От SRB Global</option></select></div>
+    <div id="ml-body"></div>`;
+  document.getElementById('ml-co').value = p.co;
+  openModal();
+  mlComposeRender();
 }
 
 // ══════════════════════════════════════════════════════════
