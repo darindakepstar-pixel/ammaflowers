@@ -1947,6 +1947,42 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
   </div>
 
+  <!-- PAGE: GZ ORDERS (Гуанчжоу: горшечные позиции заказов, без клиентов и цен) -->
+  <div class="page" id="page-gz-orders">
+    <div class="page-inner">
+      <div class="page-title">Заказы горшечных / 盆栽订单</div>
+      <div class="page-sub">Проверьте наличие: сколько коробок и штук в коробке, размер короба. Нет растения — предложите замену. Количество и замены менеджер подтверждает. / 请核对库存：箱数、每箱数量、箱规。缺货可提出替换，数量和替换需经理确认。</div>
+      <div class="gz-bar">
+        <div class="gz-seg" id="gz-filter">
+          <button class="on" data-f="all" onclick="GZ.setFilter('all')">Все / 全部</button>
+          <button data-f="review" onclick="GZ.setFilter('review')">Новые / 新订单</button>
+          <button data-f="work" onclick="GZ.setFilter('work')">В работе / 进行中</button>
+          <button data-f="pending" onclick="GZ.setFilter('pending')">Ждут менеджера / 待确认</button>
+        </div>
+        <input class="inp gz-search" id="gz-o-search" placeholder="Поиск: номер или растение / 搜索" oninput="GZ.renderOrders()">
+        <button class="btn btn-secondary btn-sm" onclick="GZ.loadOrders()">↻ Обновить / 刷新</button>
+      </div>
+      <div id="gz-orders-list"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
+  <!-- PAGE: GZ PRICE (Гуанчжоу: прайс горшечных) -->
+  <div class="page" id="page-gz-price">
+    <div class="page-inner">
+      <div class="page-title">Прайс горшечных / 盆栽价格表</div>
+      <div class="page-sub">Цены в ¥ за штуку, наличие, штук в коробке и размер короба. Изменения видят клиенты сразу после сохранения. / 单价（¥/盆）、库存、每箱数量、箱规。保存后客户立即可见。</div>
+      <div class="gz-bar">
+        <input class="inp gz-search" id="gz-p-search" placeholder="Поиск / 搜索" oninput="GZ.renderPrice()">
+        <select class="inp" id="gz-p-cat" onchange="GZ.renderPrice()" style="max-width:220px"></select>
+        <label class="gz-chk"><input type="checkbox" id="gz-p-out" onchange="GZ.renderPrice()"> Только «нет в наличии» / 仅缺货</label>
+        <span style="flex:1"></span>
+        <button class="btn btn-secondary btn-sm" onclick="GZ.editFlower(null)">＋ Новая позиция / 新增</button>
+        <button class="btn btn-primary btn-sm" id="gz-p-save" onclick="GZ.savePrice()" disabled>💾 Сохранить / 保存</button>
+      </div>
+      <div id="gz-price-list"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
   <!-- PAGE: NOTIFICATIONS -->
   <div class="page" id="page-notifications">
     <div class="page-inner">
@@ -2229,6 +2265,18 @@ function authView(mode) {
     ${f('rq-pass', 'Пароль (мин. 8 символов) / 密码 *', 'password', '', 'new-password')}
     <div class="form-group"><label>Комментарий / 备注</label><textarea id="rq-comment" rows="2" style="width:100%"></textarea></div>
     <button class="btn-login" id="rq-btn" onclick="authRequest()">Отправить заявку / 提交 →</button>
+    <div class="login-err" id="login-err"></div>
+    <div class="auth-links"><a href="#" onclick="event.preventDefault();authView('request-gz')">🪴 Я сотрудник AMMA в Гуанчжоу / 我是AMMA广州员工</a></div>${back}`;
+  else if (mode === 'request-gz') box.innerHTML = `<h2>Сотрудник Гуанчжоу / 广州员工注册</h2>
+    <p>Для садовников и менеджера базы в Гуанчжоу: заказы и прайс горшечных. Доступ откроет администратор. / 适用于广州基地园艺师和经理，管理员审核后开通。</p>
+    <input type="hidden" id="rq-gz" value="1">
+    ${f('rq-name', 'Имя / 姓名 *')}
+    ${f('rq-phone', 'Телефон / WeChat / 电话或微信 *')}
+    <div class="form-group"><label>Должность / 职位</label><select id="rq-pos" style="width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:14px;background:#fff;font:inherit;color:inherit">
+      <option value="Садовник / 园艺师">Садовник / 园艺师</option><option value="Менеджер Гуанчжоу / 广州经理">Менеджер / 经理</option></select></div>
+    ${f('rq-email', 'Email (для входа) / 登录邮箱 *', 'email', 'name@example.com', 'username')}
+    ${f('rq-pass', 'Пароль (мин. 8 символов) / 密码（至少8位）*', 'password', '', 'new-password')}
+    <button class="btn-login" id="rq-btn" onclick="authRequest()">Отправить заявку / 提交 →</button>
     <div class="login-err" id="login-err"></div>${back}`;
   else if (mode === 'reset') box.innerHTML = `<h2>Восстановление пароля / 找回密码</h2>
     <p>Пришлём ссылку для нового пароля. Если вход по логину без email — обратитесь к менеджеру.</p>
@@ -2252,14 +2300,18 @@ function authView(mode) {
 async function authRequest() {
   const v = id => (document.getElementById(id)?.value || '').trim();
   const email = v('rq-email').toLowerCase(), pass = document.getElementById('rq-pass').value;
-  if (!v('rq-company') || !v('rq-name') || !v('rq-phone') || !email) { showErr('Заполните поля со звёздочкой / 请填写必填项'); return; }
+  const gz = !!document.getElementById('rq-gz');   // сотрудник Гуанчжоу: роль всё равно назначает админ
+  if ((!gz && !v('rq-company')) || !v('rq-name') || !v('rq-phone') || !email) { showErr('Заполните поля со звёздочкой / 请填写必填项'); return; }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.endsWith('@' + AMMA_LOGIN_DOMAIN)) { showErr('Проверьте email / 邮箱格式错误'); return; }
   if (pass.length < 8) { showErr('Пароль минимум 8 символов / 密码至少8位'); return; }
   const btn = document.getElementById('rq-btn'); if (btn) btn.disabled = true;
   const { data, error } = await sb.auth.signUp({ email, password: pass, options: {
     emailRedirectTo: location.origin + location.pathname,
-    data: { amma_request: '1', company: v('rq-company'), contact_name: v('rq-name'), phone: v('rq-phone'),
-            city: v('rq-city'), comment: v('rq-comment') } } });
+    data: gz
+      ? { amma_request: '1', company: v('rq-name') + ' · AMMA Гуанчжоу / 广州', contact_name: v('rq-name'), phone: v('rq-phone'),
+          city: 'Гуанчжоу / 广州', comment: '🪴 Сотрудник Гуанчжоу: ' + v('rq-pos') }
+      : { amma_request: '1', company: v('rq-company'), contact_name: v('rq-name'), phone: v('rq-phone'),
+          city: v('rq-city'), comment: v('rq-comment') } } });
   if (btn) btn.disabled = false;
   if (error) {
     showErr(/registered|exists/i.test(error.message) ? 'Этот email уже зарегистрирован — войдите или восстановите пароль' : error.message);
@@ -2363,6 +2415,8 @@ async function logout() {
     const ok = await authEnter(true);
     if (!ok && document.getElementById('screen-app').style.display !== 'flex')
       document.getElementById('screen-login').style.display = 'flex';
+  } else if (new URLSearchParams(location.search).get('join') === 'gz') {
+    authView('request-gz');   // ссылка для садовников и менеджера в Гуанчжоу
   } else if (new URLSearchParams(location.search).get('guest') === '1') {
     // Ссылка из Telegram-бота и канала: сразу гостевой каталог без входа
     enterGuestMode();
@@ -2378,6 +2432,7 @@ async function initApp() {
   const isMgr = currentUser.role === 'manager';
   const isWh  = currentUser.role === 'warehouse';
   const isGuest = currentUser.role === 'guest';
+  const isGz = currentUser.role === 'gz';   // Гуанчжоу: только горшечные, без клиентов и денег
 
   fxInit().then(() => { if (document.getElementById('page-price')?.classList.contains('active')) renderPrice(); updateCartUI(); }).catch(() => {});
   renderInfoWidget();  // плавающий виджет: сезон дождей + праздники (все роли, включая гостя)
@@ -2395,6 +2450,7 @@ async function initApp() {
   document.getElementById('top-role').textContent =
     isMgr ? '🔑 Менеджер / 经理' :
     isWh  ? '🏭 Склад / 仓库' :
+    isGz  ? '🪴 Гуанчжоу / 广州' :
     isGuest ? 'Гость / 访客' :
     (currentUser.company_name || currentUser.login);
   document.getElementById('top-role').className = 'user-pill' + (isMgr ? ' mgr' : '');
@@ -2458,6 +2514,17 @@ async function initApp() {
     document.getElementById('btn-import-prices').style.display = 'none';
     document.getElementById('markup-controls').style.display  = 'none';
     document.getElementById('btn-add-flower').style.display   = 'none';
+  } else if (isGz) {
+    tabs.innerHTML = `
+      <div class="nav-tab active" onclick="showPage('gz-orders',this)">📦 Заказы горшечных / 盆栽订单 <span class="cnt" id="cnt-gz" style="display:none">0</span></div>
+      <div class="nav-tab" onclick="showPage('gz-price',this)">🪴 Прайс горшечных / 盆栽价格</div>
+      <div class="nav-tab" onclick="showPage('reference',this)">📖 Справка / 参考</div>
+      <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
+    `;
+    ['btn-save-prices', 'btn-import-prices', 'btn-add-flower', 'cart-footer'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = 'none'; });
+    document.getElementById('markup-controls').style.display = 'none';
+    document.getElementById('notice-bar').innerHTML =
+      '🪴 Горшечные растения: заказы и прайс · 盆栽：订单与价格 — количество, коробки и замены уходят менеджеру на подтверждение / 数量、箱规和替换需经理确认';
   } else {
     tabs.innerHTML = `
       <div class="nav-tab active" onclick="showPage('price',this)">Прайс / 价格单</div>
@@ -2481,12 +2548,19 @@ async function initApp() {
   // Activate first page based on role
   if (isWh) {
     document.getElementById('page-warehouse').classList.add('active');
+  } else if (isGz) {
+    document.getElementById('page-gz-orders').classList.add('active');
   } else {
     document.getElementById('page-price').classList.add('active');
   }
 
   // Load flowers then render (not needed for warehouse)
-  if (!isWh) {
+  if (isGz) {
+    currentCatalog = 'potted';
+    GZ.loadOrders();
+    await loadFlowers();
+    GZ.onFlowers();
+  } else if (!isWh) {
     await loadFlowers();
     renderPrice();
     loadShowcaseCfg().then(renderShowcase).catch(() => {});
@@ -2495,7 +2569,7 @@ async function initApp() {
   // Subscribe to realtime flower updates
   sb.channel('flowers-changes')
     .on('postgres_changes', {event:'UPDATE', schema:'public', table:'flowers'},
-      payload => { updateFlowerLocal(payload.new); renderPrice(); })
+      payload => { updateFlowerLocal(payload.new); if (isGz) GZ.onFlowers(); else renderPrice(); })
     .subscribe();
 
   // Setup notifications realtime + load initial count
@@ -2550,7 +2624,9 @@ function showPage(name, tabEl) {
   if (name === 'my-waybills') loadMyWaybills();
   if (name === 'my-invoices') loadMyInvoices();
   if (name === 'warehouse') loadWarehouseOrders();
-  if (name === 'notifications') { loadNotifications(); tgRenderCard(); }
+  if (name === 'notifications') { loadNotifications(); if (currentUser?.role !== 'gz') tgRenderCard(); }
+  if (name === 'gz-orders') GZ.loadOrders();
+  if (name === 'gz-price') GZ.renderPrice();
   if (name === 'reference') renderReference();
   if (name === 'chat') {
     initChat();
@@ -3302,6 +3378,7 @@ function patchFlowerPhotos(list) {
       const img = document.createElement('img');
       img.src = f.photo_url; img.alt = f.ru || ''; img.loading = 'lazy'; img.dataset.fid = f.id;
       if (el.classList.contains('fimg-ph') && el.closest('td')) img.className = 'fimg';
+      else if (el.classList.contains('gz-ph')) img.className = 'gz-ph';
       el.replaceWith(img);
     });
   });
@@ -3696,6 +3773,7 @@ async function loadFlowers() {
     if (data.length < 1000) break;
   }
 
+  if (currentUser?.role === 'gz') flowers = flowers.filter(f => flowerCatalog(f) === 'potted');
   await loadCategoryOrder();
   sortFlowersByCategoryOrder();
   loadFlowerPhotos();   // не ждём — прайс уже можно показывать
@@ -5985,6 +6063,8 @@ async function submitOrder(existingOrderId = null) {
           `${clientName} внёс изменения в позиции заказа / ${clientName}修改了订单内容`, '✏️');
       }
     } catch(e) {}
+    if (items.some(o => flowerCatalog(o.flower) === 'potted'))
+      notifyGz(`✏️ Заказ ${orderNum} изменён / 订单已修改`, 'Проверьте горшечные позиции / 请重新核对盆栽');
 
     toast(wasAlreadyConfirmed
       ? '✅ Изменения сохранены, менеджер уведомлён / 修改已保存，经理已收到通知'
@@ -6025,6 +6105,9 @@ async function submitOrder(existingOrderId = null) {
           `Поступил новый заказ на проверку / 收到新订单待审核`, '📦');
       }
     } catch(e) {}
+    // Гуанчжоу: только номер и число горшечных позиций — без клиента и сумм
+    const nPot = items.filter(o => flowerCatalog(o.flower) === 'potted').length;
+    if (nPot) notifyGz(`🪴 Новый заказ горшечных ${num} / 新盆栽订单`, `${nPot} поз. — проверьте наличие и количество / 请核对库存和数量`);
 
     toast(`✅ Заказ ${num} отправлен менеджеру / 已提交给经理`);
   }
@@ -6252,10 +6335,13 @@ function mgrRowHTML(item, i, id) {
     const whBpbApplied = wo.bpb && item.wh_confirmed_at && parseInt(wo.bpb) !== parseInt(item.bunches_per_box);
     const whSpbApplied = wo.spb && item.wh_confirmed_at && snap.stems && parseInt(wo.spb) !== parseInt(snap.stems);
     const whBadge = whPending
-      ? `<div style="font-size:9px;color:#d97706;font-weight:700;margin-top:2px">🏭 Склад изменил пакинг — см. баннер выше</div>`
+      ? `<div style="font-size:9px;color:#d97706;font-weight:700;margin-top:2px">${item.gz_at ? '🪴 Гуанчжоу предлагает изменения' : '🏭 Склад изменил пакинг'} — см. баннер выше</div>`
       : (whBpbApplied || whSpbApplied)
         ? `<div style="font-size:9px;color:#d97706;margin-top:2px">✏️ Склад:${whBpbApplied?` банч ${wo.bpb}→${item.bunches_per_box}`:''}${whSpbApplied?` · ${itemWeightBased(item)?'г':'ст'} ${wo.spb}→${snap.stems}`:''}</div>`
         : '';
+    const gzBadge = (item.gz_at && !whPending && (snap.gz_box_orig != null || item.wh_note || snap.repl_from))
+      ? `<div style="font-size:9px;color:#2F6B34;margin-top:2px">🪴 Гуанчжоу:${snap.repl_from ? ` замена вместо «${escHtml(snap.repl_from.ru || '')}»` : ''}${snap.gz_box_orig != null ? ` короб ${escHtml(snap.gz_box_orig || '—')}→${escHtml(snap.box_size || '—')}` : ''}${item.wh_note ? ` · ${escHtml(item.wh_note)}` : ''}</div>`
+      : '';
     const specialBadge = snap.custom
       ? `<div style="font-size:9px;font-weight:700;color:#92400e;background:#fff7ed;border-radius:4px;padding:2px 6px;margin-top:3px;display:inline-block">❓ ВНЕ ПРАЙСА — проверьте наличие и установите цену / 询价商品</div>`
       : (snap.mix && snap.mix.length)
@@ -6268,6 +6354,7 @@ function mgrRowHTML(item, i, id) {
         <b style="font-size:12px">${item.flower?.ru || item.flower_snapshot?.ru || '—'}</b>
         <div style="font-size:10px;color:var(--mid)">${item.flower?.cn || item.flower_snapshot?.cn ||''}</div>
         ${whBadge}
+        ${gzBadge}
         ${specialBadge}
       </td>
       <td>
@@ -6355,7 +6442,7 @@ function renderOrderDetail(order) {
   const packChangeBanner = packChangedItems.length ? `
     <div style="margin-bottom:14px;padding:12px 16px;background:#fff7ed;border-radius:8px;border-left:4px solid #f59e0b">
       <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:8px">
-        ⚠️ Склад изменил пакинг — требует вашего подтверждения / 仓库修改了包装，需您确认
+        ⚠️ ${packChangedItems.some(it => it.gz_at) ? '🪴 Гуанчжоу' + (packChangedItems.every(it => it.gz_at) ? '' : ' и склад') + ' предлагают изменения' : 'Склад изменил пакинг'} — требует вашего подтверждения / ${packChangedItems.some(it => it.gz_at) ? '广州' : '仓库'}修改了包装，需您确认
       </div>
       ${packChangedItems.map(it => {
         const ru   = it.flower?.ru || it.flower_snapshot?.ru || '—';
@@ -6369,13 +6456,17 @@ function renderOrderDetail(order) {
         const ordTotal   = ordPrice * ordB;
         const factTotal  = factPrice * factB;
         const isRepl = !!it.wh_replaced_name;
+        const un = ((it.flower_snapshot || it.flower || {}).catalog === 'potted') ? 'шт' : 'банч';
+        const factB0 = it.wh_fact_boxes != null && it.wh_fact_boxes !== '' ? (parseInt(it.wh_fact_boxes) || 0) : ordB;
         return `<div style="font-size:11px;padding:6px 0;border-bottom:1px solid #fde68a">
-          <b>${ru}</b>
+          <b>${ru}</b>${it.gz_at ? ' <span title="Правка из Гуанчжоу">🪴</span>' : ''}
           ${isRepl
-            ? `<span style="color:#dc2626;margin-left:8px">🔄 Замена → ${escHtml(it.wh_replaced_name)}</span>`
+            ? `<span style="color:#dc2626;margin-left:8px">🔄 Замена → ${escHtml(it.wh_replaced_name)}${it.wh_repl_flower_id ? ' <i style="color:#6b7280">(при подтверждении позиция заменится в заказе, цена — с той же наценкой)</i>' : ''}</span>
+               ${it.gz_at && (factB0 !== ordB || factBpb !== ordBpb) ? `<span style="color:#92400e;margin-left:8px">· ${factB0} кор × ${factBpb} ${un}</span>` : ''}
+               ${it.wh_note ? `<i style="color:#6b7280;margin-left:6px">(${escHtml(it.wh_note)})</i>` : ''}`
             : `<span style="color:#92400e;margin-left:8px">
-                По договору: ${ordB} кор × ${ordBpb} банч = <b>¥${ordTotal.toFixed(2)}</b>
-                → Факт: ${factB} кор × ${factBpb} банч = <b style="color:${factTotal!==ordTotal?'#dc2626':'inherit'}">¥${factTotal.toFixed(2)}</b>
+                По договору: ${ordB} кор × ${ordBpb} ${un} = <b>¥${ordTotal.toFixed(2)}</b>
+                → Факт: ${factB0} кор × ${factBpb} ${un} = <b style="color:${priceBunch * factBpb * factB0!==ordTotal?'#dc2626':'inherit'}">¥${(priceBunch * factBpb * factB0).toFixed(2)}</b>
                 ${it.wh_fact_spb != null ? `· ${itemWeightBased(it) ? 'вес/банч' : 'стеблей/банч'}: <b>${fmtStems(it.wh_fact_spb, itemWeightBased(it))}</b>` : ''}
                 ${it.wh_note ? `<i style="color:#6b7280;margin-left:6px">(${it.wh_note})</i>` : ''}
               </span>`}
@@ -6829,11 +6920,27 @@ async function confirmPackingChanges(orderId) {
 
   const now = new Date().toISOString();
 
+  let gzTouched = false;
   for (const item of items) {
-    const factBox    = parseInt(item.wh_fact_boxes) || parseInt(item.qty_boxes)      || 0;
+    const factBox    = item.wh_fact_boxes != null && item.wh_fact_boxes !== '' ? (parseInt(item.wh_fact_boxes) || 0) : (parseInt(item.qty_boxes) || 0);
     const factBpb    = parseInt(item.wh_fact_bpb)   || parseInt(item.bunches_per_box) || 0;
     const factSpb    = parseInt(item.wh_fact_spb)   || 0;
-    const priceBunch = parseFloat(item.price_per_bunch) || 0;
+    let priceBunch   = parseFloat(item.price_per_bunch) || 0;
+    if (item.gz_at) gzTouched = true;
+    // Замена от Гуанчжоу: новая позиция прайса, цена — с той же наценкой, что была у клиента
+    let repl = null;
+    if (item.wh_repl_flower_id && String(item.wh_repl_flower_id) !== String(item.flower_id)) {
+      repl = flowers.find(f => String(f.id) === String(item.wh_repl_flower_id));
+      if (!repl) {
+        const { data } = await sb.from('flowers').select(FLOWER_COLS_FALLBACK).eq('id', item.wh_repl_flower_id).maybeSingle();
+        repl = data;
+      }
+      if (repl) {
+        const oldBase = parseFloat(item.flower_snapshot?.price_a ?? item.flower?.price_a) || 0;
+        const newBase = parseFloat(item.price_type === 'ap' ? repl.price_ap : repl.price_a) || parseFloat(repl.price_a) || 0;
+        priceBunch = oldBase > 0 && priceBunch > 0 ? +(priceBunch * newBase / oldBase).toFixed(2) : newBase;
+      }
+    }
     const newPriceBox = factBpb ? priceBunch * factBpb : parseFloat(item.price_per_box)||0;
     const newSubtotal = newPriceBox * factBox;
 
@@ -6851,8 +6958,21 @@ async function confirmPackingChanges(orderId) {
     if (factSpb) {
       upd.flower_snapshot = { ...(item.flower_snapshot || {}), stems: factSpb };
     }
-    await sb.from('order_items').update(upd).eq('id', item.id);
+    if (repl) {
+      const old = item.flower_snapshot || {};
+      const { photo_url, _ph, ...rs } = repl;
+      upd.flower_id = repl.id;
+      upd.price_per_bunch = priceBunch;
+      upd.flower_snapshot = { ...rs, catalog: rs.catalog || 'potted',
+        box_size: old.gz_box_orig != null ? old.box_size : (rs.box_size || old.box_size),
+        repl_from: { id: item.flower_id, ru: old.ru || item.flower?.ru, cn: old.cn || item.flower?.cn } };
+      upd.wh_repl_flower_id = null;
+    }
+    const { error: upErr } = await sb.from('order_items').update(upd).eq('id', item.id);
+    if (upErr) { toast('❌ ' + upErr.message); return; }
   }
+  if (gzTouched) notifyGz(`✅ Менеджер принял правки: заказ ${window._mgrOrderMeta?.number || ''} / 经理已确认`,
+    'Количество и замены по горшечным обновлены в заказе / 盆栽数量和替换已更新');
 
   // Notify client about packing update
   try {
@@ -6878,14 +6998,18 @@ async function rejectPackingChanges(orderId) {
 
   for (const item of items) {
     // Clear wh_fact columns without touching qty_boxes/price
-    await sb.from('order_items').update({
+    const upd = {
       wh_fact_boxes:    null,
       wh_fact_bpb:      null,
       wh_fact_spb:      null,
       wh_confirmed_at:  new Date().toISOString(), // mark as reviewed (rejected)
       wh_confirmed_by:  currentUser.id,
-    }).eq('id', item.id);
+    };
+    if ('wh_repl_flower_id' in item) { upd.wh_repl_flower_id = null; upd.wh_replaced_name = null; }
+    await sb.from('order_items').update(upd).eq('id', item.id);
   }
+  if (items.some(it => it.gz_at)) notifyGz(`↩ Менеджер оставил заказ ${window._mgrOrderMeta?.number || ''} без изменений / 经理保留原订单`,
+    'Количество по горшечным осталось как в заказе. Вопросы — в заметке к позиции / 盆栽数量保持不变');
 
   // Notify warehouse that manager rejected
   try {
@@ -7680,7 +7804,7 @@ function renderClients() {
         <td class="L"><b>${c.company_name||'—'}</b>${c.purchase_tracking?' <span title="Видит журнал закупа" style="font-size:10px">🛒</span>':''}${c.tg_chat_id?' <span title="Telegram подключён" style="font-size:10px">📲</span>':''}${c.calc_access?' <span title="Доступ к калькулятору" style="font-size:10px">🧮</span>':''}</td>
         <td class="L" style="color:var(--mid);font-family:monospace">${escHtml(c.login)}${c.blocked ? ' <span title="Доступ закрыт">🔒</span>' : ''}${c.email ? `<div style="font-size:10px;font-family:inherit">${escHtml(c.email)}</div>` : ''}</td>
         <td style="font-size:11px;color:var(--mid)">${c.contact||'—'}</td>
-        <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?(c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':'👑 Менеджер / 经理'):c.role==='warehouse'?'🏭 Склад / 仓库':'👤 Клиент / 客户'}</span></td>
+        <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?(c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':'👑 Менеджер / 经理'):c.role==='warehouse'?'🏭 Склад / 仓库':c.role==='gz'?'🪴 Гуанчжоу / 广州':'👤 Клиент / 客户'}</span></td>
         <td style="font-size:11px;color:var(--mid)">${c.role==='client' ? (escHtml(mgrName(c.manager_id)) || '<span style="color:var(--light)">— не закреплён</span>') : ''}</td>
         <td><button class="btn btn-secondary btn-sm" onclick="showEditClientModal('${c.id}')">✏️ Изменить / 修改</button></td>
       </tr>`).join('')}
@@ -7761,8 +7885,9 @@ function showEditClientModal(id) {
         <option value="client" ${user.role === 'client' ? 'selected' : ''}>👤 Клиент / 客户</option>
         <option value="manager" ${user.role === 'manager' ? 'selected' : ''}>💼 Менеджер / 经理</option>
         <option value="warehouse" ${user.role === 'warehouse' ? 'selected' : ''}>🏭 Склад / 仓库</option>
+        <option value="gz" ${user.role === 'gz' ? 'selected' : ''}>🪴 Гуанчжоу / 广州 — горшечные, без клиентов</option>
       </select>
-      <div style="font-size:10px;color:var(--mid);margin-top:2px">Новый менеджер получает полный доступ. Ограничить его своими клиентами (💼) можно после сохранения, открыв карточку ещё раз.</div>
+      <div style="font-size:10px;color:var(--mid);margin-top:2px">Новый менеджер получает полный доступ. Ограничить его своими клиентами (💼) можно после сохранения, открыв карточку ещё раз.<br>🪴 Гуанчжоу — садовники и менеджер базы: заказы и прайс только горшечных; клиентов, суммы, инвойсы, чат не видят.</div>
     </div>` : ''}
     <div style="margin-top:10px;padding:10px 12px;background:var(--sage-l);border-radius:6px;display:${isScopedMgr()||user.role!=='client'?'none':'flex'};align-items:center;gap:10px">
       <label style="font-weight:600;font-size:12px;color:var(--sage-d)">💰 Показывать цены с 15% наценкой / 显示加价15%价格:</label>
@@ -7886,7 +8011,7 @@ async function loadAccessRequests() {
     <b>🆕 Заявки на доступ / 访问申请 (${data.length})</b>
     <div style="font-size:11px;color:var(--mid);margin:2px 0 8px">Перед одобрением позвоните по указанному телефону и убедитесь, что это реальный клиент.</div>
     ${data.map(r => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--border);font-size:12px">
-      <div style="flex:1;min-width:220px"><b>${escHtml(r.company || '—')}</b> · ${escHtml(r.contact_name || '')} · ${escHtml(r.phone || '')} · ${escHtml(r.city || '')}
+      <div style="flex:1;min-width:220px">${isGzRequest(r) ? '<span class="badge" style="background:#E7F3E3;color:#2F6B34;margin-right:6px">🪴 Сотрудник Гуанчжоу</span>' : ''}<b>${escHtml(r.company || '—')}</b> · ${escHtml(r.contact_name || '')} · ${escHtml(r.phone || '')} · ${escHtml(r.city || '')}
         <div style="color:var(--mid)">${escHtml(r.email || '')} · ${new Date(r.created_at).toLocaleString('ru-RU')}${r.comment ? ' · «' + escHtml(r.comment) + '»' : ''}</div></div>
       <button class="btn btn-primary btn-sm" onclick="approveRequestModal(${r.id})">✅ Одобрить</button>
       <button class="btn btn-secondary btn-sm" onclick="rejectRequest(${r.id})">✖ Отклонить</button>
@@ -7902,18 +8027,40 @@ function approveRequestModal(rid) {
       <div class="field"><label>Логин / 账号</label><input class="inp" id="ar-login" value="${escHtml(String(r.email || '').split('@')[0].replace(/[^a-zA-Z0-9._-]/g, ''))}"></div>
     </div>
     <div class="field"><label>Контакт / 联系方式</label><input class="inp" id="ar-contact" value="${escHtml([r.contact_name, r.phone, r.city].filter(Boolean).join(', '))}"></div>
-    <div class="field"><label>Ответственный менеджер / 负责经理</label><select class="inp" id="ar-manager">${mgrOptions(null)}</select></div>
+    <div class="field"><label>Роль / 角色</label><select class="inp" id="ar-role" onchange="document.getElementById('ar-mgr-wrap').style.display=this.value==='client'?'':'none'">
+      <option value="client" ${isGzRequest(r) ? '' : 'selected'}>👤 Клиент / 客户</option>
+      ${currentUser?.is_admin ? `<option value="gz" ${isGzRequest(r) ? 'selected' : ''}>🪴 Сотрудник Гуанчжоу — горшечные, без клиентов / 广州员工</option>` : ''}
+    </select>${isGzRequest(r) && !currentUser?.is_admin ? '<div style="font-size:11px;color:#B4530B;margin-top:3px">Назначить роль «Гуанчжоу» может только админ</div>' : ''}</div>
+    <div class="field" id="ar-mgr-wrap" style="${isGzRequest(r) && currentUser?.is_admin ? 'display:none' : ''}"><label>Ответственный менеджер / 负责经理</label><select class="inp" id="ar-manager">${mgrOptions(null)}</select></div>
     <div style="font-size:11px;color:var(--mid)">Клиент будет входить со своим email ${escHtml(r.email || '')} и паролем, который указал в заявке.</div>
     <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
       <button class="btn btn-primary" onclick="approveRequest(${r.id})">✅ Открыть доступ</button></div>`;
   openModal();
 }
+function isGzRequest(r) {
+  return /Гуанчжоу|广州|guangzhou/i.test([r?.company, r?.city, r?.comment].join(' '));
+}
 async function approveRequest(rid) {
+  const req = (window._accessReqs || []).find(x => x.id === rid);
+  const asGz = document.getElementById('ar-role')?.value === 'gz' && currentUser?.is_admin;
+  const login = document.getElementById('ar-login').value.trim();
+  // одобряем как обычно (клиентом), затем админ сразу переводит в роль «Гуанчжоу»
   const r = await authAdmin('approve', { request_id: rid, role: 'client',
-    login: document.getElementById('ar-login').value.trim(), company_name: document.getElementById('ar-company').value.trim(),
-    contact: document.getElementById('ar-contact').value.trim(), manager_id: document.getElementById('ar-manager').value || null });
+    login, company_name: document.getElementById('ar-company').value.trim(),
+    contact: document.getElementById('ar-contact').value.trim(), manager_id: asGz ? null : (document.getElementById('ar-manager').value || null) });
   if (r.error) { toast('❌ ' + r.error); return; }
-  closeModal(); toast('✅ Доступ открыт / 已开通'); await loadClients(); renderClients();
+  closeModal();
+  if (asGz) {
+    await loadClients();
+    const uid = r.user_id || r.id || r.user?.id || allClients.find(c =>
+      String(c.login || '').toLowerCase() === login.toLowerCase() || (req?.email && String(c.email || '').toLowerCase() === String(req.email).toLowerCase()))?.id;
+    const upd = { role: 'gz' };
+    if ('manager_id' in (allClients.find(c => String(c.id) === String(uid)) || {})) upd.manager_id = null;
+    const { data: ok, error } = uid ? await sb.from('users').update(upd).eq('id', uid).select('id') : { data: null };
+    if (error || !ok?.length) toast('⚠️ Доступ открыт, но роль «Гуанчжоу» не назначилась' + (error ? ': ' + error.message : '') + '. Откройте карточку и выберите роль вручную. Проверьте, что выполнен sql_gz_role.sql');
+    else toast('✅ Доступ открыт: сотрудник Гуанчжоу / 已开通广州员工');
+  } else toast('✅ Доступ открыт / 已开通');
+  await loadClients(); renderClients();
 }
 async function rejectRequest(rid) {
   if (!confirm('Отклонить заявку? / 拒绝申请？')) return;
@@ -16351,6 +16498,7 @@ async function fxInit() {
 function fxRenderSelector() {
   const el = document.getElementById('cur-select-wrap');
   if (!el) return;
+  if (currentUser?.role === 'gz') { el.innerHTML = ''; return; }   // Гуанчжоу работает только в ¥
   const canEdit = currentUser?.role === 'manager' && !isScopedMgr();
   el.innerHTML = `<select id="cur-select" class="cur-sel" onchange="fxSet(this.value)" title="${escHtml(fxRateLabel(FX.cur) || 'Валюта / 货币')}">
       ${['CNY', 'RUB', 'USD'].map(c => `<option value="${c}" ${FX.cur === c ? 'selected' : ''} ${c !== 'CNY' && !FX.rates[c] ? 'disabled' : ''}>${FX_SYM[c]} ${c}</option>`).join('')}
@@ -19804,6 +19952,13 @@ function exportPricePDF() {
       { s: nav('reference'), t: 'Справка', x: 'Сезонность, праздники КНР и регламент упаковки по каждой культуре.' },
       { t: 'Готово!', x: 'Повторить экскурсию — кнопка <b>«Экскурсия с Аммиком»</b> внизу меню. 🌸' },
     ],
+    gz: [
+      { t: 'Привет! Я Аммик 🌷 / 你好！', x: 'Покажу, как работать с горшечными растениями. 我来介绍盆栽订单和价格表。' },
+      { s: nav('gz-orders'), t: 'Заказы горшечных / 盆栽订单', x: 'Здесь заказы с горшечными: номер, дата отгрузки и позиции. Проверьте <b>коробки, штуки в коробке и размер короба</b>. Нет растения — нажмите <b>«Заменить»</b>. Количество и замены подтверждает менеджер.<br><span style="color:var(--mid)">核对箱数、每箱盆数和箱规；缺货点击“替换”。数量和替换由经理确认。</span>' },
+      { s: nav('gz-price'), t: 'Прайс горшечных / 盆栽价格', x: 'Цены в ¥ за штуку, наличие, штук в коробке. Меняете поля — нажимаете <b>«Сохранить»</b>. Новое растение — кнопка <b>«＋ Новая позиция»</b>.<br><span style="color:var(--mid)">修改后点击“保存”；新品种点“新增”。</span>' },
+      { s: '#tab-notif', t: 'Уведомления / 通知', x: 'Новые заказы горшечных и ответы менеджера приходят сюда. 新订单和经理回复会显示在这里。' },
+      { t: 'Готово! / 完成', x: 'Экскурсию можно повторить кнопкой внизу меню. 可随时在菜单底部重新查看。🌸' },
+    ],
     guest: [
       { t: 'Привет! Я Аммик 🌷', x: 'Это каталог AMMA FLOWERS: срезка, горшечные и сопутка напрямую из Китая. Цены здесь базовые.' },
       { s: nav('price'), t: 'Каталог', x: 'Листайте разделы и категории. Чтобы увидеть свои цены и оформить заказ — войдите в аккаунт клиента или оставьте заявку менеджеру.' },
@@ -19923,5 +20078,426 @@ function exportPricePDF() {
   else { buildShell(); smoothScroll(); }
 })();
 </script>
+<!-- ══ Роль «Гуанчжоу»: заказы и прайс горшечных (без клиентов, цен клиентам и документов) ══ -->
+<style>
+.gz-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 16px}
+.gz-search{max-width:280px;flex:1 1 200px}
+.gz-seg{display:inline-flex;background:var(--surface-2,#fff);border:1px solid var(--border);border-radius:999px;padding:3px;gap:2px;flex-wrap:wrap}
+.gz-seg button{border:0;background:none;padding:6px 12px;border-radius:999px;font:600 12px var(--font-ui,inherit);color:var(--mid);cursor:pointer}
+.gz-seg button.on{background:var(--ink,#1D2A21);color:#fff}
+.gz-chk{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--mid);cursor:pointer}
+.gz-ord{background:var(--paper,#fff);border:1px solid var(--border);border-radius:var(--rad-l,18px);padding:16px 18px;margin-bottom:14px}
+.gz-ord-h{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.gz-num{font:800 17px var(--font-h,inherit);color:var(--sage-d)}
+.gz-chip{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--sage-l);color:var(--sage-d)}
+.gz-chip.new{background:#FDF0D5;color:#8A5A00}
+.gz-chip.wait{background:#FFF1E6;color:#B4530B}
+.gz-meta{font-size:12px;color:var(--mid)}
+.gz-item{display:grid;grid-template-columns:56px 1fr;gap:12px;padding:12px 0;border-top:1px solid var(--border)}
+.gz-item.dirty{background:linear-gradient(90deg,rgba(220,235,164,.35),transparent 70%);border-radius:10px}
+.gz-ph{width:56px;height:56px;border-radius:12px;object-fit:cover;background:var(--sage-l);display:flex;align-items:center;justify-content:center;font-size:24px}
+.gz-name{font-weight:700;font-size:14px}
+.gz-name small{display:block;font-weight:500;color:var(--mid);font-size:12px}
+.gz-was{font-size:12px;color:var(--mid);margin:2px 0 8px}
+.gz-fields{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.gz-f{display:flex;flex-direction:column;gap:3px;font-size:10.5px;color:var(--mid);font-weight:600}
+.gz-f input{width:84px;padding:7px 8px;font-size:14px;font-weight:700;text-align:center}
+.gz-f input.wide{width:120px}
+.gz-f input.note{width:240px;text-align:left;font-weight:500;font-size:13px}
+.gz-f input.chg{background:#FFF7E6;border-color:#E5A93B}
+.gz-tot{font-size:13px;font-weight:800;color:var(--sage-d);padding-bottom:8px;white-space:nowrap}
+.gz-repl{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:12px}
+.gz-repl b{color:#B4530B}
+.gz-st{font-size:11.5px;margin-top:6px;font-weight:600}
+.gz-st.wait{color:#B4530B}.gz-st.ok{color:var(--sage)}.gz-st.no{color:#9b2c2c}
+.gz-ord-f{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+.gz-prow{display:grid;grid-template-columns:56px minmax(150px,1.3fr) 3fr auto;gap:12px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--paper,#fff)}
+.gz-prow.dirty{background:#FBFDF3;box-shadow:inset 3px 0 0 var(--pistachio-d,#C6DB7E)}
+.gz-prow.out .gz-name{opacity:.55}
+.gz-pcat{font:700 12px var(--font-ui,inherit);letter-spacing:.04em;text-transform:uppercase;color:var(--mid);padding:16px 12px 6px}
+.gz-plist{border:1px solid var(--border);border-radius:var(--rad-l,18px);overflow:hidden}
+.gz-pf{display:flex;gap:8px;flex-wrap:wrap}
+.gz-pf .gz-f input{width:74px;font-size:13px}
+.gz-pf .gz-f input.wide{width:104px}
+.gz-stock{border:1px solid var(--border);border-radius:999px;padding:6px 12px;font:700 12px var(--font-ui,inherit);cursor:pointer;background:#E7F3E3;color:#2F6B34;white-space:nowrap}
+.gz-stock.off{background:#FBE9E9;color:#9b2c2c}
+.gz-pick{max-height:52vh;overflow:auto;margin-top:8px;border:1px solid var(--border);border-radius:12px}
+.gz-pick div{display:flex;gap:10px;align-items:center;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border)}
+.gz-pick div:hover{background:var(--sage-l)}
+.gz-pick img,.gz-pick span.gz-ph{width:38px;height:38px;border-radius:8px;object-fit:cover;font-size:18px}
+@media (max-width:760px){
+  .gz-prow{grid-template-columns:48px 1fr;}
+  .gz-prow .gz-pf,.gz-prow .gz-pact{grid-column:1/-1}
+  .gz-f input.note{width:100%}
+  .gz-f:has(input.note){flex:1 1 100%}
+}
+</style>
+<script>
+window.GZ = (() => {
+  const S = { orders: [], filter: 'all', pchg: {}, loading: false, loadedAt: 0 };
+  const esc = s => escHtml(s == null ? '' : String(s));
+  const fl = id => flowers.find(f => String(f.id) === String(id));
+  const ph = id => {
+    const f = fl(id);
+    const src = f?.photo_url || (f && THUMBS[f.en]) || '';
+    return src ? `<img class="gz-ph" src="${src}" alt="" loading="lazy" data-fid="${esc(id)}">`
+               : `<div class="gz-ph" data-fid="${esc(id)}">🪴</div>`;
+  };
+  const ERR = {
+    forbidden: 'Нет доступа — роль «Гуанчжоу» не назначена / 无权限',
+    locked: 'Заказ уже закрыт или отменён / 订单已关闭',
+    bad_replacement: 'Замена должна быть из горшечных / 替换品须为盆栽',
+    bad_boxes: 'Проверьте число коробок / 请检查箱数', bad_per_box: 'Проверьте штук в коробке / 请检查每箱数量',
+    not_potted: 'Можно править только горшечные / 仅可修改盆栽', empty_name: 'Укажите название и категорию / 请填写名称和类别',
+    bad_price: 'Проверьте цену / 请检查价格', too_long: 'Слишком длинный текст / 文字过长',
+  };
+  const errText = e => {
+    const m = String(e?.message || e || '');
+    const k = Object.keys(ERR).find(k => m.includes(k));
+    if (k) return ERR[k];
+    if (/function .*gz_|does not exist|404/i.test(m)) return 'На сервере не выполнен SQL «Роль Гуанчжоу» (sql_gz_role.sql) / 服务器未配置';
+    return m;
+  };
+
+  // ══ Заказы ══
+  const pend = it => (it.fact_boxes != null || it.fact_per_box != null || it.repl_id) && !it.confirmed_at;
+  async function loadOrders() {
+    const wrap = document.getElementById('gz-orders-list');
+    if (!wrap || S.loading) return;
+    if (!S.orders.length) wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    S.loading = true;
+    const { data, error } = await sb.rpc('gz_orders');
+    S.loading = false;
+    if (error) { wrap.innerHTML = ammikEmpty('Заказы не загрузились / 订单加载失败', esc(errText(error)), 'think'); return; }
+    S.orders = Array.isArray(data) ? data : [];
+    S.loadedAt = Date.now();
+    const cnt = document.getElementById('cnt-gz');
+    const nNew = S.orders.filter(o => o.stage === 'review').length;
+    if (cnt) { cnt.textContent = nNew; cnt.style.display = nNew ? '' : 'none'; }
+    renderOrders();
+  }
+  function setFilter(f) {
+    S.filter = f;
+    document.querySelectorAll('#gz-filter button').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+    renderOrders();
+  }
+  function itemHTML(o, it) {
+    const boxes = it.fact_boxes != null ? it.fact_boxes : it.qty_boxes;
+    const per = it.fact_per_box != null ? it.fact_per_box : it.per_box;
+    const repl = it.repl_id && String(it.repl_id) !== String(it.flower_id) ? it.repl_id : '';
+    const st = pend(it) ? `<div class="gz-st wait">⏳ Ждёт подтверждения менеджера / 等待经理确认</div>`
+      : it.confirmed_at && it.gz_at && it.fact_boxes != null ? `<div class="gz-st ok">✅ Менеджер принял / 经理已确认</div>`
+      : it.confirmed_at && it.gz_at && new Date(it.confirmed_at) > new Date(it.gz_at) && it.fact_boxes == null ? `<div class="gz-st no">↩ Менеджер оставил как в заказе / 经理保留原数量</div>`
+      : '';
+    const was = it.box_orig != null ? ` · короб был ${esc(it.box_orig || '—')}` : '';
+    return `<div class="gz-item" data-item="${esc(it.id)}" data-order="${esc(o.id)}">
+      ${ph(it.flower_id)}
+      <div>
+        <div class="gz-name">${esc(it.ru)}<small>${esc(it.cn || '')}</small></div>
+        <div class="gz-was">В заказе / 订单: <b>${it.qty_boxes ?? '—'} кор × ${it.per_box ?? '—'} шт = ${(+it.qty_boxes || 0) * (+it.per_box || 0)} шт</b>${was}</div>
+        <div class="gz-fields">
+          <label class="gz-f">Коробок / 箱数<input class="inp" type="number" min="0" inputmode="numeric" data-k="boxes" data-orig="${it.qty_boxes ?? ''}" value="${boxes ?? ''}" oninput="GZ.touch(this)"></label>
+          <label class="gz-f">Шт в коробке / 每箱盆数<input class="inp" type="number" min="1" inputmode="numeric" data-k="per_box" data-orig="${it.per_box ?? ''}" value="${per ?? ''}" oninput="GZ.touch(this)"></label>
+          <div class="gz-tot" data-tot>= ${(+boxes || 0) * (+per || 0)} шт / 盆</div>
+          <label class="gz-f">Размер короба, см / 箱规<input class="inp wide" data-k="box" data-orig="${esc(it.box_size || '')}" value="${esc(it.box_size || '')}" placeholder="60*40*40" oninput="GZ.touch(this)"></label>
+          <label class="gz-f">Заметка / 备注<input class="inp note" data-k="note" data-orig="${esc(it.note || '')}" value="${esc(it.note || '')}" placeholder="Напр.: высота 80 см, горшок 17 / 例：高80cm" oninput="GZ.touch(this)"></label>
+        </div>
+        <div class="gz-repl" data-repl="${esc(repl)}" data-orig="${esc(repl)}">
+          ${repl ? `🔄 Замена / 替换为: <b>${esc(it.repl_name || fl(repl)?.ru || '#' + repl)}</b>
+                    <button class="btn btn-secondary btn-sm" onclick="GZ.clearRepl(this)">✕ Без замены / 取消替换</button>`
+                 : `<button class="btn btn-secondary btn-sm" onclick="GZ.pickRepl('${esc(o.id)}','${esc(it.id)}')">🔄 Нет в наличии — заменить / 缺货替换</button>`}
+        </div>
+        ${st}
+      </div>
+    </div>`;
+  }
+  function renderOrders() {
+    const wrap = document.getElementById('gz-orders-list');
+    if (!wrap) return;
+    const q = (document.getElementById('gz-o-search')?.value || '').trim().toLowerCase();
+    let list = S.orders;
+    if (S.filter === 'review' || S.filter === 'work') list = list.filter(o => o.stage === S.filter);
+    if (S.filter === 'pending') list = list.filter(o => (o.items || []).some(pend));
+    if (q) list = list.filter(o => String(o.order_number || '').toLowerCase().includes(q)
+      || (o.items || []).some(it => `${it.ru} ${it.cn}`.toLowerCase().includes(q)));
+    if (!list.length) {
+      wrap.innerHTML = ammikEmpty(S.orders.length ? 'Ничего не нашлось / 无结果' : 'Заказов с горшечными пока нет / 暂无盆栽订单',
+        S.orders.length ? 'Попробуйте другой фильтр / 换个筛选试试' : 'Как только клиент закажет горшечные — заказ появится здесь и придёт уведомление 🔔', 'think');
+      return;
+    }
+    wrap.innerHTML = list.map(o => {
+      const items = o.items || [];
+      const pcs = items.reduce((s, it) => s + (+(it.fact_boxes ?? it.qty_boxes) || 0) * (+(it.fact_per_box ?? it.per_box) || 0), 0);
+      const nb = items.reduce((s, it) => s + (+(it.fact_boxes ?? it.qty_boxes) || 0), 0);
+      return `<div class="gz-ord" id="gz-ord-${esc(o.id)}">
+        <div class="gz-ord-h">
+          <span class="gz-num">${esc(o.order_number)}</span>
+          <span class="gz-chip ${o.stage === 'review' ? 'new' : ''}">${o.stage === 'review' ? '🆕 Новый — на проверке / 新订单' : '✅ Подтверждён — в работе / 已确认'}</span>
+          ${items.some(pend) ? '<span class="gz-chip wait">⏳ Ждёт менеджера / 待确认</span>' : ''}
+          <span style="flex:1"></span>
+          <span class="gz-meta">📅 ${esc(o.date_order || '')}${o.date_ship ? ` · 🚚 отгрузка / 发货 <b>${esc(o.date_ship)}</b>` : ' · дата отгрузки не назначена / 未定发货日'}${o.ship ? ` · ${esc(o.ship)}` : ''}</span>
+        </div>
+        <div class="gz-meta">🪴 ${items.length} поз. · ${nb} кор. · ${pcs} шт / 盆</div>
+        ${items.map(it => itemHTML(o, it)).join('')}
+        <div class="gz-ord-f"><button class="btn btn-primary" onclick="GZ.saveOrder('${esc(o.id)}', this)">💾 Сохранить заказ / 保存订单</button></div>
+      </div>`;
+    }).join('');
+  }
+  function touch(inp) {
+    const row = inp.closest('.gz-item');
+    if (!row) return;
+    inp.classList.toggle('chg', String(inp.value).trim() !== String(inp.dataset.orig).trim());
+    const b = +row.querySelector('[data-k=boxes]').value || 0, p = +row.querySelector('[data-k=per_box]').value || 0;
+    row.querySelector('[data-tot]').textContent = `= ${b * p} шт / 盆`;
+    markItem(row);
+  }
+  function markItem(row) {
+    const r = row.querySelector('.gz-repl');
+    const dirty = [...row.querySelectorAll('[data-k]')].some(i => String(i.value).trim() !== String(i.dataset.orig).trim())
+      || (r && r.dataset.repl !== r.dataset.orig);
+    row.classList.toggle('dirty', dirty);
+  }
+  function pickRepl(orderId, itemId) {
+    const o = S.orders.find(x => String(x.id) === String(orderId));
+    const it = o?.items?.find(x => String(x.id) === String(itemId));
+    document.getElementById('modal-content').innerHTML = `
+      <div class="modal-title">🔄 Замена / 替换: ${esc(it?.ru || '')}</div>
+      <div style="font-size:12px;color:var(--mid);margin-bottom:6px">Выберите, что отправить вместо. Менеджер согласует замену с клиентом. / 请选择替换品，经理会与客户确认。</div>
+      <input class="inp" id="gz-pick-q" placeholder="Поиск / 搜索" oninput="GZ.pickList('${esc(itemId)}')" autofocus>
+      <div class="gz-pick" id="gz-pick-list"></div>
+      <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button></div>`;
+    openModal();
+    pickList(itemId);
+  }
+  function pickList(itemId) {
+    const q = (document.getElementById('gz-pick-q')?.value || '').trim().toLowerCase();
+    const row = document.querySelector(`.gz-item[data-item="${CSS.escape(String(itemId))}"]`);
+    const curId = S.orders.flatMap(o => o.items || []).find(x => String(x.id) === String(itemId))?.flower_id;
+    const list = flowers.filter(f => flowerCatalog(f) === 'potted' && String(f.id) !== String(curId)
+      && (!q || `${f.ru} ${f.cn} ${f.cat_ru}`.toLowerCase().includes(q)))
+      .sort((a, b) => (b.in_stock ? 1 : 0) - (a.in_stock ? 1 : 0)).slice(0, 80);
+    const box = document.getElementById('gz-pick-list');
+    if (!box) return;
+    box.innerHTML = list.length ? list.map(f => `<div onclick="GZ.setRepl('${esc(itemId)}','${esc(f.id)}')">
+        ${f.photo_url ? `<img src="${f.photo_url}" alt="">` : '<span class="gz-ph">🪴</span>'}
+        <span style="flex:1"><b>${esc(f.ru)}</b> <span style="color:var(--mid)">${esc(f.cn || '')}</span>
+          <div style="font-size:11px;color:var(--mid)">${esc(f.cat_ru || '')}${f.boxes_per_box ? ` · ${f.boxes_per_box} шт/кор` : ''}${f.box_size ? ` · ${esc(f.box_size)}` : ''}</div></span>
+        <span style="font-size:11px;font-weight:700;color:${f.in_stock ? '#2F6B34' : '#9b2c2c'}">${f.in_stock ? 'есть / 有货' : 'нет / 缺货'}</span>
+      </div>`).join('') : '<div style="cursor:default;color:var(--mid)">Ничего не нашлось / 无结果</div>';
+    if (!row) box.innerHTML = '';
+  }
+  function setRepl(itemId, fid) {
+    const row = document.querySelector(`.gz-item[data-item="${CSS.escape(String(itemId))}"]`);
+    const f = fl(fid);
+    if (!row || !f) return;
+    const r = row.querySelector('.gz-repl');
+    r.dataset.repl = String(fid);
+    r.innerHTML = `🔄 Замена / 替换为: <b>${esc(f.ru)}${f.cn ? ' / ' + esc(f.cn) : ''}</b>
+      <button class="btn btn-secondary btn-sm" onclick="GZ.clearRepl(this)">✕ Без замены / 取消替换</button>`;
+    // штук в коробке у замены может быть другим — подставим из прайса, если поле не трогали
+    const per = row.querySelector('[data-k=per_box]');
+    if (f.boxes_per_box && per && per.value === per.dataset.orig) { per.value = f.boxes_per_box; touch(per); }
+    markItem(row);
+    closeModal();
+  }
+  function clearRepl(btn) {
+    const row = btn.closest('.gz-item');
+    const r = row.querySelector('.gz-repl');
+    r.dataset.repl = '';
+    r.innerHTML = `<button class="btn btn-secondary btn-sm" onclick="GZ.pickRepl('${esc(row.dataset.order)}','${esc(row.dataset.item)}')">🔄 Нет в наличии — заменить / 缺货替换</button>`;
+    markItem(row);
+  }
+  async function saveOrder(orderId, btn) {
+    const card = document.getElementById('gz-ord-' + orderId);
+    if (!card) return;
+    const items = [...card.querySelectorAll('.gz-item')].map(row => {
+      const v = k => row.querySelector(`[data-k=${k}]`)?.value.trim() ?? '';
+      return { id: row.dataset.item, boxes: v('boxes'), per_box: v('per_box'), box: v('box'), note: v('note'),
+               repl: row.querySelector('.gz-repl')?.dataset.repl || '' };
+    });
+    if (items.some(i => i.per_box !== '' && +i.per_box < 1)) { toast('Штук в коробке — минимум 1 / 每箱至少1盆'); return; }
+    if (btn) btn.disabled = true;
+    const { data, error } = await sb.rpc('gz_order_save', { p_order: String(orderId), p_items: items });
+    if (btn) btn.disabled = false;
+    if (error) { toast('❌ ' + errText(error)); return; }
+    if (data?.changed) logActivity('gz_order', 'order', orderId, S.orders.find(o => String(o.id) === String(orderId))?.order_number || '', `Гуанчжоу: позиций изменено ${data.changed}, на подтверждение ${data.pending || 0}`);
+    toast(!data?.changed ? 'Изменений нет / 无修改'
+      : data.pending ? `✅ Сохранено. ${data.pending} поз. ждут подтверждения менеджера / 已保存，等待经理确认`
+      : '✅ Сохранено, менеджер получил уведомление / 已保存');
+    await loadOrders();
+  }
+
+  // ══ Прайс горшечных ══
+  const PF = [   // поле, подпись, тип
+    ['price_a', 'Цена A ¥/шт / 单价A', 'num'], ['price_ap', 'Цена A+ ¥ / 单价A+', 'num'],
+    ['boxes_per_box', 'Шт в коробке / 每箱盆数', 'int'], ['box_size', 'Короб, см / 箱规', 'text'],
+    ['length', 'Высота / 高度', 'text'], ['pack', 'Горшок, спец. / 规格', 'text'],
+  ];
+  function pval(f, k) { return S.pchg[f.id] && k in S.pchg[f.id] ? S.pchg[f.id][k] : f[k]; }
+  function fillCats() {
+    const sel = document.getElementById('gz-p-cat');
+    if (!sel) return;
+    const cur = sel.value;
+    const cats = getCategoriesForCatalog('potted');
+    sel.innerHTML = '<option value="">Все категории / 全部类别</option>' + cats.map(c => `<option ${c === cur ? 'selected' : ''}>${esc(c)}</option>`).join('');
+  }
+  function renderPrice() {
+    const wrap = document.getElementById('gz-price-list');
+    if (!wrap) return;
+    fillCats();
+    const q = (document.getElementById('gz-p-search')?.value || '').trim().toLowerCase();
+    const cat = document.getElementById('gz-p-cat')?.value || '';
+    const onlyOut = document.getElementById('gz-p-out')?.checked;
+    const list = flowers.filter(f => flowerCatalog(f) === 'potted'
+      && (!cat || f.cat_ru === cat) && (!onlyOut || !pval(f, 'in_stock'))
+      && (!q || `${f.ru} ${f.cn} ${f.en} ${f.cat_ru}`.toLowerCase().includes(q)));
+    if (!list.length) {
+      wrap.innerHTML = ammikEmpty(flowers.length ? 'Ничего не нашлось / 无结果' : 'Прайс загружается… / 加载中', '', 'think');
+      return;
+    }
+    let last = null;
+    wrap.innerHTML = '<div class="gz-plist">' + list.map(f => {
+      const head = f.cat_ru !== last ? `<div class="gz-pcat">${esc(f.cat_ru || 'Без категории / 未分类')}</div>` : '';
+      last = f.cat_ru;
+      const inS = !!pval(f, 'in_stock');
+      return head + `<div class="gz-prow ${S.pchg[f.id] ? 'dirty' : ''} ${inS ? '' : 'out'}" id="gz-pr-${f.id}">
+        ${ph(f.id)}
+        <div class="gz-name">${esc(pval(f, 'ru'))}<small>${esc(pval(f, 'cn') || '')}</small></div>
+        <div class="gz-pf">${PF.map(([k, l, t]) => `<label class="gz-f">${l}<input class="inp ${t === 'text' ? 'wide' : ''} ${S.pchg[f.id] && k in S.pchg[f.id] ? 'chg' : ''}"
+            ${t === 'text' ? '' : `type="number" min="0" step="${t === 'int' ? 1 : 0.5}" inputmode="decimal"`}
+            value="${esc(pval(f, k) ?? '')}" oninput="GZ.pset('${esc(f.id)}','${k}',this)"></label>`).join('')}</div>
+        <div class="gz-pact" style="display:flex;gap:6px;align-items:center">
+          <button class="gz-stock ${inS ? '' : 'off'}" onclick="GZ.toggleStock('${esc(f.id)}')">${inS ? '✅ Есть / 有货' : '❌ Нет / 缺货'}</button>
+          <button class="btn btn-secondary btn-sm" title="Изменить / 编辑" onclick="GZ.editFlower('${esc(f.id)}')">✏️</button>
+        </div>
+      </div>`;
+    }).join('') + '</div>';
+    saveBtn();
+  }
+  function pset(id, k, inp) {
+    const f = fl(id); if (!f) return;
+    const t = PF.find(x => x[0] === k)?.[2];
+    let v = inp.value.trim();
+    if (t === 'num') v = v === '' ? null : +v;
+    if (t === 'int') v = v === '' ? null : Math.round(+v);
+    S.pchg[id] = S.pchg[id] || {};
+    if (String(v ?? '') === String(f[k] ?? '')) delete S.pchg[id][k]; else S.pchg[id][k] = v;
+    if (!Object.keys(S.pchg[id]).length) delete S.pchg[id];
+    inp.classList.toggle('chg', !!S.pchg[id] && k in S.pchg[id]);
+    document.getElementById('gz-pr-' + id)?.classList.toggle('dirty', !!S.pchg[id]);
+    saveBtn();
+  }
+  function toggleStock(id) {
+    const f = fl(id); if (!f) return;
+    const v = !pval(f, 'in_stock');
+    S.pchg[id] = S.pchg[id] || {};
+    if (v === !!f.in_stock) delete S.pchg[id].in_stock; else S.pchg[id].in_stock = v;
+    if (!Object.keys(S.pchg[id]).length) delete S.pchg[id];
+    renderPrice();
+  }
+  function saveBtn() {
+    const n = Object.keys(S.pchg).length;
+    const b = document.getElementById('gz-p-save');
+    if (b) { b.disabled = !n; b.textContent = n ? `💾 Сохранить (${n}) / 保存` : '💾 Сохранить / 保存'; }
+  }
+  async function savePrice() {
+    const rows = Object.entries(S.pchg).map(([id, ch]) => ({ id: String(id), ...ch }));
+    if (!rows.length) return;
+    // резкий скачок цены — переспросим (опечатка 25 → 250)
+    const jumps = rows.filter(r => ['price_a', 'price_ap'].some(k => {
+      const old = +fl(r.id)?.[k] || 0;
+      return k in r && old > 0 && r[k] != null && (r[k] > old * 1.5 || r[k] < old * 0.5);
+    }));
+    if (jumps.length && !confirm(`Цена изменилась больше чем в 1,5 раза у ${jumps.length} поз.: ${jumps.map(r => fl(r.id)?.ru).slice(0, 4).join(', ')}.\nСохранить? / 价格变动较大，确认保存？`)) return;
+    const b = document.getElementById('gz-p-save'); if (b) b.disabled = true;
+    const { error } = await sb.rpc('gz_flowers_save', { p_rows: rows });
+    if (error) { toast('❌ ' + errText(error)); saveBtn(); return; }
+    logActivity('gz_price', 'flowers', null, `${rows.length} поз.`, rows.map(r => `${fl(r.id)?.ru}: ${Object.entries(r).filter(([k]) => k !== 'id').map(([k, v]) => k + '=' + v).join(', ')}`).join('; ').slice(0, 900));
+    rows.forEach(r => { const f = fl(r.id); if (f) { Object.assign(f, r, { id: f.id }); } });
+    S.pchg = {};
+    renderPrice();
+    toast(`✅ Прайс сохранён (${rows.length}) — менеджеры получили уведомление / 价格已保存`);
+  }
+  async function photoData(file) {
+    try { return await uploadFlowerPhoto(file, null); }
+    catch (e) { return await blobToDataURL(await compressImage(file)); }
+  }
+  function editFlower(id) {
+    const f = id ? fl(id) : { in_stock: true, boxes_per_box: 1 };
+    if (!f) return;
+    const cats = getCategoriesForCatalog('potted');
+    const inp = (k, l, t = 'text', extra = '') => `<div class="field"><label>${l}</label><input class="inp" id="gzf-${k}" ${t === 'text' ? '' : `type="number" min="0" step="${t === 'int' ? 1 : 0.5}"`} value="${esc(f[k] ?? '')}" ${extra}></div>`;
+    document.getElementById('modal-content').innerHTML = `
+      <div class="modal-title">${id ? '✏️ ' + esc(f.ru) : '＋ Новая позиция / 新增盆栽'}</div>
+      <div class="field-row">${inp('ru', 'Название RU / 俄文名 *')}${inp('cn', 'Название CN / 中文名')}</div>
+      <div class="field-row">${inp('en', 'Название EN / 英文名')}
+        <div class="field"><label>Категория / 类别 *</label><input class="inp" id="gzf-cat_ru" list="gzf-cats" value="${esc(f.cat_ru || '')}" placeholder="Напр.: Фикусы">
+          <datalist id="gzf-cats">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist></div></div>
+      <div class="field-row">${inp('price_a', 'Цена A, ¥ за шт / 单价A *', 'num')}${inp('price_ap', 'Цена A+, ¥ / 单价A+', 'num')}</div>
+      <div class="field-row">${inp('boxes_per_box', 'Шт в коробке / 每箱盆数', 'int')}${inp('box_size', 'Размер короба, см / 箱规', 'text', 'placeholder="60*40*40"')}</div>
+      <div class="field-row">${inp('length', 'Высота / 高度', 'text', 'placeholder="80-90 см"')}${inp('pack', 'Горшок, спецификация / 盆径规格', 'text', 'placeholder="Ø17"')}</div>
+      <div class="field-row">${inp('order_qty', 'Мин. заказ / 起订量')}
+        <div class="field"><label>Фото / 照片</label><input class="inp" type="file" id="gzf-photo" accept="image/*"></div></div>
+      <label class="gz-chk" style="margin-top:6px"><input type="checkbox" id="gzf-in_stock" ${f.in_stock ? 'checked' : ''}> В наличии / 有货</label>
+      <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+        <button class="btn btn-primary" id="gzf-save" onclick="GZ.saveFlower(${id ? `'${esc(id)}'` : 'null'})">💾 Сохранить / 保存</button></div>`;
+    openModal();
+  }
+  async function saveFlower(id) {
+    const g = k => document.getElementById('gzf-' + k)?.value.trim() ?? '';
+    const num = k => g(k) === '' ? null : +g(k);
+    const p = { ru: g('ru'), cn: g('cn') || null, en: g('en') || null, cat_ru: g('cat_ru'), price_a: num('price_a'),
+      price_ap: num('price_ap') ?? num('price_a'), boxes_per_box: num('boxes_per_box'), box_size: g('box_size') || null,
+      length: g('length') || null, pack: g('pack') || null, order_qty: g('order_qty') || null,
+      in_stock: !!document.getElementById('gzf-in_stock')?.checked };
+    if (!p.ru || !p.cat_ru) { toast('Укажите название и категорию / 请填写名称和类别'); return; }
+    if (p.price_a == null || p.price_a < 0) { toast('Укажите цену / 请填写价格'); return; }
+    if (!id) {
+      p.cat_en = p.cat_ru;
+      const dupe = flowers.find(x => x.ru?.trim().toLowerCase() === p.ru.toLowerCase() || (p.cn && x.cn?.trim() === p.cn));
+      if (dupe && !confirm(`«${dupe.ru}» уже есть в прайсе. Добавить ещё одну? / 已存在，仍要添加？`)) return;
+    }
+    const btn = document.getElementById('gzf-save'); if (btn) btn.disabled = true;
+    const file = document.getElementById('gzf-photo')?.files?.[0];
+    if (file) p.photo_url = await photoData(file);
+    const res = id ? await sb.rpc('gz_flowers_save', { p_rows: [{ id: String(id), ...p }] })
+                   : await sb.rpc('gz_flower_add', { p });
+    if (btn) btn.disabled = false;
+    if (res.error) { toast('❌ ' + errText(res.error)); return; }
+    closeModal();
+    if (id) { const f = fl(id); Object.assign(f, p, { id: f.id }); if (p.photo_url) { f._ph = 1; } delete S.pchg[id]; }
+    else { flowers.push({ ...p, id: isNaN(+res.data?.id) ? res.data?.id : +res.data?.id, catalog: 'potted', _ph: 1 }); }
+    renderPrice();
+    toast(id ? '✅ Сохранено / 已保存' : '✅ Позиция добавлена — менеджеры уведомлены / 已添加');
+  }
+
+  // Прайс загрузился или обновился (realtime) — перерисовать, не теряя несохранённое
+  function onFlowers() {
+    if (document.getElementById('page-gz-price')?.classList.contains('active')) renderPrice(); else fillCats();
+    // фото подставит фоновая загрузка (patchFlowerPhotos по data-fid)
+    if (S.orders.length && !document.querySelector('.gz-item.dirty')) renderOrders();
+  }
+  // раз в 2 минуты подтягиваем заказы, если ничего не редактируется
+  setInterval(() => {
+    if (currentUser?.role === 'gz' && document.getElementById('page-gz-orders')?.classList.contains('active')
+        && !document.querySelector('.gz-item.dirty') && Date.now() - S.loadedAt > 110000) loadOrders();
+  }, 30000);
+
+  return { loadOrders, renderOrders, setFilter, touch, pickRepl, pickList, setRepl, clearRepl, saveOrder,
+           renderPrice, pset, toggleStock, savePrice, editFlower, saveFlower, onFlowers, _s: S };
+})();
+
+// Уведомить сотрудников Гуанчжоу (без имён клиентов и сумм)
+async function notifyGz(title, body) {
+  try {
+    const { data } = await sb.rpc('app_gz_ids');
+    for (const r of (data || [])) {
+      const id = typeof r === 'object' ? (r.app_gz_ids ?? r.id) : r;
+      if (id) await sendNotification(id, title, body, '🪴');
+    }
+  } catch (e) {}
+}
+</script>
+
 </body>
 </html>
