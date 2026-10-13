@@ -15791,7 +15791,7 @@ ${terms ? `<div style="font-size:11px;font-weight:bold;letter-spacing:2px;color:
 <div style="margin-top:6px;font-size:13px">${contacts}</div>
 </td></tr>
 ${partner}
-<tr><td style="padding:20px 28px 24px"><div style="border-top:1px solid #e3e8f0;padding-top:12px;font-size:11px;line-height:1.6;color:#8a93a6">${r.legal ? t(r.legal) + '<br>' : ''}${r.ids ? t(r.ids) + '<br>' : ''}${c.footer}</div></td></tr>
+<tr><td style="padding:20px 28px 24px"><div style="border-top:1px solid #e3e8f0;padding-top:12px;font-size:11px;line-height:1.6;color:#8a93a6">${r.legal ? t(r.legal) + '<br>' : ''}${r.addr ? t(r.addr) + '<br>' : ''}${r.ids ? t(r.ids) + '<br>' : ''}${r.bank ? t(r.bank) + '<br>' : ''}${c.footer}</div></td></tr>
 </table>`;
 }
 
@@ -16110,7 +16110,7 @@ async function mlTabAfter() {
   await mlLoadReq();
   const box = document.getElementById('ml-req'); if (!box) return;
   const isAdm = currentUser?.is_admin || isFullMgr();
-  const F = [['legal', 'Юридическое название'], ['addr', 'Адрес'], ['phone', 'Телефоны'], ['mail', 'Почта'], ['site', 'Сайт'], ['ids', 'ИНН / КПП / ОГРН (строкой)']];
+  const F = [['legal', 'Юридическое название'], ['addr', 'Адрес'], ['phone', 'Телефоны'], ['mail', 'Почта'], ['site', 'Сайт'], ['bank', 'Банк: р/с, банк, БИК, к/с (строкой)'], ['ids', 'ИНН / КПП / ОГРН (строкой)']];
   box.innerHTML = ['amma', 'srb'].map(co => `<div><div style="font-weight:700;font-size:13px;margin-bottom:6px">${ML_CO[co].name}</div>
     ${F.map(([k, l]) => `<div class="field"><label>${l}</label><input class="inp" id="mr-${co}-${k}" value="${escHtml(_ml.req[co][k] || '')}" ${isAdm ? '' : 'disabled'}></div>`).join('')}</div>`).join('')
     + (isAdm ? `<div style="grid-column:1/-1"><button class="btn btn-primary btn-sm" onclick="mlReqSave()">💾 Сохранить реквизиты</button></div>` : '');
@@ -16122,7 +16122,7 @@ function mlProfileSave() {
 }
 async function mlReqSave() {
   const val = {};
-  ['amma', 'srb'].forEach(co => { val[co] = {}; ['legal', 'addr', 'phone', 'mail', 'site', 'ids'].forEach(k => { val[co][k] = document.getElementById(`mr-${co}-${k}`)?.value.trim() || ''; }); });
+  ['amma', 'srb'].forEach(co => { val[co] = {}; ['legal', 'addr', 'phone', 'mail', 'site', 'ids', 'bank'].forEach(k => { val[co][k] = document.getElementById(`mr-${co}-${k}`)?.value.trim() || ''; }); });
   const { error } = await sb.from('app_settings').upsert({ key: 'mail', value: val, updated_at: new Date().toISOString() });
   if (error) { toast('❌ ' + error.message); return; }
   _ml.req = val; _ml.reqLoaded = true;
