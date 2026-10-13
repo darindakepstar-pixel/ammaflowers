@@ -944,6 +944,182 @@ html.lenis,html.lenis body{height:auto}
   .page-title{font-size:26px}
   .cart-footer,html[data-theme="light"] .cart-footer{left:8px;right:8px;bottom:8px}
 }
+
+/* ═══ ОТГРУЗКИ — диспетчерская ═══ */
+.shp-strip{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 12px;margin-bottom:6px;scrollbar-width:thin}
+.shp-chip{flex:0 0 auto;min-width:168px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;cursor:pointer;
+  background:var(--paper,#F7F8F3);border:1px solid var(--line,rgba(29,42,33,.09));border-radius:18px;padding:11px 14px;font-family:var(--font-ui);
+  color:var(--charcoal);transition:border-color .2s,background .2s,transform .12s}
+.shp-chip:hover{border-color:var(--sage-m)}
+.shp-chip.on{background:var(--ink,#1D2A21);color:#F2F6EA;border-color:transparent}
+.shp-chip-n{font-weight:800;font-size:14px;letter-spacing:-.01em}
+.shp-chip-s{font-size:11.5px;opacity:.75}
+.shp-chip-bar{width:100%;height:5px;border-radius:3px;background:rgba(29,42,33,.08);overflow:hidden;margin-top:3px}
+.shp-chip.on .shp-chip-bar{background:rgba(255,255,255,.14)}
+.shp-chip-bar i{display:block;height:100%;border-radius:3px}
+.shp-card{background:var(--paper,#F7F8F3);border:1px solid var(--line,rgba(29,42,33,.09));border-radius:var(--rad-xl,26px);padding:22px 24px}
+.shp-head{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.shp-title{font:300 32px var(--font-ui);letter-spacing:-.025em;color:var(--charcoal);line-height:1.1}
+.shp-meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:12.5px;color:var(--mid)}
+.shp-pill{padding:4px 11px;border-radius:999px;font-weight:700;font-size:11.5px;background:rgba(29,42,33,.06);color:var(--charcoal)}
+.shp-pill.s-departed{background:var(--pistachio,#DCEBA4);color:var(--ink,#1D2A21)}
+.shp-pill.s-delivered{background:var(--ink,#1D2A21);color:var(--pistachio,#DCEBA4)}
+.shp-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.shp-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:18px 0 6px}
+.shp-kpi{background:#fff;border:1px solid var(--line,rgba(29,42,33,.09));border-radius:18px;padding:12px 16px;display:flex;flex-direction:column;gap:2px}
+html[data-theme="dark"] .shp-kpi{background:rgba(255,255,255,.04)}
+.shp-kpi span{font-size:11.5px;color:var(--mid);font-weight:600}
+.shp-kpi b{font:300 26px var(--font-ui);letter-spacing:-.02em;color:var(--charcoal)}
+.shp-kpi b small{font-size:13px;color:var(--mid);font-weight:500}
+.shp-kpi em{font-style:normal;font-size:11.5px;color:var(--mid)}
+.shp-kpi.ok em{color:var(--sage-m);font-weight:700}
+.shp-kpi.warn em{color:#B8902F;font-weight:700}
+.shp-kpi.bad{background:#FBEDEA;border-color:transparent}
+.shp-kpi.bad em,.shp-kpi.bad b{color:#9A3B31}
+html[data-theme="dark"] .shp-kpi.bad{background:rgba(217,107,95,.14)}
+.shp-note{font-size:11.5px;color:var(--mid);margin:6px 0}
+.shp-main{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;margin-top:12px;align-items:stretch}
+.shp-stage{border-radius:22px;padding:18px 10px 8px;display:flex;align-items:center;
+  background:radial-gradient(600px 220px at 55% 60%, rgba(220,235,164,.45), transparent 70%), linear-gradient(180deg,#EEF1E8,#F7F8F3)}
+html[data-theme="dark"] .shp-stage{background:radial-gradient(600px 220px at 55% 60%, rgba(201,219,138,.10), transparent 70%), rgba(255,255,255,.03)}
+.shp-truck{width:100%;height:auto;display:block;overflow:visible}
+.shp-stage,html[data-theme="dark"] .shp-stage{background:#F0F2F1!important;padding:4px!important}   /* = цвет фона фотографии фуры */
+.shp-shadow{fill:rgba(29,42,33,.10)}
+.shp-cab,.shp-cab2,.shp-box{fill:#FBFCF8;stroke:#1D2A21;stroke-width:3}
+.shp-cab2{fill:#EEF1E8}
+.shp-glass{fill:#2E4334}
+.shp-bumper,.shp-chassis{fill:#1D2A21}
+.shp-light{fill:#E6CC92}
+.shp-fridge{fill:#DCE3D3;stroke:#1D2A21;stroke-width:3}
+.shp-bay{fill:rgba(29,42,33,.04);stroke:rgba(29,42,33,.18);stroke-width:1.5;stroke-dasharray:6 6}
+.shp-wheel{fill:#1D2A21}
+.shp-hub{fill:#C8CFC1}
+html[data-theme="dark"] .shp-cab,html[data-theme="dark"] .shp-box{fill:#26332B;stroke:#C9DB8A}
+html[data-theme="dark"] .shp-cab2,html[data-theme="dark"] .shp-fridge{fill:#1E2A22;stroke:#C9DB8A}
+html[data-theme="dark"] .shp-bay{fill:rgba(255,255,255,.03);stroke:rgba(255,255,255,.18)}
+html[data-theme="dark"] .shp-shadow{fill:rgba(0,0,0,.35)}
+.shp-blk rect{stroke:rgba(29,42,33,.25);stroke-width:1.2;transition:filter .2s}
+.shp-blk:hover rect{filter:brightness(1.06) drop-shadow(0 4px 8px rgba(29,42,33,.25))}
+.shp-blk-t{font:800 32px var(--font-ui);fill:#1D2A21}
+.shp-blk-s{font:600 23px var(--font-ui);fill:rgba(29,42,33,.72)}
+.shp-free{fill:rgba(255,255,255,.35);stroke:var(--sage-m);stroke-width:3;stroke-dasharray:10 8}
+.shp-free-t{font:700 26px var(--font-ui);fill:var(--sage-m)}
+.shp-lim{stroke:#D96B5F;stroke-width:2.5;stroke-dasharray:5 4}
+.shp-lim-t{font:700 24px var(--font-ui);fill:#9A3B31}
+.shp-side{background:#fff;border:1px solid var(--line,rgba(29,42,33,.09));border-radius:22px;padding:14px;display:flex;flex-direction:column;min-height:0}
+html[data-theme="dark"] .shp-side{background:rgba(255,255,255,.04)}
+.shp-side-h{display:flex;align-items:center;justify-content:space-between;gap:8px;font:700 13.5px var(--font-ui);margin-bottom:8px}
+.shp-ords{overflow-y:auto;max-height:300px;display:flex;flex-direction:column;gap:2px}
+.shp-ord{display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:12px}
+.shp-ord:hover{background:rgba(220,235,164,.3)}
+.shp-ord > i{width:12px;height:30px;border-radius:4px;flex-shrink:0}
+.shp-ord-m{flex:1;min-width:0;display:flex;flex-direction:column;font-size:12.5px}
+.shp-ord-m span{color:var(--mid);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shp-ord-v{text-align:right;font-size:12px;font-weight:700;white-space:nowrap}
+.shp-ord-v span{font-weight:500;color:var(--mid);font-size:11px}
+.shp-x{border:none;background:none;color:var(--light);font-size:18px;cursor:pointer;padding:0 4px;line-height:1}
+.shp-x:hover{color:#9A3B31}
+.shp-empty{color:var(--light);font-size:12px;padding:12px 4px}
+.shp-route{margin-top:16px;background:#fff;border:1px solid var(--line,rgba(29,42,33,.09));border-radius:22px;padding:14px 18px 18px}
+html[data-theme="dark"] .shp-route{background:rgba(255,255,255,.04)}
+.shp-route-h{font:700 13.5px var(--font-ui);margin-bottom:14px;display:flex;gap:10px;align-items:baseline}
+.shp-route-h span{font-weight:500;font-size:11.5px;color:var(--mid)}
+.shp-track{position:relative;display:grid;grid-template-columns:repeat(6,1fr)}
+.shp-rail{position:absolute;left:calc(100%/12);right:calc(100%/12);top:8px;height:4px;border-radius:2px;background:rgba(29,42,33,.10)}
+.shp-rail i{display:block;height:100%;border-radius:2px;background:var(--ink,#1D2A21);transition:width .6s cubic-bezier(.2,.7,.2,1)}
+html[data-theme="dark"] .shp-rail i{background:var(--pistachio)}
+.shp-node{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;font-size:12px}
+.shp-node > i{width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid rgba(29,42,33,.18);z-index:1}
+html[data-theme="dark"] .shp-node > i{background:#18221C}
+.shp-node.done > i{background:var(--ink,#1D2A21);border-color:var(--ink,#1D2A21);box-shadow:inset 0 0 0 3px var(--pistachio,#DCEBA4)}
+.shp-node.next > i{border-color:var(--ink,#1D2A21);animation:shpPulse 1.8s ease-in-out infinite}
+.shp-node.late > i{border-color:#D96B5F}
+@keyframes shpPulse{0%,100%{box-shadow:0 0 0 0 rgba(198,219,126,.9)}50%{box-shadow:0 0 0 7px rgba(198,219,126,0)}}
+.shp-node b{font-weight:700;margin-top:4px}
+.shp-node span{color:var(--mid);font-size:11px}
+.shp-node em{font-style:normal;color:#9A3B31;font-size:10.5px;font-weight:700}
+@media (max-width:1100px){.shp-main{grid-template-columns:minmax(0,1fr)}.shp-ords{max-height:none}}
+@media (max-width:700px){
+  .shp-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .shp-card{padding:16px 14px}
+  .shp-title{font-size:26px}
+  .shp-track{grid-template-columns:repeat(3,1fr);row-gap:16px}
+  .shp-rail{display:none}
+}
+@media (prefers-reduced-motion:reduce){.shp-node.next > i{animation:none}.shp-rail i{transition:none}}
+
+
+/* ── Состояние груза ── */
+.shp-cold{margin-top:16px;background:#fff;border:1px solid var(--line,rgba(29,42,33,.09));border-radius:22px;padding:14px 18px 18px}
+html[data-theme="dark"] .shp-cold{background:rgba(255,255,255,.04)}
+.cold-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.cold-kind{background:rgba(29,42,33,.06);color:var(--charcoal)!important;font-weight:600!important;padding:3px 10px;border-radius:999px}
+.cold-hband{fill:rgba(201,169,110,.14)}
+.cold-alert{background:#FBEDEA;color:#9A3B31!important;font-weight:700!important;padding:3px 10px;border-radius:999px}
+.cold-tiles{display:grid;grid-template-columns:1fr 1fr 2fr 1fr;gap:10px}
+.cold-tile{border-radius:16px;padding:11px 14px;background:var(--paper,#F7F8F3);display:flex;flex-direction:column;gap:2px;min-width:0}
+html[data-theme="dark"] .cold-tile{background:rgba(255,255,255,.04)}
+.cold-tile span{font-size:11.5px;color:var(--mid);font-weight:600}
+.cold-tile b{font:300 24px var(--font-ui);letter-spacing:-.02em;color:var(--charcoal);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cold-tile b.loc{font-size:16px;font-weight:600;white-space:normal;line-height:1.3;margin:3px 0}
+.cold-tile em{font-style:normal;font-size:11.5px;color:var(--mid)}
+.cold-tile.ok{background:rgba(220,235,164,.5)}.cold-tile.ok em{color:var(--ink,#1D2A21);font-weight:700}
+.cold-tile.bad{background:#FBEDEA}.cold-tile.bad b,.cold-tile.bad em{color:#9A3B31;font-weight:700}
+html[data-theme="dark"] .cold-tile.ok{background:rgba(201,219,138,.12)} html[data-theme="dark"] .cold-tile.ok em{color:var(--pistachio)}
+html[data-theme="dark"] .cold-tile.bad{background:rgba(217,107,95,.14)}
+.fr-warn{color:#B8902F!important;font-weight:700}.fr-bad{color:#9A3B31!important;font-weight:700}
+.cold-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:12px;margin-top:12px}
+.cold-chart{background:var(--paper,#F7F8F3);border-radius:16px;padding:10px 8px 8px}
+html[data-theme="dark"] .cold-chart{background:rgba(255,255,255,.03)}
+.cold-svg{width:100%;height:auto;display:block}
+.cold-band{fill:rgba(198,219,126,.35)}
+.cold-grid-l{stroke:rgba(29,42,33,.07);stroke-width:1}
+.cold-ax{font:500 11px var(--font-ui);fill:var(--mid)}
+.cold-line{fill:none;stroke:var(--ink,#1D2A21);stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+html[data-theme="dark"] .cold-line{stroke:var(--pistachio)}
+.cold-hum{fill:none;stroke:#C9A96E;stroke-width:1.6;stroke-dasharray:4 4}
+.cold-pt{fill:#fff;stroke:var(--ink,#1D2A21);stroke-width:2}
+html[data-theme="dark"] .cold-pt{fill:#18221C;stroke:var(--pistachio)}
+.cold-pt.bad{fill:#D96B5F;stroke:#fff}
+.cold-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--mid);padding:4px 8px 0}
+.cold-legend i{display:inline-block;width:14px;height:4px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.lg-t{background:var(--ink,#1D2A21)}.lg-b{background:rgba(198,219,126,.8);height:8px!important}.lg-h{background:#C9A96E}
+.cold-log{background:var(--paper,#F7F8F3);border-radius:16px;padding:10px 10px 6px;display:flex;flex-direction:column;min-height:0}
+html[data-theme="dark"] .cold-log{background:rgba(255,255,255,.03)}
+.cold-log-h{font:700 12.5px var(--font-ui);padding:2px 4px 6px}
+.cold-evs{overflow-y:auto;max-height:236px;display:flex;flex-direction:column}
+.cold-ev{display:grid;grid-template-columns:22px 1fr auto auto;gap:8px;align-items:start;padding:7px 4px;border-top:1px solid var(--line,rgba(29,42,33,.07));font-size:12px}
+.cold-ev:first-child{border-top:none}
+.cold-ev .ic{font-size:14px;line-height:1.2}
+.cold-ev b{display:block;font-weight:700}
+.cold-ev div span{color:var(--mid);font-size:11px}
+.cold-ev time{color:var(--mid);font-size:11px;white-space:nowrap}
+.cold-ev.bad b{color:#9A3B31}
+.cold-empty{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:6px 2px;font-size:12.5px;color:var(--mid)}
+.cold-empty b{color:var(--charcoal);font:700 14px var(--font-ui)}
+.cold-empty.sm{padding:30px 10px;align-items:center}
+.chip-t{font-weight:700;color:var(--sage-m);margin-left:2px}
+.shp-chip.on .chip-t{color:var(--pistachio,#DCEBA4)}
+.chip-t.bad{color:#D96B5F!important}.chip-t.old{opacity:.55}
+.cold-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.cold-form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cold-form label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;color:var(--mid)}
+.cold-form label.full{grid-column:1/-1}
+.cold-form .inp{font-size:15px;padding:11px 14px}
+.cold-hint{font-size:12px;color:var(--mid);line-height:1.5;margin-top:10px}
+.cold-stages{display:flex;flex-direction:column;gap:6px}
+.cold-stage{display:flex;align-items:center;gap:12px;text-align:left;padding:11px 14px;border-radius:14px;border:1px solid var(--line,rgba(29,42,33,.1));
+  background:#fff;cursor:pointer;font:600 14px var(--font-ui);color:var(--charcoal);transition:background .15s,border-color .15s}
+html[data-theme="dark"] .cold-stage{background:rgba(255,255,255,.04)}
+.cold-stage:hover:not(:disabled){border-color:var(--sage-m);background:rgba(220,235,164,.3)}
+.cold-stage i{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-style:normal;font-weight:800;
+  background:rgba(29,42,33,.06);flex-shrink:0}
+.cold-stage span{display:flex;flex-direction:column}
+.cold-stage small{font-weight:500;color:var(--mid);font-size:11px}
+.cold-stage.done{opacity:.6;cursor:default}
+.cold-stage.done i{background:var(--ink,#1D2A21);color:var(--pistachio,#DCEBA4)}
+@media (max-width:1100px){.cold-grid{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:700px){.cold-tiles{grid-template-columns:1fr 1fr}.cold-tile.wide{grid-column:1/-1}.cold-form{grid-template-columns:1fr}}
 /* ── Аммик в пустых экранах и подсказках ── */
 .amm-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:34px 16px 40px;color:var(--mid)}
 .amm-empty img{height:150px;width:auto;margin-bottom:10px;animation:ammBob 3.2s ease-in-out infinite}
@@ -1039,7 +1215,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <p class="lead">Прямые поставки цветов из Куньмина в Россию и страны СНГ. Личный кабинет для оптовых клиентов: актуальные цены, заказы, отгрузки и документы — в одном месте.</p>
       <div class="login-badges">
         <div class="hero-pill p1"><img src="data:image/jpeg;base64,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" alt=""> Свежий срез каждую неделю</div>
-        <div class="hero-pill p2">Cold Chain · +2…+4°C на всём пути</div>
+        <div class="hero-pill p2">Cold Chain · +2…+5°C на всём пути</div>
         <div class="hero-stat">
           <div class="t">Куньмин</div>
           <div class="s">Логистический хаб</div>
@@ -12639,7 +12815,15 @@ async function loadShipments() {
     shp._orders = orders.filter(o => o.shipment_id === shp.id);
     shp._docCount = docCounts[shp.id] || 0;
   });
+  // последний замер температуры по машинам в пути — для ленты
+  const moving = shipments.filter(x => x.status === 'departed').map(x => x.id);
+  if (moving.length) {
+    const { data: tr } = await sb.from('shipment_tracking').select('shipment_id,temp_c,happened_at')
+      .in('shipment_id', moving).not('temp_c', 'is', null).order('happened_at', { ascending: false }).limit(300);
+    (tr || []).forEach(r => { const x = shipments.find(s => s.id === r.shipment_id); if (x && !x._lastT && r.temp_c != null) x._lastT = { t: +r.temp_c, at: r.happened_at }; });
+  }
   shipmentsData = shipments;
+  SHPV.trk = {};   // этапы пути перечитываем после каждой загрузки
   renderShipments();
 }
 
@@ -12686,70 +12870,427 @@ function shipmentLoad(shp) {
   return { m3, boxes, est, max, pct, color, label };
 }
 
+// ══════════════════════════════════════════════════════════
+//  ОТГРУЗКИ — «диспетчерская»: лента машин, фура с загрузкой по заказам,
+//  цифры, список заказов и путь машины по этапам
+// ══════════════════════════════════════════════════════════
+const SHPV = { sel: null, trk: {} };
+const SHP_COLORS = ['#C6DB7E', '#A8C99A', '#E6CC92', '#A9CBC4', '#DDBBA3', '#BCC8E3', '#E8DCA6', '#C8BCDD', '#9FC2A8', '#E3C2C2'];
+// [этап в трекинге, короткое имя, день пути от выезда (летом)] — функция: список этапов объявлен ниже в файле
+const shpStages = () => [
+  [CHECKPOINT_PRESETS[0], 'Куньмин', 0], [CHECKPOINT_PRESETS[1], 'Хоргос', 3], [CHECKPOINT_PRESETS[2], 'Таможня', 4],
+  [CHECKPOINT_PRESETS[3], 'Казахстан', 5], [CHECKPOINT_PRESETS[4], 'Россия', 6], [CHECKPOINT_PRESETS[5], 'Прибытие', 7],
+];
+const _shpDM = d => d ? new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) : '—';
+function _shpPick(list) {
+  if (list.some(x => x.id === SHPV.sel)) return SHPV.sel;
+  return (list.find(x => x.status === 'departed') || list.find(x => x.status === 'forming') || list[0]).id;
+}
+
 function renderShipments() {
   const wrap = document.getElementById('shipments-list');
   if (!wrap) return;
   const sf = document.getElementById('shp-status-filter')?.value;
   const list = sf ? shipmentsData.filter(x => x.status === sf) : shipmentsData;
-  const isMgrLocal = currentUser?.role === 'manager';
-
   if (!list.length) {
-    wrap.innerHTML = '<div class="empty-state"><div class="icon">🚚</div><div>Отгрузок пока нет / 暂无车次</div></div>';
+    wrap.innerHTML = `<div class="empty-state"><div class="icon">🚚</div><p>Отгрузок пока нет / 暂无车次</p></div>`;
     return;
   }
-
-  wrap.innerHTML = list.map(shp => {
-    const st = SHP_STATUS[shp.status] || SHP_STATUS.forming;
-    const L = shipmentLoad(shp);
-    const rest = L.max - L.m3;
-    const ordersHTML = (shp._orders || []).map(o => {
-      const c = orderCubes(o.order_items);
-      const bx = (o.order_items||[]).reduce((s2,it) => s2 + (parseInt(it.qty_boxes)||0), 0);
-      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;flex-wrap:wrap">
-        <b>${o.order_number}</b>
-        <span style="color:var(--mid)">${o.client?.company_name || o.client?.login || ''}</span>
-        <span style="flex:1"></span>
-        <span style="color:var(--mid)">📦 ${bx} кор · ${c.est?'≈':''}${fmtM3(c.m3)} м³</span>
-        ${isMgrLocal && shp.status === 'forming'
-          ? `<button class="btn-icon" title="Открепить / 移除" onclick="detachOrderFromShipment('${o.id}', ${shp.id})">×</button>` : ''}
-      </div>`;
-    }).join('') || '<div style="padding:10px;color:var(--light);font-size:12px">Заказы не прикреплены / 未挂单</div>';
-
-    return `<div class="card" style="margin-bottom:14px;border-left:4px solid ${L.color}">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-        <b style="font-size:15px">${shp.ship_number}</b>
-        <span style="font-size:12px;color:var(--mid)">${st.icon} ${st.ru} / ${st.cn}</span>
-        <span style="font-size:12px;color:var(--mid)">📅 ${shp.ship_date || '—'}</span>
-        <span style="font-size:12px;color:var(--mid)">🚛 ${shp.truck_name || ''} · ${shp.truck_volume_m3} м³ (лимит ${shp.max_load_m3} м³)</span>
-        ${shp.direction ? `<span style="font-size:12px;color:var(--mid)">➡ ${shp.direction}</span>` : ''}
-        <span style="flex:1"></span>
-        <button class="btn btn-secondary btn-sm" onclick="showTrackingModal(${shp.id})">📍 Трекинг / 追踪</button>
-        ${shp._docCount ? `<button class="btn btn-secondary btn-sm" onclick="showReceivingDocsModal(${shp.id})">📄 Акты (${shp._docCount})</button>` : ''}
-        ${isMgrLocal ? `
-          <select class="inp" style="width:auto;padding:5px 8px;font-size:11px" onchange="setShipmentStatus(${shp.id}, this.value)">
-            ${Object.entries(SHP_STATUS).map(([k,v]) => `<option value="${k}" ${shp.status===k?'selected':''}>${v.icon} ${v.ru}</option>`).join('')}
-          </select>
-          ${shp.status === 'forming' ? `<button class="btn btn-primary btn-sm" onclick="showAttachOrdersModal(${shp.id})">+ Заказы / 挂单</button>` : ''}
-          ${isScopedMgr() ? '' : `<button class="btn btn-gold btn-sm" onclick="openPurchase(${shp.id})">🛒 Закуп / 采购</button>`}
-          ${!(shp._orders||[]).length ? `<button class="btn btn-danger btn-sm" onclick="deleteShipment(${shp.id})">🗑</button>` : ''}
-        ` : ''}
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
-        <div style="flex:1;min-width:220px;height:14px;background:var(--sage-l);border-radius:7px;overflow:hidden">
-          <div style="width:${Math.min(L.pct,100)}%;height:100%;background:${L.color};transition:width .3s"></div>
-        </div>
-        <span style="font-size:12px;font-weight:700;white-space:nowrap">${L.est?'≈':''}${fmtM3(L.m3)} / ${shp.max_load_m3} м³ (${L.pct.toFixed(0)}%)</span>
-        <span style="font-size:12px;white-space:nowrap">${L.label}</span>
-        <span style="font-size:11px;color:${rest < 0 ? 'var(--red)' : 'var(--mid)'};white-space:nowrap">
-          ${rest >= 0 ? 'Остаток: ' + fmtM3(rest) + ' м³' : 'Превышение: ' + fmtM3(-rest) + ' м³'}
-        </span>
-        <span style="font-size:12px;color:var(--mid)">📦 ${L.boxes} кор · ${(shp._orders||[]).length} зак.</span>
-      </div>
-      ${L.est ? '<div style="font-size:10px;color:var(--gold);margin-bottom:6px">≈ у части позиций нет размера короба — объём оценён по 0.12 м³/кор</div>' : ''}
-      <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">${ordersHTML}</div>
-      ${shp.note ? `<div style="font-size:11px;color:var(--mid);margin-top:6px">📝 ${shp.note}</div>` : ''}
-    </div>`;
+  SHPV.sel = _shpPick(list);
+  const chips = list.map(s => {
+    const L = shipmentLoad(s), st = SHP_STATUS[s.status] || SHP_STATUS.forming;
+    return `<button class="shp-chip ${s.id === SHPV.sel ? 'on' : ''}" onclick="SHPV.sel=${s.id};renderShipments()">
+      <span class="shp-chip-n">${escHtml(s.ship_number || '—')}</span>
+      <span class="shp-chip-s">${st.icon} ${st.ru} · ${_shpDM(s.ship_date)}${s._lastT && s.status === 'departed' ? ` <b class="chip-t ${tempOk(s._lastT.t, shpNorm(s)) ? '' : 'bad'} ${(Date.now() - Date.parse(s._lastT.at)) / 36e5 >= STALE_BAD_H ? 'old' : ''}">🌡 ${_fmtT(s._lastT.t)}</b>` : ''}</span>
+      <span class="shp-chip-bar"><i style="width:${Math.min(L.pct, 100)}%;background:${L.pct > 100 ? '#D96B5F' : L.pct >= 75 ? '#D9B56A' : 'var(--sage-m)'}"></i></span>
+    </button>`;
   }).join('');
+  const shp = list.find(x => x.id === SHPV.sel);
+  wrap.innerHTML = `<div class="shp-strip">${chips}</div><div id="shp-detail">${shipmentDetailHTML(shp)}</div>`;
+  shipmentTimeline(shp);
+}
+
+
+// ── Фура: фото тягача с рефрижератором, поверх стенки кузова — блоки заказов по кубатуре ──
+// Координаты стенок кузова на картинках (в пикселях картинки 1600×383). Сцепка — для машин больше 100 м³.
+const SHP_TRUCKS = {
+  single: { src: 'truck-single.webp', w: 1600, h: 383, bays: [[404, 46, 1495, 228]] },
+  double: { src: 'truck-double.webp', w: 1600, h: 383, bays: [[292, 80, 893, 215], [988, 80, 1552, 215]] },
+};
+function shpTruckSVG(shp, orders, L, max) {
+  const vol = parseFloat(shp.truck_volume_m3) || 0;
+  const T = /сцеп|автопоезд|2\s*прицеп/i.test(shp.truck_name || '') || vol > 100 ? SHP_TRUCKS.double : SHP_TRUCKS.single;
+  const PAD = 6, GAP = 5;
+  const bays = T.bays.map(([x0, y0, x1, y1]) => ({ x0: x0 + PAD, y0: y0 + PAD, x1: x1 - PAD, y1: y1 - PAD }));
+  const totalW = bays.reduce((a, b) => a + (b.x1 - b.x0), 0);
+  const over = L.m3 > max;
+  const scale = totalW / (over ? L.m3 : max);          // пикселей на 1 м³
+  // позиция «по кубатуре» → отрезки на стенках (заказ может перейти из первого прицепа во второй)
+  const segs = (from, to) => {
+    const out = []; let acc = 0;
+    bays.forEach(b => {
+      const bw = b.x1 - b.x0, s0 = Math.max(from, acc), s1 = Math.min(to, acc + bw);
+      if (s1 > s0 + 0.5) out.push({ b, x: b.x0 + (s0 - acc), w: s1 - s0 });
+      acc += bw;
+    });
+    return out;
+  };
+  let cur = 0;
+  const blocks = orders.map((r, i) => {
+    const from = cur, to = cur + r.m3 * scale; cur = to;
+    return segs(from, to).map((g, k) => {
+      const w = Math.max(g.w - GAP, 3), x = g.x + GAP / 2, h = g.b.y1 - g.b.y0, cy = g.b.y0 + h / 2;
+      const big = w > 130 && k === 0, mid = w > 44 && k === 0;
+      const maxCh = Math.floor(w / 13);
+      return `<g class="shp-blk"><title>${escHtml(r.o.order_number)} · ${escHtml(r.name)} · ${r.boxes} кор · ${fmtM3(r.m3)} м³</title>
+        <rect x="${x}" y="${g.b.y0}" width="${w}" height="${h}" rx="10" fill="${r.color}"/>
+        ${mid ? `<text x="${x + w / 2}" y="${cy + (big ? -6 : 11)}" text-anchor="middle" class="shp-blk-t">${escHtml(big ? r.o.order_number.replace(/^ORD-\d{4}-/, '№') : String(i + 1))}</text>` : ''}
+        ${big ? `<text x="${x + w / 2}" y="${cy + 26}" text-anchor="middle" class="shp-blk-s">${escHtml(r.name.length > maxCh ? r.name.slice(0, Math.max(3, maxCh - 1)) + '…' : r.name)}</text>` : ''}</g>`;
+    }).join('');
+  }).join('');
+  // свободное место — пунктиром по каждой стенке
+  const rest = max - L.m3;
+  const free = !over && rest > 0.01 ? segs(cur, totalW).map((g, k, arr) => {
+    const w = g.w - GAP, x = g.x + GAP / 2, h = g.b.y1 - g.b.y0, cy = g.b.y0 + h / 2;
+    const label = k === arr.length - 1 || arr.length === 1;
+    const txt = w > 250 ? `свободно ${fmtM3(rest)} м³` : w > 110 ? `${(Math.round(rest * 10) / 10).toString().replace('.', ',')} м³` : '';
+    return `<rect x="${x}" y="${g.b.y0}" width="${Math.max(w, 0)}" height="${h}" rx="10" class="shp-free"/>${label && txt ? `<text x="${x + w / 2}" y="${cy + 9}" text-anchor="middle" class="shp-free-t">${txt}</text>` : ''}`;
+  }).join('') : '';
+  // перегруз: красная черта лимита и штриховка «лишнего» объёма
+  let overMark = '';
+  if (over) {
+    const limX = segs(0, max * scale).at(-1);
+    const lx = limX ? limX.x + limX.w : bays[0].x0;
+    overMark = segs(max * scale, totalW).map(g => `<rect x="${g.x}" y="${g.b.y0}" width="${g.w}" height="${g.b.y1 - g.b.y0}" rx="8" fill="url(#shpOver)"/>`).join('')
+      + `<line x1="${lx}" x2="${lx}" y1="${bays[0].y0 - 14}" y2="${bays[0].y1 + 14}" class="shp-lim"/>
+         <text x="${lx - 8}" y="${bays[0].y0 - 20}" text-anchor="end" class="shp-lim-t">лимит ${shp.max_load_m3} м³</text>`;
+  }
+  return `<svg class="shp-truck" viewBox="0 0 ${T.w} ${T.h}" role="img" aria-label="Загрузка машины ${escHtml(shp.ship_number || '')}">
+    <defs><pattern id="shpOver" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="12" height="12" fill="rgba(217,107,95,.22)"/><rect width="5" height="12" fill="rgba(217,107,95,.6)"/></pattern></defs>
+    <image href="${T.src}" x="0" y="0" width="${T.w}" height="${T.h}" class="shp-photo"/>
+    ${blocks}${free}${overMark}
+  </svg>`;
+}
+
+function shipmentDetailHTML(shp) {
+  const isMgrLocal = currentUser?.role === 'manager';
+  const st = SHP_STATUS[shp.status] || SHP_STATUS.forming;
+  const L = shipmentLoad(shp);
+  const max = L.max || 1;
+  // заказы → цвет по клиенту, кубатура
+  const clientColor = {};
+  const orders = (shp._orders || []).map(o => {
+    const c = orderCubes(o.order_items);
+    const name = o.client?.company_name || o.client?.login || '—';
+    if (!(name in clientColor)) clientColor[name] = SHP_COLORS[Object.keys(clientColor).length % SHP_COLORS.length];
+    return { o, name, m3: c.m3, est: c.est, boxes: (o.order_items || []).reduce((s, it) => s + (parseInt(it.qty_boxes) || 0), 0), color: clientColor[name] };
+  }).sort((a, b) => b.m3 - a.m3);
+  const over = L.m3 > max;
+  const rest = max - L.m3;
+
+  const truck = shpTruckSVG(shp, orders, L, max);
+
+  const tiles = [
+    ['Загрузка', `${L.est ? '≈' : ''}${fmtM3(L.m3)} <small>/ ${shp.max_load_m3} м³</small>`, `${L.pct.toFixed(0)}%`, over ? 'bad' : L.pct >= 75 ? 'warn' : 'ok'],
+    [over ? 'Перегруз' : 'Свободно', `${fmtM3(Math.abs(rest))} <small>м³</small>`, over ? 'снимите часть заказов' : `≈ ${Math.floor(Math.abs(rest) / 0.12)} кор`, over ? 'bad' : ''],
+    ['Коробок', `${L.boxes}`, `${orders.length} зак.`, ''],
+    ['Клиентов', `${Object.keys(clientColor).length}`, shp.direction ? '➡ ' + escHtml(shp.direction) : '', ''],
+  ].map(([k, v, s, cls]) => `<div class="shp-kpi ${cls}"><span>${k}</span><b>${v}</b><em>${s}</em></div>`).join('');
+
+  const list = orders.map((r, i) => `<div class="shp-ord">
+      <i style="background:${r.color}"></i>
+      <div class="shp-ord-m"><b>${escHtml(r.o.order_number)}</b><span>${escHtml(r.name)}</span></div>
+      <div class="shp-ord-v">${r.boxes} кор<br><span>${r.est ? '≈' : ''}${fmtM3(r.m3)} м³</span></div>
+      ${isMgrLocal && shp.status === 'forming' ? `<button class="shp-x" title="Открепить / 移除" onclick="detachOrderFromShipment('${r.o.id}', ${shp.id})">×</button>` : ''}
+    </div>`).join('') || `<div class="shp-empty">Заказы не прикреплены / 未挂单</div>`;
+
+  const actions = `
+    ${['manager', 'warehouse'].includes(currentUser?.role) && shp.status === 'forming' ? `<button class="btn btn-secondary btn-sm" onclick="shpDataModal(${shp.id}, 'stage')">📍 Отметить выезд</button>` : ''}
+    ${shp._docCount ? `<button class="btn btn-secondary btn-sm" onclick="showReceivingDocsModal(${shp.id})">📄 Акты (${shp._docCount})</button>` : ''}
+    ${isMgrLocal ? `
+      <select class="inp" style="width:auto;padding:6px 10px;font-size:12px" onchange="setShipmentStatus(${shp.id}, this.value)">
+        ${Object.entries(SHP_STATUS).map(([k, v]) => `<option value="${k}" ${shp.status === k ? 'selected' : ''}>${v.icon} ${v.ru}</option>`).join('')}
+      </select>
+      ${isScopedMgr() ? '' : `<button class="btn btn-gold btn-sm" onclick="openPurchase(${shp.id})">🛒 Закуп</button>`}
+      ${!(shp._orders || []).length ? `<button class="btn btn-danger btn-sm" onclick="deleteShipment(${shp.id})">🗑</button>` : ''}` : ''}`;
+
+  return `<div class="shp-card">
+    <div class="shp-head">
+      <div><div class="shp-title">${escHtml(shp.ship_number || '—')}</div>
+        <div class="shp-meta"><span class="shp-pill s-${shp.status}">${st.icon} ${st.ru} / ${st.cn}</span>
+          📅 выезд ${_shpDM(shp.ship_date)} · 🚛 ${escHtml(shp.truck_name || '')} ${shp.truck_volume_m3 ? '· ' + shp.truck_volume_m3 + ' м³' : ''}</div></div>
+      <div class="shp-actions">${actions}</div>
+    </div>
+    <div class="shp-kpis">${tiles}</div>
+    ${L.est ? '<div class="shp-note">≈ у части позиций нет размера коробки — объём оценён по 0,12 м³ на коробку</div>' : ''}
+    <div class="shp-main">
+      <div class="shp-stage">${truck}</div>
+      <div class="shp-side">
+        <div class="shp-side-h">Заказы в машине ${isMgrLocal && shp.status === 'forming' ? `<button class="btn btn-primary btn-sm" onclick="showAttachOrdersModal(${shp.id})">+ Заказы</button>` : ''}</div>
+        <div class="shp-ords">${list}</div>
+      </div>
+    </div>
+    <div class="shp-cold" id="shp-cold"><div class="loading" style="padding:20px"><div class="spinner"></div></div></div>
+    <div class="shp-route" id="shp-route"><div class="shp-route-h">Путь машины</div><div class="loading" style="padding:20px"><div class="spinner"></div></div></div>
+    ${shp.note ? `<div class="shp-note">📝 ${escHtml(shp.note)}</div>` : ''}
+  </div>`;
+}
+
+// Путь машины: этапы из трекинга + ожидаемые даты по сроку пути (зимой — до 10 дней)
+async function shipmentTimeline(shp) {
+  if (!SHPV.trk[shp.id]) await shipmentLoadTrk(shp.id);
+  const el = document.getElementById('shp-route');
+  if (!el || SHPV.sel !== shp.id) return;
+  const cold = document.getElementById('shp-cold');
+  if (cold) cold.innerHTML = shipmentColdHTML(shp, SHPV.trk[shp.id]);
+  const done = SHPV.trk[shp.id].filter(r => r.kind === 'checkpoint');
+  const SHP_STAGES = shpStages();
+  const at = t => done.find(r => r.title === t)?.happened_at;
+  const start = at(SHP_STAGES[0][0]) || (shp.ship_date ? shp.ship_date + 'T09:00:00' : null);
+  const winter = start && [10, 11, 0, 1, 2].includes(new Date(start).getMonth());
+  const k = winter ? 10 / 7 : 1;
+  let last = -1;
+  SHP_STAGES.forEach(([t], i) => { if (at(t)) last = i; });
+  const nodes = SHP_STAGES.map(([t, name, day], i) => {
+    const real = at(t);
+    const plan = start ? new Date(new Date(start).getTime() + Math.round(day * k) * 864e5) : null;
+    const late = !real && plan && Date.now() > plan.getTime() + 864e5 && i === last + 1;
+    return `<div class="shp-node ${real ? 'done' : i === last + 1 && shp.status !== 'forming' ? 'next' : ''} ${late ? 'late' : ''}">
+      <i></i><b>${name}</b><span>${real ? new Date(real).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : plan ? '≈ ' + _shpDM(plan) : '—'}</span>
+      ${late ? '<em>задерживается</em>' : ''}</div>`;
+  }).join('');
+  const pct = last < 0 ? 0 : last / (SHP_STAGES.length - 1) * 100;
+  el.innerHTML = `<div class="shp-route-h">Путь машины ${winter ? '<span>зимний срок: до 10 дней</span>' : '<span>≈ 7 дней в пути</span>'}</div>
+    <div class="shp-track"><div class="shp-rail"><i style="width:${pct}%"></i></div>${nodes}</div>`;
+}
+
+
+// ══════════════════════════════════════════════════════════
+//  СОСТОЯНИЕ ГРУЗА: температура, влажность, где машина, журнал
+//  Источники: GPS-отчёт с сайта трекинга (kind 'gps', в note — JSON с локацией/влажностью/ETA),
+//  ручной замер (kind 'temp' или 'gps' с manual:true), этапы пути (kind 'checkpoint').
+// ══════════════════════════════════════════════════════════
+const STALE_WARN_H = 6, STALE_BAD_H = 12;     // данные старше — «давно не обновлялось»
+const _num = v => { const m = String(v ?? '').replace(',', '.').match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+const _meta = r => { try { return JSON.parse(r.note || '{}') || {}; } catch (e) { return {}; } };
+const _ago = iso => {
+  const h = (Date.now() - Date.parse(iso)) / 36e5;
+  if (h < 1) return Math.max(1, Math.round(h * 60)) + ' мин назад';
+  if (h < 24) return Math.round(h) + ' ч назад';
+  return Math.round(h / 24) + ' дн назад';
+};
+const _fmtT = t => (t > 0 ? '+' : '') + String(Math.round(t * 10) / 10).replace('.', ',') + '°';
+// Нормы перевозки по типу груза: температура в кузове и влажность
+const CARGO_NORMS = {
+  cut:    { label: 'срезка',     t: [2, 5],   h: [75, 85] },
+  potted: { label: 'горшечные',  t: [15, 18], h: [85, 95] },
+};
+// Тип груза машины: из справочника машин (cargo), иначе по составу заказов (только горшечные → горшечные)
+function shpCargo(shp) {
+  const truck = (typeof truckTypesData !== 'undefined' ? truckTypesData : []).find(t => t.id === shp?.truck_type_id);
+  if (truck?.cargo === 'potted' || truck?.cargo === 'cut') return truck.cargo;
+  const types = new Set();
+  (shp?._orders || []).forEach(o => orderCargoTypes(o.order_items).forEach(t => types.add(t)));
+  return types.size === 1 && types.has('potted') ? 'potted' : 'cut';
+}
+const shpNorm = shp => CARGO_NORMS[shpCargo(shp)];
+const tempOk = (t, n = CARGO_NORMS.cut) => t >= n.t[0] && t <= n.t[1];
+const humOk = (h, n = CARGO_NORMS.cut) => h >= n.h[0] && h <= n.h[1];
+const _rng = (a, u) => `${a[0] > 0 ? '+' : ''}${a[0]}…${a[1] > 0 ? '+' : ''}${a[1]}${u}`;
+
+// Все замеры машины в одном виде: { at, temp, hum, loc, dist, dest, eta, src }
+function shpReadings(rows) {
+  return (rows || []).filter(r => r.kind === 'gps' || r.kind === 'temp').map(r => {
+    const m = r.kind === 'gps' ? _meta(r) : {};
+    return { at: r.happened_at, temp: r.temp_c != null ? +r.temp_c : null, hum: _num(m.humidity),
+      loc: m.locationRu || m.location || '', dist: m.distDest || '', dest: m.destNameRu || m.destName || '', eta: m.eta || '',
+      src: r.kind === 'temp' || m.manual ? 'вручную' : 'GPS', note: r.kind === 'temp' ? r.note : m.comment || '' };
+  }).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
+function shipmentColdHTML(shp, rows) {
+  const rd = shpReadings(rows);
+  const canEdit = ['manager', 'warehouse'].includes(currentUser?.role);
+  if (!rd.length) return `<div class="cold-empty">
+      <b>Данных о температуре пока нет</b>
+      <span>${shp.status === 'forming' ? 'Появятся после выезда машины.' : 'Вставьте отчёт с сайта GPS-трекинга или внесите замер вручную — плитки и график заполнятся сами.'}</span>
+      ${canEdit && shp.status !== 'forming' ? `<button class="btn btn-primary btn-sm" onclick="shpDataModal(${shp.id})">＋ Данные по машине</button>` : ''}
+    </div>`;
+  const last = rd[rd.length - 1];
+  const lastT = [...rd].reverse().find(r => r.temp != null);
+  const lastH = [...rd].reverse().find(r => r.hum != null);
+  const lastL = [...rd].reverse().find(r => r.loc);
+  const lastD = [...rd].reverse().find(r => r.dist || r.eta);
+  const ageH = (Date.now() - Date.parse(last.at)) / 36e5;
+  const fresh = shp.status === 'delivered' ? '' : ageH >= STALE_BAD_H ? 'bad' : ageH >= STALE_WARN_H ? 'warn' : 'ok';
+  const N = shpNorm(shp);
+  const outs = rd.filter(r => (r.temp != null && !tempOk(r.temp, N)) || (r.hum != null && !humOk(r.hum, N)));
+  const tiles = `
+    <div class="cold-tile ${lastT ? (tempOk(lastT.temp, N) ? 'ok' : 'bad') : ''}"><span>Температура</span>
+      <b>${lastT ? _fmtT(lastT.temp) + 'C' : '—'}</b><em>${lastT ? (tempOk(lastT.temp, N) ? 'в норме ' : 'вне нормы ') + _rng(N.t, '°') : 'норма ' + _rng(N.t, '°')}</em></div>
+    <div class="cold-tile ${lastH ? (humOk(lastH.hum, N) ? 'ok' : 'bad') : ''}"><span>Влажность</span><b>${lastH ? String(lastH.hum).replace('.', ',') + '%' : '—'}</b>
+      <em>${lastH ? (humOk(lastH.hum, N) ? 'в норме ' : 'вне нормы ') + N.h[0] + '–' + N.h[1] + '%' : 'норма ' + N.h[0] + '–' + N.h[1] + '%'}</em></div>
+    <div class="cold-tile wide"><span>Где сейчас</span><b class="loc">${escHtml(lastL?.loc || '—')}</b>
+      <em class="fr-${fresh}">${shp.status === 'delivered' ? 'машина прибыла' : `обновлено ${_ago(last.at)}${fresh === 'bad' ? ' — нет свежих данных' : fresh === 'warn' ? ' — пора обновить' : ''}`}</em></div>
+    <div class="cold-tile"><span>${lastD?.dest ? 'До ' + escHtml(lastD.dest) : 'До назначения'}</span><b>${escHtml(lastD?.dist || '—')}</b><em>${lastD?.eta ? 'ETA ' + escHtml(lastD.eta) : ''}</em></div>`;
+  return `<div class="cold-head"><div class="shp-route-h" style="margin:0">Состояние груза <span class="cold-kind">${N.label}: ${_rng(N.t, '°C')} · ${N.h[0]}–${N.h[1]}%</span> ${outs.length ? `<span class="cold-alert">${outs.length} ${outs.length === 1 ? 'замер' : outs.length < 5 ? 'замера' : 'замеров'} вне нормы</span>` : '<span>без нарушений</span>'}</div>
+      ${canEdit ? `<button class="btn btn-primary btn-sm" onclick="shpDataModal(${shp.id})">＋ Данные по машине</button>` : ''}</div>
+    <div class="cold-tiles">${tiles}</div>
+    <div class="cold-grid">
+      <div class="cold-chart">${coldChartSVG(rd, shp)}</div>
+      <div class="cold-log"><div class="cold-log-h">Журнал</div>${shipmentJournalHTML(rows, shp)}</div>
+    </div>`;
+}
+
+// График температуры за рейс: полоса коридора, линия, точки вне коридора красные; влажность — пунктиром
+function coldChartSVG(rd, shp) {
+  const pts = rd.filter(r => r.temp != null);
+  const N = shpNorm(shp), TEMP_MIN = N.t[0], TEMP_MAX = N.t[1];
+  if (!pts.length) return '<div class="cold-empty sm">Замеров температуры нет</div>';
+  const W = 640, H = 200, L = 40, R = 40, T = 14, B = 26;
+  const t0 = Math.min(Date.parse(pts[0].at), shp.ship_date ? Date.parse(shp.ship_date) : Infinity);
+  const t1 = Math.max(Date.parse(pts[pts.length - 1].at), t0 + 864e5);
+  const lo = Math.min(TEMP_MIN - 4, ...pts.map(p => p.temp)) - 1, hi = Math.max(TEMP_MAX + 6, ...pts.map(p => p.temp)) + 1;
+  const X = t => L + (Date.parse(t) - t0) / (t1 - t0) * (W - L - R);
+  const Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  const YH = v => T + (100 - Math.max(50, Math.min(100, v))) / 50 * (H - T - B);   // влажность: шкала 50–100 %
+  const humBand = `<rect x="${L}" y="${YH(N.h[1])}" width="${W - L - R}" height="${YH(N.h[0]) - YH(N.h[1])}" class="cold-hband"/>`;
+  const ticks = []; for (let v = Math.ceil(lo / 4) * 4; v <= hi; v += 4) ticks.push(v);
+  const days = []; for (let d = new Date(t0); d.getTime() <= t1; d = new Date(d.getTime() + 864e5)) days.push(d);
+  const step = Math.max(1, Math.ceil(days.length / 8));
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.at).toFixed(1)} ${Y(p.temp).toFixed(1)}`).join(' ');
+  const hum = rd.filter(r => r.hum != null);
+  const humLine = hum.length > 1 ? hum.map((p, i) => `${i ? 'L' : 'M'}${X(p.at).toFixed(1)} ${YH(p.hum).toFixed(1)}`).join(' ') : '';
+  return `<svg viewBox="0 0 ${W} ${H}" class="cold-svg" role="img" aria-label="Температура в кузове за рейс">
+    <rect x="${L}" y="${Y(TEMP_MAX)}" width="${W - L - R}" height="${Y(TEMP_MIN) - Y(TEMP_MAX)}" class="cold-band"/>
+    <text x="${W - R + 4}" y="${Y(TEMP_MAX) + 4}" class="cold-ax">+${TEMP_MAX}°</text><text x="${W - R + 4}" y="${Y(TEMP_MIN) + 4}" class="cold-ax">+${TEMP_MIN}°</text>
+    ${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="cold-grid-l"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end" class="cold-ax">${v}°</text>`).join('')}
+    ${days.filter((_, i) => i % step === 0).map(d => `<text x="${X(d.toISOString())}" y="${H - 6}" text-anchor="middle" class="cold-ax">${_shpDM(d)}</text>`).join('')}
+    ${humLine ? `<path d="${humLine}" class="cold-hum"/><text x="${L + 4}" y="${T + 10}" class="cold-ax" style="fill:#B8902F">влажн. 50–100 %</text>` : ''}
+    <path d="${line}" class="cold-line"/>
+    ${pts.map(p => `<circle cx="${X(p.at).toFixed(1)}" cy="${Y(p.temp).toFixed(1)}" r="${tempOk(p.temp, N) ? 3.5 : 5}" class="${tempOk(p.temp, N) ? 'cold-pt' : 'cold-pt bad'}"><title>${_fmtT(p.temp)}C · ${new Date(p.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${p.loc ? ' · ' + escHtml(p.loc) : ''}</title></circle>`).join('')}
+  </svg>
+  <div class="cold-legend"><span><i class="lg-t"></i>температура в кузове</span><span><i class="lg-b"></i>норма t° ${_rng(N.t, '°')}</span>${humLine ? `<span><i class="lg-h"></i>влажность, % (норма ${N.h[0]}–${N.h[1]}%)</span>` : ''}</div>`;
+}
+
+// Журнал рейса: этапы, отчёты GPS, ручные замеры — новые сверху
+function shipmentJournalHTML(rows, shp) {
+  const canEdit = ['manager', 'warehouse'].includes(currentUser?.role);
+  const N = shpNorm(shp);
+  const items = [...(rows || [])].sort((a, b) => Date.parse(b.happened_at) - Date.parse(a.happened_at)).map(r => {
+    const m = r.kind === 'gps' ? _meta(r) : {};
+    const t = r.temp_c != null ? +r.temp_c : null;
+    const hv = _num(m.humidity);
+    const bad = (t != null && !tempOk(t, N)) || (hv != null && !humOk(hv, N));
+    const when = new Date(r.happened_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    let icon, head, sub;
+    if (r.kind === 'checkpoint') { icon = '📍'; head = escHtml(String(r.title || '').split(' / ')[0]); sub = r.note ? escHtml(r.note) : 'этап пути · клиенты получили уведомление'; }
+    else {
+      icon = bad ? '🔴' : '🌡';
+      head = [t != null ? _fmtT(t) + 'C' : '', m.humidity ? 'влажн. ' + escHtml(m.humidity) : ''].filter(Boolean).join(' · ') || 'Отметка';
+      sub = [escHtml(m.locationRu || m.location || ''), r.kind === 'temp' || m.manual ? 'вручную' : 'GPS', escHtml(r.kind === 'temp' ? r.note || '' : m.comment || '')].filter(Boolean).join(' · ');
+    }
+    return `<div class="cold-ev ${bad ? 'bad' : ''}"><span class="ic">${icon}</span>
+      <div><b>${head}</b><span>${sub}</span></div><time>${when}</time>
+      ${canEdit && r.id ? `<button class="shp-x" title="Удалить запись" onclick="shpDelRow(${r.id}, ${shp.id})">×</button>` : ''}</div>`;
+  });
+  if (!items.length) return '<div class="shp-empty">Записей пока нет</div>';
+  return `<div class="cold-evs">${items.slice(0, 40).join('')}</div>`;
+}
+
+async function shpDelRow(id, shpId) {
+  if (!confirm('Удалить эту запись из журнала рейса?')) return;
+  const { error } = await sb.from('shipment_tracking').delete().eq('id', id);
+  if (error) { toast('❌ ' + error.message); return; }
+  delete SHPV.trk[shpId]; renderShipments();
+}
+
+// ── Окно «Данные по машине» (для Юры и менеджеров) ──
+function shpDataModal(shpId, tab = 'manual') {
+  const shp = shipmentsData.find(x => x.id === shpId);
+  const done = new Set((SHPV.trk[shpId] || []).filter(r => r.kind === 'checkpoint').map(r => r.title));
+  const tabs = [['manual', '🌡 Замер вручную'], ['gps', '📡 Отчёт GPS'], ['stage', '📍 Этап пути']];
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">Данные по машине ${escHtml(shp?.ship_number || '')}</div>
+    <div class="cold-tabs">${tabs.map(([k, l]) => `<button class="wh-tab ${k === tab ? 'active' : ''}" onclick="shpDataModal(${shpId}, '${k}')">${l}</button>`).join('')}</div>
+    ${tab === 'manual' ? `
+      <div class="cold-form">
+        <label>Температура в кузове, °C<input class="inp" id="cd-t" type="number" step="0.1" inputmode="decimal" placeholder="например 3.5"></label>
+        <label>Влажность, %<input class="inp" id="cd-h" type="number" step="1" inputmode="numeric" placeholder="например 90"></label>
+        <label class="full">Где машина<input class="inp" id="cd-l" placeholder="город, трасса или «стоянка в Хоргосе»"></label>
+        <label class="full">Комментарий<input class="inp" id="cd-c" placeholder="необязательно: «водитель прислал фото табло»"></label>
+        <label class="full">Когда<input class="inp" id="cd-at" type="datetime-local" value="${new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16)}"></label>
+      </div>
+      <div class="cold-hint">Норма для этой машины (${shpNorm(shp).label}): ${_rng(shpNorm(shp).t, ' °C')}, влажность ${shpNorm(shp).h[0]}–${shpNorm(shp).h[1]}%. Если замер выйдет за норму, менеджеры сразу получат оповещение.</div>
+      <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена</button><button class="btn btn-primary" id="cd-save" onclick="shpSaveManual(${shpId})">Записать замер</button></div>`
+    : tab === 'gps' ? `
+      <div class="cold-hint" style="margin-top:4px">Скопируйте отчёт с сайта GPS-трекинга (можно сразу по нескольким машинам) — система сама разберёт температуру, влажность, место и расстояние и переведёт адрес на русский.</div>
+      <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена</button><button class="btn btn-primary" onclick="showGpsReportModal()">Вставить отчёт GPS</button></div>`
+    : `
+      <div class="cold-stages">${CHECKPOINT_PRESETS.map((c, i) => `<button class="cold-stage ${done.has(c) ? 'done' : ''}" ${done.has(c) ? 'disabled' : ''} onclick="shpMarkStage(${shpId}, ${i})">
+        <i>${done.has(c) ? '✓' : i + 1}</i><span>${escHtml(c.split(' / ')[0])}<small>${escHtml(c.split(' / ')[1] || '')}</small></span></button>`).join('')}</div>
+      <div class="cold-hint">Отмеченный этап сразу уходит клиентам этой машины — в систему и в Telegram. «Прибыла к клиенту» запускает 3 дня на приёмку и претензии.</div>
+      <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Готово</button></div>`}`;
+  openModal();
+}
+
+async function shpSaveManual(shpId) {
+  const t = _num(document.getElementById('cd-t').value), h = _num(document.getElementById('cd-h').value);
+  const loc = document.getElementById('cd-l').value.trim(), com = document.getElementById('cd-c').value.trim();
+  const atV = document.getElementById('cd-at').value;
+  if (t == null && h == null && !loc) { toast('Заполните хотя бы температуру, влажность или место'); return; }
+  if (t != null && (t < -30 || t > 45)) { toast('Проверьте температуру — похоже на опечатку'); return; }
+  const btn = document.getElementById('cd-save'); btn.disabled = true;
+  const at = atV ? new Date(atV).toISOString() : new Date().toISOString();
+  const { error } = await sb.from('shipment_tracking').insert({
+    shipment_id: shpId, kind: 'gps', title: 'Замер вручную', temp_c: t,
+    note: JSON.stringify({ manual: true, humidity: h != null ? h + '%' : '', location: loc, locationRu: loc, comment: com }),
+    happened_at: at, created_by: currentUser?.id || null,
+  });
+  btn.disabled = false;
+  if (error) { toast('❌ ' + error.message); return; }
+  const N = shpNorm(shipmentsData.find(x => x.id === shpId));
+  const badT = t != null && !tempOk(t, N), badH = h != null && !humOk(h, N);
+  if (badT || badH) shpTempAlert(shpId, badT ? t : null, loc, badH ? h : null);
+  toast(badT || badH ? `⚠️ ${badT ? _fmtT(t) + 'C' : ''}${badT && badH ? ', ' : ''}${badH ? 'влажность ' + h + '%' : ''} — вне нормы, менеджеры оповещены` : '✅ Замер записан');
+  closeModal(); delete SHPV.trk[shpId]; renderShipments();
+}
+
+async function shpMarkStage(shpId, idx) {
+  const title = CHECKPOINT_PRESETS[idx];
+  if (!confirm(`Отметить этап «${title.split(' / ')[0]}»?\n\nКлиенты этой машины сразу получат уведомление.`)) return;
+  const { error } = await sb.from('shipment_tracking').insert({ shipment_id: shpId, kind: 'checkpoint', title, note: null,
+    happened_at: new Date().toISOString(), created_by: currentUser?.id || null });
+  if (error) { toast('❌ ' + error.message); return; }
+  const shp = shipmentsData.find(x => x.id === shpId);
+  if (idx === 0 && shp?.status === 'forming') await setShipmentStatus(shpId, 'departed');
+  logActivity('tracking', 'shipment', shpId, shp?.ship_number || '', '📍 ' + title);
+  notifyShipmentClients(shpId, title, null);
+  toast('✅ ' + title.split(' / ')[0] + ' — клиенты уведомлены');
+  delete SHPV.trk[shpId];
+  await shipmentLoadTrk(shpId);
+  shpDataModal(shpId, 'stage');
+  renderShipments();
+}
+
+// Выход из коридора → уведомление всем менеджерам (в систему; у кого подключён Telegram — придёт и туда)
+async function shpTempAlert(shpId, t, loc, h = null) {
+  try {
+    const shp = shipmentsData.find(x => x.id === shpId);
+    const N = shpNorm(shp);
+    const what = [t != null ? _fmtT(t) + 'C' : '', h != null ? 'влажность ' + h + '%' : ''].filter(Boolean).join(', ');
+    const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
+    const now = new Date().toISOString();
+    const rows = (mgrs || []).map(m => ({ user_id: m.id, title: `🌡 ${shp?.ship_number || 'Машина'}: ${what} — вне нормы / 温湿度异常`,
+      body: `Норма (${N.label}): ${_rng(N.t, ' °C')}, влажность ${N.h[0]}–${N.h[1]}%${loc ? ' · ' + loc : ''}`, icon: '🌡', is_read: false, created_at: now }));
+    if (rows.length) await sb.from('notifications').insert(rows);
+  } catch (e) { console.warn('temp alert', e); }
+}
+
+async function shipmentLoadTrk(shpId) {
+  const { data } = await sb.from('shipment_tracking').select('*').eq('shipment_id', shpId).order('happened_at', { ascending: true });
+  SHPV.trk[shpId] = data || [];
+  return SHPV.trk[shpId];
 }
 
 // ── Создание отгрузки ──
@@ -17452,7 +17993,7 @@ async function renderReceivingDocs(shipmentId, targetId) {
 // ══════════════════════════════════════════════════════════
 //  ЛОГИСТИЧЕСКИЙ ТРЕКЕР: чекпоинты маршрута + журнал температур
 // ══════════════════════════════════════════════════════════
-const TEMP_MIN = 2, TEMP_MAX = 8;   // коридор для срезов, °C
+const TEMP_MIN = 2, TEMP_MAX = 5;   // коридор для срезки, °C (горшечные — см. CARGO_NORMS)
 const CHECKPOINT_PRESETS = [
   'Выехала из Куньмина / 昆明出发',
   'Граница КНР (Хоргос) / 霍尔果斯口岸',
@@ -17917,12 +18458,19 @@ async function saveGpsReport() {
       happened_at: parseGpsDateTime(r.reportTime),
       created_by: currentUser?.id || null,
     });
-    if (!error) saved++; else skipped++;
+    if (!error) {
+      saved++;
+      const N = shpNorm(shipmentsData.find(x => x.id === shipmentId)), tc = firstNumber(r.temp), hc = _num(r.humidity);
+      const badT = tc != null && !tempOk(tc, N), badH = hc != null && !humOk(hc, N);
+      if (badT || badH) shpTempAlert(shipmentId, badT ? tc : null, r.locationRu || r.location, badH ? hc : null);
+    }
+    else skipped++;
   }
 
   try { localStorage.setItem('amma-gps-truck-map', JSON.stringify(savedMap)); } catch (e) {}
   toast(`✅ Сохранено точек: ${saved}${skipped ? `, пропущено (без отгрузки): ${skipped}` : ''} / 已保存`);
   closeModal();
+  if (document.getElementById('page-shipments')?.classList.contains('active')) loadShipments();
 }
 
 // ── Модалка актов приёмки по машине (для карточки отгрузки) ──
