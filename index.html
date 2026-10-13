@@ -1120,6 +1120,26 @@ html[data-theme="dark"] .cold-stage{background:rgba(255,255,255,.04)}
 .cold-stage.done i{background:var(--ink,#1D2A21);color:var(--pistachio,#DCEBA4)}
 @media (max-width:1100px){.cold-grid{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:700px){.cold-tiles{grid-template-columns:1fr 1fr}.cold-tile.wide{grid-column:1/-1}.cold-form{grid-template-columns:1fr}}
+
+/* ── Рейс с 2 холодильниками ── */
+.shp-chip-n small{font-weight:600;opacity:.65;font-size:11px}
+.shp-chip-bar + .shp-chip-bar{margin-top:2px}
+.shp-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:baseline}
+.shp-part + .shp-part{margin-top:10px;padding-top:10px;border-top:1px solid var(--line,rgba(29,42,33,.09))}
+.shp-part .shp-side-h{font-size:12.5px}
+.shp-part-b{display:flex;gap:4px}
+.shp-bay-t{font:700 22px var(--font-ui);fill:#1D2A21}
+.shp-bay-t.bad{fill:#9A3B31}
+.cold-tiles.trip{grid-template-columns:repeat(4,minmax(0,1fr))}
+.cold-tile.wide3{grid-column:span 3}
+.cold-legend i[style]{height:4px}
+.cold-part{display:contents}
+.cold-part-h{grid-column:1/-1;font:700 13px var(--font-ui);color:var(--charcoal);margin-top:4px}
+.trip-parts{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:6px}
+.trip-part{border:1px solid var(--line,rgba(29,42,33,.1));border-radius:16px;padding:10px 12px;background:#fff}
+html[data-theme="dark"] .trip-part{background:rgba(255,255,255,.04)}
+.trip-part-h{font:700 13px var(--font-ui);margin-bottom:6px}
+@media (max-width:700px){.trip-parts{grid-template-columns:1fr}.cold-tiles.trip{grid-template-columns:1fr 1fr}.cold-tile.wide3{grid-column:1/-1}}
 /* ── Аммик в пустых экранах и подсказках ── */
 .amm-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:34px 16px 40px;color:var(--mid)}
 .amm-empty img{height:150px;width:auto;margin-bottom:10px;animation:ammBob 3.2s ease-in-out infinite}
@@ -2568,7 +2588,7 @@ async function nextDocNumber(table, field, prefix) {
     .like(field, pfx + '%').order(field, {ascending: false}).limit(1);
   let maxN = 0;
   if (data && data[0]) {
-    const m = String(data[0][field]).match(/(\d+)$/);
+    const m = String(data[0][field]).slice(pfx.length).match(/^(\d+)/);
     if (m) maxN = parseInt(m[1]);
   }
   return pfx + String(maxN + 1).padStart(3, '0');
@@ -12871,182 +12891,207 @@ function shipmentLoad(shp) {
 }
 
 // ══════════════════════════════════════════════════════════
-//  ОТГРУЗКИ — «диспетчерская»: лента машин, фура с загрузкой по заказам,
-//  цифры, список заказов и путь машины по этапам
+//  ОТГРУЗКИ — «диспетчерская»: лента рейсов, фура с загрузкой по заказам,
+//  цифры, список заказов, состояние груза и путь машины по этапам.
+//  Рейс нашей фуры = 2 холодильника: две записи shipments с общим trip_id и compartment 1/2.
+//  У каждого холодильника свой груз (срезка/горшечные), объём, лимит, заказы, t° и норма;
+//  этапы пути и статус — общие (пишутся в оба).
 // ══════════════════════════════════════════════════════════
-const SHPV = { sel: null, trk: {} };
+const SHPV = { sel: null, trk: {} };   // sel — ключ рейса: 'trip:<trip_id>' или 's:<id>'
 const SHP_COLORS = ['#C6DB7E', '#A8C99A', '#E6CC92', '#A9CBC4', '#DDBBA3', '#BCC8E3', '#E8DCA6', '#C8BCDD', '#9FC2A8', '#E3C2C2'];
+const SHP_PART_LINE = ['#1D2A21', '#B07D2C'];   // цвет линии t° холодильника 1 / 2 на графике
 // [этап в трекинге, короткое имя, день пути от выезда (летом)] — функция: список этапов объявлен ниже в файле
 const shpStages = () => [
   [CHECKPOINT_PRESETS[0], 'Куньмин', 0], [CHECKPOINT_PRESETS[1], 'Хоргос', 3], [CHECKPOINT_PRESETS[2], 'Таможня', 4],
   [CHECKPOINT_PRESETS[3], 'Казахстан', 5], [CHECKPOINT_PRESETS[4], 'Россия', 6], [CHECKPOINT_PRESETS[5], 'Прибытие', 7],
 ];
 const _shpDM = d => d ? new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) : '—';
-function _shpPick(list) {
-  if (list.some(x => x.id === SHPV.sel)) return SHPV.sel;
-  return (list.find(x => x.status === 'departed') || list.find(x => x.status === 'forming') || list[0]).id;
+const shpKey = s => s.trip_id ? 'trip:' + s.trip_id : 's:' + s.id;
+const shpBaseNum = s => String(s.ship_number || '—').replace(/-Х\d$/, '');
+// Рейсы из списка отгрузок: холодильники одного рейса — вместе, по номеру холодильника
+function shpUnits(list) {
+  const m = new Map();
+  list.forEach(s => { const k = shpKey(s); if (!m.has(k)) m.set(k, []); m.get(k).push(s); });
+  return [...m.entries()].map(([key, parts]) => {
+    parts.sort((a, b) => (a.compartment || 0) - (b.compartment || 0));
+    return { key, parts, lead: parts[0], num: shpBaseNum(parts[0]), trip: parts.length > 1 };
+  });
+}
+const shpUnitByKey = key => shpUnits(shipmentsData).find(u => u.key === key);
+const partName = (u, p, i) => u.trip ? `Холодильник ${p.compartment || i + 1}` : 'Кузов';
+function _shpPick(units) {
+  if (units.some(u => u.key === SHPV.sel)) return SHPV.sel;
+  return (units.find(u => u.lead.status === 'departed') || units.find(u => u.lead.status === 'forming') || units[0]).key;
 }
 
 function renderShipments() {
   const wrap = document.getElementById('shipments-list');
   if (!wrap) return;
   const sf = document.getElementById('shp-status-filter')?.value;
-  const list = sf ? shipmentsData.filter(x => x.status === sf) : shipmentsData;
-  if (!list.length) {
+  const units = shpUnits(sf ? shipmentsData.filter(x => x.status === sf) : shipmentsData);
+  if (!units.length) {
     wrap.innerHTML = `<div class="empty-state"><div class="icon">🚚</div><p>Отгрузок пока нет / 暂无车次</p></div>`;
     return;
   }
-  SHPV.sel = _shpPick(list);
-  const chips = list.map(s => {
-    const L = shipmentLoad(s), st = SHP_STATUS[s.status] || SHP_STATUS.forming;
-    return `<button class="shp-chip ${s.id === SHPV.sel ? 'on' : ''}" onclick="SHPV.sel=${s.id};renderShipments()">
-      <span class="shp-chip-n">${escHtml(s.ship_number || '—')}</span>
-      <span class="shp-chip-s">${st.icon} ${st.ru} · ${_shpDM(s.ship_date)}${s._lastT && s.status === 'departed' ? ` <b class="chip-t ${tempOk(s._lastT.t, shpNorm(s)) ? '' : 'bad'} ${(Date.now() - Date.parse(s._lastT.at)) / 36e5 >= STALE_BAD_H ? 'old' : ''}">🌡 ${_fmtT(s._lastT.t)}</b>` : ''}</span>
-      <span class="shp-chip-bar"><i style="width:${Math.min(L.pct, 100)}%;background:${L.pct > 100 ? '#D96B5F' : L.pct >= 75 ? '#D9B56A' : 'var(--sage-m)'}"></i></span>
+  SHPV.sel = _shpPick(units);
+  const chips = units.map(u => {
+    const st = SHP_STATUS[u.lead.status] || SHP_STATUS.forming;
+    const temps = u.lead.status === 'departed' ? u.parts.filter(p => p._lastT).map(p =>
+      `<b class="chip-t ${tempOk(p._lastT.t, shpNorm(p)) ? '' : 'bad'} ${(Date.now() - Date.parse(p._lastT.at)) / 36e5 >= STALE_BAD_H ? 'old' : ''}">${_fmtT(p._lastT.t)}</b>`).join(' ') : '';
+    const bars = u.parts.map(p => { const L = shipmentLoad(p);
+      return `<span class="shp-chip-bar"><i style="width:${Math.min(L.pct, 100)}%;background:${L.pct > 100 ? '#D96B5F' : L.pct >= 75 ? '#D9B56A' : 'var(--sage-m)'}"></i></span>`; }).join('');
+    return `<button class="shp-chip ${u.key === SHPV.sel ? 'on' : ''}" onclick="SHPV.sel='${u.key}';renderShipments()">
+      <span class="shp-chip-n">${escHtml(u.num)}${u.trip ? ' <small>· 2 холодильника</small>' : ''}</span>
+      <span class="shp-chip-s">${st.icon} ${st.ru} · ${_shpDM(u.lead.ship_date)}${temps ? ' · 🌡 ' + temps : ''}</span>
+      ${bars}
     </button>`;
   }).join('');
-  const shp = list.find(x => x.id === SHPV.sel);
-  wrap.innerHTML = `<div class="shp-strip">${chips}</div><div id="shp-detail">${shipmentDetailHTML(shp)}</div>`;
-  shipmentTimeline(shp);
+  const u = units.find(x => x.key === SHPV.sel);
+  wrap.innerHTML = `<div class="shp-strip">${chips}</div><div id="shp-detail">${shipmentDetailHTML(u)}</div>`;
+  shipmentTimeline(u);
 }
 
-
-// ── Фура: фото тягача с рефрижератором, поверх стенки кузова — блоки заказов по кубатуре ──
-// Координаты стенок кузова на картинках (в пикселях картинки 1600×383). Сцепка — для машин больше 100 м³.
+// ── Фура: фото тягача с рефрижератором; на каждой стенке кузова — заказы своего холодильника ──
+// Координаты стенок кузова на картинках (в пикселях картинки 1600×383)
 const SHP_TRUCKS = {
   single: { src: 'truck-single.webp', w: 1600, h: 383, bays: [[404, 46, 1495, 228]] },
   double: { src: 'truck-double.webp', w: 1600, h: 383, bays: [[292, 80, 893, 215], [988, 80, 1552, 215]] },
 };
-function shpTruckSVG(shp, orders, L, max) {
-  const vol = parseFloat(shp.truck_volume_m3) || 0;
-  const T = /сцеп|автопоезд|2\s*прицеп/i.test(shp.truck_name || '') || vol > 100 ? SHP_TRUCKS.double : SHP_TRUCKS.single;
+// loads: [{ orders, m3, max, label }] — по одному на стенку
+function shpTruckSVG(u, loads) {
+  const T = loads.length > 1 ? SHP_TRUCKS.double : SHP_TRUCKS.single;
   const PAD = 6, GAP = 5;
-  const bays = T.bays.map(([x0, y0, x1, y1]) => ({ x0: x0 + PAD, y0: y0 + PAD, x1: x1 - PAD, y1: y1 - PAD }));
-  const totalW = bays.reduce((a, b) => a + (b.x1 - b.x0), 0);
-  const over = L.m3 > max;
-  const scale = totalW / (over ? L.m3 : max);          // пикселей на 1 м³
-  // позиция «по кубатуре» → отрезки на стенках (заказ может перейти из первого прицепа во второй)
-  const segs = (from, to) => {
-    const out = []; let acc = 0;
-    bays.forEach(b => {
-      const bw = b.x1 - b.x0, s0 = Math.max(from, acc), s1 = Math.min(to, acc + bw);
-      if (s1 > s0 + 0.5) out.push({ b, x: b.x0 + (s0 - acc), w: s1 - s0 });
-      acc += bw;
-    });
-    return out;
-  };
-  let cur = 0;
-  const blocks = orders.map((r, i) => {
-    const from = cur, to = cur + r.m3 * scale; cur = to;
-    return segs(from, to).map((g, k) => {
-      const w = Math.max(g.w - GAP, 3), x = g.x + GAP / 2, h = g.b.y1 - g.b.y0, cy = g.b.y0 + h / 2;
-      const big = w > 130 && k === 0, mid = w > 44 && k === 0;
-      const maxCh = Math.floor(w / 13);
+  const out = loads.map((ld, bi) => {
+    const [x0, y0, x1, y1] = T.bays[bi];
+    const b = { x0: x0 + PAD, y0: y0 + PAD, x1: x1 - PAD, y1: y1 - PAD };
+    const W = b.x1 - b.x0, h = b.y1 - b.y0, cy = b.y0 + h / 2;
+    const over = ld.m3 > ld.max;
+    const scale = W / (over ? ld.m3 : (ld.max || 1));
+    let x = b.x0;
+    const blocks = ld.orders.map((r, i) => {
+      const w = Math.max(r.m3 * scale - GAP, 3), bx = x + GAP / 2; x += r.m3 * scale;
+      const big = w > 130, mid = w > 44, maxCh = Math.floor(w / 13);
       return `<g class="shp-blk"><title>${escHtml(r.o.order_number)} · ${escHtml(r.name)} · ${r.boxes} кор · ${fmtM3(r.m3)} м³</title>
-        <rect x="${x}" y="${g.b.y0}" width="${w}" height="${h}" rx="10" fill="${r.color}"/>
-        ${mid ? `<text x="${x + w / 2}" y="${cy + (big ? -6 : 11)}" text-anchor="middle" class="shp-blk-t">${escHtml(big ? r.o.order_number.replace(/^ORD-\d{4}-/, '№') : String(i + 1))}</text>` : ''}
-        ${big ? `<text x="${x + w / 2}" y="${cy + 26}" text-anchor="middle" class="shp-blk-s">${escHtml(r.name.length > maxCh ? r.name.slice(0, Math.max(3, maxCh - 1)) + '…' : r.name)}</text>` : ''}</g>`;
+        <rect x="${bx}" y="${b.y0}" width="${w}" height="${h}" rx="10" fill="${r.color}"/>
+        ${mid ? `<text x="${bx + w / 2}" y="${cy + (big ? -6 : 11)}" text-anchor="middle" class="shp-blk-t">${escHtml(big ? r.o.order_number.replace(/^ORD-\d{4}-/, '№') : String(i + 1))}</text>` : ''}
+        ${big ? `<text x="${bx + w / 2}" y="${cy + 26}" text-anchor="middle" class="shp-blk-s">${escHtml(r.name.length > maxCh ? r.name.slice(0, Math.max(3, maxCh - 1)) + '…' : r.name)}</text>` : ''}</g>`;
     }).join('');
+    const rest = ld.max - ld.m3, fw = b.x1 - x - GAP;
+    const free = !over && rest > 0.01 && fw > 4 ? `<rect x="${x + GAP / 2}" y="${b.y0}" width="${fw}" height="${h}" rx="10" class="shp-free"/>
+      ${fw > 250 ? `<text x="${x + GAP / 2 + fw / 2}" y="${cy + 9}" text-anchor="middle" class="shp-free-t">свободно ${fmtM3(rest)} м³</text>`
+        : fw > 110 ? `<text x="${x + GAP / 2 + fw / 2}" y="${cy + 9}" text-anchor="middle" class="shp-free-t">${(Math.round(rest * 10) / 10).toString().replace('.', ',')} м³</text>` : ''}` : '';
+    const lx = b.x0 + ld.max * scale;
+    const overMark = over ? `<rect x="${lx}" y="${b.y0}" width="${b.x1 - lx}" height="${h}" rx="8" fill="url(#shpOver)"/>
+      <line x1="${lx}" x2="${lx}" y1="${b.y0 - 10}" y2="${b.y1 + 10}" class="shp-lim"/>` : '';
+    const tag = loads.length > 1 || over ? `<text x="${b.x0 + 4}" y="${b.y0 - 16}" class="shp-bay-t ${over ? 'bad' : ''}">${escHtml(ld.label)}${over ? ` · перегруз, лимит ${ld.max} м³` : ''}</text>` : '';
+    return blocks + free + overMark + tag;
   }).join('');
-  // свободное место — пунктиром по каждой стенке
-  const rest = max - L.m3;
-  const free = !over && rest > 0.01 ? segs(cur, totalW).map((g, k, arr) => {
-    const w = g.w - GAP, x = g.x + GAP / 2, h = g.b.y1 - g.b.y0, cy = g.b.y0 + h / 2;
-    const label = k === arr.length - 1 || arr.length === 1;
-    const txt = w > 250 ? `свободно ${fmtM3(rest)} м³` : w > 110 ? `${(Math.round(rest * 10) / 10).toString().replace('.', ',')} м³` : '';
-    return `<rect x="${x}" y="${g.b.y0}" width="${Math.max(w, 0)}" height="${h}" rx="10" class="shp-free"/>${label && txt ? `<text x="${x + w / 2}" y="${cy + 9}" text-anchor="middle" class="shp-free-t">${txt}</text>` : ''}`;
-  }).join('') : '';
-  // перегруз: красная черта лимита и штриховка «лишнего» объёма
-  let overMark = '';
-  if (over) {
-    const limX = segs(0, max * scale).at(-1);
-    const lx = limX ? limX.x + limX.w : bays[0].x0;
-    overMark = segs(max * scale, totalW).map(g => `<rect x="${g.x}" y="${g.b.y0}" width="${g.w}" height="${g.b.y1 - g.b.y0}" rx="8" fill="url(#shpOver)"/>`).join('')
-      + `<line x1="${lx}" x2="${lx}" y1="${bays[0].y0 - 14}" y2="${bays[0].y1 + 14}" class="shp-lim"/>
-         <text x="${lx - 8}" y="${bays[0].y0 - 20}" text-anchor="end" class="shp-lim-t">лимит ${shp.max_load_m3} м³</text>`;
-  }
-  return `<svg class="shp-truck" viewBox="0 0 ${T.w} ${T.h}" role="img" aria-label="Загрузка машины ${escHtml(shp.ship_number || '')}">
+  return `<svg class="shp-truck" viewBox="0 0 ${T.w} ${T.h}" role="img" aria-label="Загрузка машины ${escHtml(u.num)}">
     <defs><pattern id="shpOver" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="12" height="12" fill="rgba(217,107,95,.22)"/><rect width="5" height="12" fill="rgba(217,107,95,.6)"/></pattern></defs>
-    <image href="${T.src}" x="0" y="0" width="${T.w}" height="${T.h}" class="shp-photo"/>
-    ${blocks}${free}${overMark}
+    <image href="${T.src}" x="0" y="0" width="${T.w}" height="${T.h}" class="shp-photo"/>${out}
   </svg>`;
 }
 
-function shipmentDetailHTML(shp) {
+function shipmentDetailHTML(u) {
   const isMgrLocal = currentUser?.role === 'manager';
-  const st = SHP_STATUS[shp.status] || SHP_STATUS.forming;
-  const L = shipmentLoad(shp);
-  const max = L.max || 1;
-  // заказы → цвет по клиенту, кубатура
+  const canData = ['manager', 'warehouse'].includes(currentUser?.role);
+  const lead = u.lead;
+  const st = SHP_STATUS[lead.status] || SHP_STATUS.forming;
+  // заказы → цвет по клиенту (общий для обоих холодильников), кубатура
   const clientColor = {};
-  const orders = (shp._orders || []).map(o => {
-    const c = orderCubes(o.order_items);
-    const name = o.client?.company_name || o.client?.login || '—';
-    if (!(name in clientColor)) clientColor[name] = SHP_COLORS[Object.keys(clientColor).length % SHP_COLORS.length];
-    return { o, name, m3: c.m3, est: c.est, boxes: (o.order_items || []).reduce((s, it) => s + (parseInt(it.qty_boxes) || 0), 0), color: clientColor[name] };
-  }).sort((a, b) => b.m3 - a.m3);
-  const over = L.m3 > max;
-  const rest = max - L.m3;
+  const P = u.parts.map((p, i) => {
+    const L = shipmentLoad(p), max = L.max || 1;
+    const orders = (p._orders || []).map(o => {
+      const c = orderCubes(o.order_items);
+      const name = o.client?.company_name || o.client?.login || '—';
+      if (!(name in clientColor)) clientColor[name] = SHP_COLORS[Object.keys(clientColor).length % SHP_COLORS.length];
+      return { o, name, m3: c.m3, est: c.est, boxes: (o.order_items || []).reduce((s, it) => s + (parseInt(it.qty_boxes) || 0), 0), color: clientColor[name] };
+    }).sort((a, b) => b.m3 - a.m3);
+    const N = shpNorm(p);
+    return { p, i, L, max, orders, N, name: partName(u, p, i), label: `${partName(u, p, i)} · ${N.label}` };
+  });
+  const est = P.some(x => x.L.est);
+  const boxes = P.reduce((a, x) => a + x.L.boxes, 0), nOrd = P.reduce((a, x) => a + x.orders.length, 0);
+  const truck = shpTruckSVG(u, P.map(x => ({ orders: x.orders, m3: x.L.m3, max: x.max, label: x.label })));
 
-  const truck = shpTruckSVG(shp, orders, L, max);
+  const loadTile = x => {
+    const over = x.L.m3 > x.max, rest = x.max - x.L.m3;
+    return [u.trip ? x.label : 'Загрузка', `${x.L.est ? '≈' : ''}${fmtM3(x.L.m3)} <small>/ ${x.p.max_load_m3} м³</small>`,
+      `${x.L.pct.toFixed(0)}% · ${over ? 'перегруз ' + fmtM3(-rest) : 'свободно ' + fmtM3(rest)} м³`, over ? 'bad' : x.L.pct >= 75 ? 'warn' : 'ok'];
+  };
+  const tilesArr = u.trip
+    ? [...P.map(loadTile), ['Коробок', `${boxes}`, `${nOrd} зак.`, ''], ['Клиентов', `${Object.keys(clientColor).length}`, lead.direction ? '➡ ' + escHtml(lead.direction) : '', '']]
+    : (() => { const x = P[0], over = x.L.m3 > x.max, rest = x.max - x.L.m3;
+        return [loadTile(x), [over ? 'Перегруз' : 'Свободно', `${fmtM3(Math.abs(rest))} <small>м³</small>`, over ? 'снимите часть заказов' : `≈ ${Math.floor(Math.abs(rest) / 0.12)} кор`, over ? 'bad' : ''],
+          ['Коробок', `${boxes}`, `${nOrd} зак.`, ''], ['Клиентов', `${Object.keys(clientColor).length}`, lead.direction ? '➡ ' + escHtml(lead.direction) : '', '']]; })();
+  const tiles = tilesArr.map(([k, v, s, cls]) => `<div class="shp-kpi ${cls}"><span>${k}</span><b>${v}</b><em>${s}</em></div>`).join('');
 
-  const tiles = [
-    ['Загрузка', `${L.est ? '≈' : ''}${fmtM3(L.m3)} <small>/ ${shp.max_load_m3} м³</small>`, `${L.pct.toFixed(0)}%`, over ? 'bad' : L.pct >= 75 ? 'warn' : 'ok'],
-    [over ? 'Перегруз' : 'Свободно', `${fmtM3(Math.abs(rest))} <small>м³</small>`, over ? 'снимите часть заказов' : `≈ ${Math.floor(Math.abs(rest) / 0.12)} кор`, over ? 'bad' : ''],
-    ['Коробок', `${L.boxes}`, `${orders.length} зак.`, ''],
-    ['Клиентов', `${Object.keys(clientColor).length}`, shp.direction ? '➡ ' + escHtml(shp.direction) : '', ''],
-  ].map(([k, v, s, cls]) => `<div class="shp-kpi ${cls}"><span>${k}</span><b>${v}</b><em>${s}</em></div>`).join('');
-
-  const list = orders.map((r, i) => `<div class="shp-ord">
-      <i style="background:${r.color}"></i>
-      <div class="shp-ord-m"><b>${escHtml(r.o.order_number)}</b><span>${escHtml(r.name)}</span></div>
-      <div class="shp-ord-v">${r.boxes} кор<br><span>${r.est ? '≈' : ''}${fmtM3(r.m3)} м³</span></div>
-      ${isMgrLocal && shp.status === 'forming' ? `<button class="shp-x" title="Открепить / 移除" onclick="detachOrderFromShipment('${r.o.id}', ${shp.id})">×</button>` : ''}
-    </div>`).join('') || `<div class="shp-empty">Заказы не прикреплены / 未挂单</div>`;
+  const partList = x => {
+    const rows = x.orders.map(r => `<div class="shp-ord">
+        <i style="background:${r.color}"></i>
+        <div class="shp-ord-m"><b>${escHtml(r.o.order_number)}</b><span>${escHtml(r.name)}</span></div>
+        <div class="shp-ord-v">${r.boxes} кор<br><span>${r.est ? '≈' : ''}${fmtM3(r.m3)} м³</span></div>
+        ${isMgrLocal && x.p.status === 'forming' ? `<button class="shp-x" title="Открепить / 移除" onclick="detachOrderFromShipment('${r.o.id}', ${x.p.id})">×</button>` : ''}
+      </div>`).join('') || `<div class="shp-empty">Заказов пока нет</div>`;
+    const btns = `${isMgrLocal && x.p.status === 'forming' ? `<button class="btn btn-primary btn-sm" onclick="showAttachOrdersModal(${x.p.id})">+ Заказы</button>` : ''}
+      ${isMgrLocal && !isScopedMgr() ? `<button class="btn btn-gold btn-sm" title="Закуп под этот ${u.trip ? 'холодильник' : 'рейс'}" onclick="openPurchase(${x.p.id})">🛒</button>` : ''}
+      ${x.p._docCount ? `<button class="btn btn-secondary btn-sm" title="Акты приёмки" onclick="showReceivingDocsModal(${x.p.id})">📄 ${x.p._docCount}</button>` : ''}`;
+    return `<div class="shp-part"><div class="shp-side-h"><span>${u.trip ? `<i class="shp-dot" style="background:${SHP_PART_LINE[x.i]}"></i>${escHtml(x.label)}` : 'Заказы в машине'}</span><span class="shp-part-b">${btns}</span></div>${rows}</div>`;
+  };
 
   const actions = `
-    ${['manager', 'warehouse'].includes(currentUser?.role) && shp.status === 'forming' ? `<button class="btn btn-secondary btn-sm" onclick="shpDataModal(${shp.id}, 'stage')">📍 Отметить выезд</button>` : ''}
-    ${shp._docCount ? `<button class="btn btn-secondary btn-sm" onclick="showReceivingDocsModal(${shp.id})">📄 Акты (${shp._docCount})</button>` : ''}
+    ${canData && lead.status === 'forming' ? `<button class="btn btn-secondary btn-sm" onclick="shpDataModal('${u.key}', 'stage')">📍 Отметить выезд</button>` : ''}
     ${isMgrLocal ? `
-      <select class="inp" style="width:auto;padding:6px 10px;font-size:12px" onchange="setShipmentStatus(${shp.id}, this.value)">
-        ${Object.entries(SHP_STATUS).map(([k, v]) => `<option value="${k}" ${shp.status === k ? 'selected' : ''}>${v.icon} ${v.ru}</option>`).join('')}
+      <select class="inp" style="width:auto;padding:6px 10px;font-size:12px" onchange="setUnitStatus('${u.key}', this.value)">
+        ${Object.entries(SHP_STATUS).map(([k, v]) => `<option value="${k}" ${lead.status === k ? 'selected' : ''}>${v.icon} ${v.ru}</option>`).join('')}
       </select>
-      ${isScopedMgr() ? '' : `<button class="btn btn-gold btn-sm" onclick="openPurchase(${shp.id})">🛒 Закуп</button>`}
-      ${!(shp._orders || []).length ? `<button class="btn btn-danger btn-sm" onclick="deleteShipment(${shp.id})">🗑</button>` : ''}` : ''}`;
+      ${u.parts.every(p => !(p._orders || []).length) ? `<button class="btn btn-danger btn-sm" title="Удалить рейс" onclick="deleteUnit('${u.key}')">🗑</button>` : ''}` : ''}`;
+  const truckLine = u.trip ? '🚛 ' + P.map(x => `${x.name.replace('Холодильник ', 'Х')} — ${escHtml(x.p.truck_name || x.N.label)}`).join(' · ')
+    : `🚛 ${escHtml(lead.truck_name || '')} ${lead.truck_volume_m3 ? '· ' + lead.truck_volume_m3 + ' м³' : ''}`;
 
   return `<div class="shp-card">
     <div class="shp-head">
-      <div><div class="shp-title">${escHtml(shp.ship_number || '—')}</div>
-        <div class="shp-meta"><span class="shp-pill s-${shp.status}">${st.icon} ${st.ru} / ${st.cn}</span>
-          📅 выезд ${_shpDM(shp.ship_date)} · 🚛 ${escHtml(shp.truck_name || '')} ${shp.truck_volume_m3 ? '· ' + shp.truck_volume_m3 + ' м³' : ''}</div></div>
+      <div><div class="shp-title">${escHtml(u.num)}</div>
+        <div class="shp-meta"><span class="shp-pill s-${lead.status}">${st.icon} ${st.ru} / ${st.cn}</span>
+          📅 выезд ${_shpDM(lead.ship_date)} · ${truckLine}</div></div>
       <div class="shp-actions">${actions}</div>
     </div>
     <div class="shp-kpis">${tiles}</div>
-    ${L.est ? '<div class="shp-note">≈ у части позиций нет размера коробки — объём оценён по 0,12 м³ на коробку</div>' : ''}
+    ${est ? '<div class="shp-note">≈ у части позиций нет размера коробки — объём оценён по 0,12 м³ на коробку</div>' : ''}
     <div class="shp-main">
       <div class="shp-stage">${truck}</div>
-      <div class="shp-side">
-        <div class="shp-side-h">Заказы в машине ${isMgrLocal && shp.status === 'forming' ? `<button class="btn btn-primary btn-sm" onclick="showAttachOrdersModal(${shp.id})">+ Заказы</button>` : ''}</div>
-        <div class="shp-ords">${list}</div>
-      </div>
+      <div class="shp-side"><div class="shp-ords">${P.map(partList).join('')}</div></div>
     </div>
     <div class="shp-cold" id="shp-cold"><div class="loading" style="padding:20px"><div class="spinner"></div></div></div>
     <div class="shp-route" id="shp-route"><div class="shp-route-h">Путь машины</div><div class="loading" style="padding:20px"><div class="spinner"></div></div></div>
-    ${shp.note ? `<div class="shp-note">📝 ${escHtml(shp.note)}</div>` : ''}
+    ${u.parts.map(p => p.note).filter(Boolean).length ? `<div class="shp-note">📝 ${escHtml([...new Set(u.parts.map(p => p.note).filter(Boolean))].join(' · '))}</div>` : ''}
   </div>`;
 }
 
+// Записи трекинга рейса: по холодильникам; этапы пути общие (берём из всех, без повторов)
+async function shipmentLoadTrk(ids) {
+  ids = [].concat(ids);
+  const { data } = await sb.from('shipment_tracking').select('*').in('shipment_id', ids).order('happened_at', { ascending: true });
+  ids.forEach(id => { SHPV.trk[id] = (data || []).filter(r => r.shipment_id === id); });
+}
+const unitCheckpoints = u => {
+  const seen = new Set();
+  return u.parts.flatMap(p => (SHPV.trk[p.id] || []).filter(r => r.kind === 'checkpoint'))
+    .sort((a, b) => Date.parse(a.happened_at) - Date.parse(b.happened_at)).filter(r => !seen.has(r.title) && seen.add(r.title));
+};
+
 // Путь машины: этапы из трекинга + ожидаемые даты по сроку пути (зимой — до 10 дней)
-async function shipmentTimeline(shp) {
-  if (!SHPV.trk[shp.id]) await shipmentLoadTrk(shp.id);
+async function shipmentTimeline(u) {
+  const need = u.parts.filter(p => !SHPV.trk[p.id]).map(p => p.id);
+  if (need.length) await shipmentLoadTrk(need);
   const el = document.getElementById('shp-route');
-  if (!el || SHPV.sel !== shp.id) return;
+  if (!el || SHPV.sel !== u.key) return;
   const cold = document.getElementById('shp-cold');
-  if (cold) cold.innerHTML = shipmentColdHTML(shp, SHPV.trk[shp.id]);
-  const done = SHPV.trk[shp.id].filter(r => r.kind === 'checkpoint');
+  if (cold) cold.innerHTML = shipmentColdHTML(u);
+  const done = unitCheckpoints(u);
   const SHP_STAGES = shpStages();
   const at = t => done.find(r => r.title === t)?.happened_at;
-  const start = at(SHP_STAGES[0][0]) || (shp.ship_date ? shp.ship_date + 'T09:00:00' : null);
+  const start = at(SHP_STAGES[0][0]) || (u.lead.ship_date ? u.lead.ship_date + 'T09:00:00' : null);
   const winter = start && [10, 11, 0, 1, 2].includes(new Date(start).getMonth());
   const k = winter ? 10 / 7 : 1;
   let last = -1;
@@ -13055,7 +13100,7 @@ async function shipmentTimeline(shp) {
     const real = at(t);
     const plan = start ? new Date(new Date(start).getTime() + Math.round(day * k) * 864e5) : null;
     const late = !real && plan && Date.now() > plan.getTime() + 864e5 && i === last + 1;
-    return `<div class="shp-node ${real ? 'done' : i === last + 1 && shp.status !== 'forming' ? 'next' : ''} ${late ? 'late' : ''}">
+    return `<div class="shp-node ${real ? 'done' : i === last + 1 && u.lead.status !== 'forming' ? 'next' : ''} ${late ? 'late' : ''}">
       <i></i><b>${name}</b><span>${real ? new Date(real).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : plan ? '≈ ' + _shpDM(plan) : '—'}</span>
       ${late ? '<em>задерживается</em>' : ''}</div>`;
   }).join('');
@@ -13064,14 +13109,36 @@ async function shipmentTimeline(shp) {
     <div class="shp-track"><div class="shp-rail"><i style="width:${pct}%"></i></div>${nodes}</div>`;
 }
 
+async function setUnitStatus(key, status) {
+  const u = shpUnitByKey(key); if (!u) return;
+  for (const p of u.parts) {
+    const { error } = await sb.from('shipments').update({ status }).eq('id', p.id);
+    if (error) { toast('❌ ' + error.message); return; }
+    p.status = status;
+  }
+  logActivity('shipment_status', 'shipment', u.lead.id, u.num, 'Статус: ' + (SHP_STATUS[status]?.ru || status));
+  renderShipments();
+}
+async function deleteUnit(key) {
+  const u = shpUnitByKey(key); if (!u) return;
+  if (u.parts.some(p => (p._orders || []).length)) { toast('❌ Сначала открепи заказы / 请先移除订单'); return; }
+  if (!confirm(`Удалить ${u.trip ? 'рейс' : 'отгрузку'} ${u.num}? / 删除车次?`)) return;
+  const { error } = await sb.from('shipments').delete().in('id', u.parts.map(p => p.id));
+  if (error) { toast('❌ ' + error.message); return; }
+  logActivity('shipment_delete', 'shipment', u.lead.id, u.num, u.trip ? 'Рейс удалён (2 холодильника)' : 'Отгрузка удалена');
+  loadShipments();
+}
+
 
 // ══════════════════════════════════════════════════════════
 //  СОСТОЯНИЕ ГРУЗА: температура, влажность, где машина, журнал
 //  Источники: GPS-отчёт с сайта трекинга (kind 'gps', в note — JSON с локацией/влажностью/ETA),
 //  ручной замер (kind 'temp' или 'gps' с manual:true), этапы пути (kind 'checkpoint').
+//  У рейса из 2 холодильников замеры пишутся в каждый холодильник отдельно.
 // ══════════════════════════════════════════════════════════
 const STALE_WARN_H = 6, STALE_BAD_H = 12;     // данные старше — «давно не обновлялось»
 const _num = v => { const m = String(v ?? '').replace(',', '.').match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+const _nums = v => (String(v ?? '').replace(/,/g, '.').match(/-?\d+(\.\d+)?/g) || []).map(Number);   // «3.2 / 3.1 ℃» → [3.2, 3.1]
 const _meta = r => { try { return JSON.parse(r.note || '{}') || {}; } catch (e) { return {}; } };
 const _ago = iso => {
   const h = (Date.now() - Date.parse(iso)) / 36e5;
@@ -13085,10 +13152,13 @@ const CARGO_NORMS = {
   cut:    { label: 'срезка',     t: [2, 5],   h: [75, 85] },
   potted: { label: 'горшечные',  t: [15, 18], h: [85, 95] },
 };
-// Тип груза машины: из справочника машин (cargo), иначе по составу заказов (только горшечные → горшечные)
+// Тип груза холодильника: из справочника машин (cargo), иначе по названию типа машины, иначе по составу заказов
 function shpCargo(shp) {
   const truck = (typeof truckTypesData !== 'undefined' ? truckTypesData : []).find(t => t.id === shp?.truck_type_id);
   if (truck?.cargo === 'potted' || truck?.cargo === 'cut') return truck.cargo;
+  const nm = String(shp?.truck_name || truck?.name_ru || '');
+  if (/горш/i.test(nm)) return 'potted';
+  if (/срез/i.test(nm)) return 'cut';
   const types = new Set();
   (shp?._orders || []).forEach(o => orderCargoTypes(o.order_items).forEach(t => types.add(t)));
   return types.size === 1 && types.has('potted') ? 'potted' : 'cut';
@@ -13098,7 +13168,7 @@ const tempOk = (t, n = CARGO_NORMS.cut) => t >= n.t[0] && t <= n.t[1];
 const humOk = (h, n = CARGO_NORMS.cut) => h >= n.h[0] && h <= n.h[1];
 const _rng = (a, u) => `${a[0] > 0 ? '+' : ''}${a[0]}…${a[1] > 0 ? '+' : ''}${a[1]}${u}`;
 
-// Все замеры машины в одном виде: { at, temp, hum, loc, dist, dest, eta, src }
+// Все замеры одного холодильника в одном виде
 function shpReadings(rows) {
   return (rows || []).filter(r => r.kind === 'gps' || r.kind === 'temp').map(r => {
     const m = r.kind === 'gps' ? _meta(r) : {};
@@ -13108,255 +13178,299 @@ function shpReadings(rows) {
   }).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
 
-function shipmentColdHTML(shp, rows) {
-  const rd = shpReadings(rows);
+function shipmentColdHTML(u) {
   const canEdit = ['manager', 'warehouse'].includes(currentUser?.role);
-  if (!rd.length) return `<div class="cold-empty">
+  const P = u.parts.map((p, i) => ({ p, i, rd: shpReadings(SHPV.trk[p.id]), N: shpNorm(p), name: partName(u, p, i) }));
+  const all = P.flatMap(x => x.rd).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  if (!all.length) return `<div class="cold-empty">
       <b>Данных о температуре пока нет</b>
-      <span>${shp.status === 'forming' ? 'Появятся после выезда машины.' : 'Вставьте отчёт с сайта GPS-трекинга или внесите замер вручную — плитки и график заполнятся сами.'}</span>
-      ${canEdit && shp.status !== 'forming' ? `<button class="btn btn-primary btn-sm" onclick="shpDataModal(${shp.id})">＋ Данные по машине</button>` : ''}
+      <span>${u.lead.status === 'forming' ? 'Появятся после выезда машины.' : 'Вставьте отчёт с сайта GPS-трекинга или внесите замер вручную — плитки и график заполнятся сами.'}</span>
+      ${canEdit && u.lead.status !== 'forming' ? `<button class="btn btn-primary btn-sm" onclick="shpDataModal('${u.key}')">＋ Данные по машине</button>` : ''}
     </div>`;
-  const last = rd[rd.length - 1];
-  const lastT = [...rd].reverse().find(r => r.temp != null);
-  const lastH = [...rd].reverse().find(r => r.hum != null);
-  const lastL = [...rd].reverse().find(r => r.loc);
-  const lastD = [...rd].reverse().find(r => r.dist || r.eta);
+  const last = all[all.length - 1];
+  const lastL = [...all].reverse().find(r => r.loc);
+  const lastD = [...all].reverse().find(r => r.dist || r.eta);
   const ageH = (Date.now() - Date.parse(last.at)) / 36e5;
-  const fresh = shp.status === 'delivered' ? '' : ageH >= STALE_BAD_H ? 'bad' : ageH >= STALE_WARN_H ? 'warn' : 'ok';
-  const N = shpNorm(shp);
-  const outs = rd.filter(r => (r.temp != null && !tempOk(r.temp, N)) || (r.hum != null && !humOk(r.hum, N)));
-  const tiles = `
-    <div class="cold-tile ${lastT ? (tempOk(lastT.temp, N) ? 'ok' : 'bad') : ''}"><span>Температура</span>
-      <b>${lastT ? _fmtT(lastT.temp) + 'C' : '—'}</b><em>${lastT ? (tempOk(lastT.temp, N) ? 'в норме ' : 'вне нормы ') + _rng(N.t, '°') : 'норма ' + _rng(N.t, '°')}</em></div>
-    <div class="cold-tile ${lastH ? (humOk(lastH.hum, N) ? 'ok' : 'bad') : ''}"><span>Влажность</span><b>${lastH ? String(lastH.hum).replace('.', ',') + '%' : '—'}</b>
-      <em>${lastH ? (humOk(lastH.hum, N) ? 'в норме ' : 'вне нормы ') + N.h[0] + '–' + N.h[1] + '%' : 'норма ' + N.h[0] + '–' + N.h[1] + '%'}</em></div>
-    <div class="cold-tile wide"><span>Где сейчас</span><b class="loc">${escHtml(lastL?.loc || '—')}</b>
-      <em class="fr-${fresh}">${shp.status === 'delivered' ? 'машина прибыла' : `обновлено ${_ago(last.at)}${fresh === 'bad' ? ' — нет свежих данных' : fresh === 'warn' ? ' — пора обновить' : ''}`}</em></div>
+  const fresh = u.lead.status === 'delivered' ? '' : ageH >= STALE_BAD_H ? 'bad' : ageH >= STALE_WARN_H ? 'warn' : 'ok';
+  let outs = 0;
+  const partTiles = P.map(x => {
+    const lastT = [...x.rd].reverse().find(r => r.temp != null), lastH = [...x.rd].reverse().find(r => r.hum != null);
+    outs += x.rd.filter(r => (r.temp != null && !tempOk(r.temp, x.N)) || (r.hum != null && !humOk(r.hum, x.N))).length;
+    const pre = u.trip ? `<i class="shp-dot" style="background:${SHP_PART_LINE[x.i]}"></i>${x.name.replace('Холодильник ', 'Х')} · ` : '';
+    return `<div class="cold-tile ${lastT ? (tempOk(lastT.temp, x.N) ? 'ok' : 'bad') : ''}"><span>${pre}${u.trip ? x.N.label : 'Температура'}</span>
+        <b>${lastT ? _fmtT(lastT.temp) + 'C' : '—'}</b><em>${lastT ? (tempOk(lastT.temp, x.N) ? 'в норме ' : 'вне нормы ') + _rng(x.N.t, '°') : 'норма ' + _rng(x.N.t, '°')}</em></div>
+      <div class="cold-tile ${lastH ? (humOk(lastH.hum, x.N) ? 'ok' : 'bad') : ''}"><span>${pre}влажность</span><b>${lastH ? String(lastH.hum).replace('.', ',') + '%' : '—'}</b>
+        <em>${lastH ? (humOk(lastH.hum, x.N) ? 'в норме ' : 'вне нормы ') + x.N.h[0] + '–' + x.N.h[1] + '%' : 'норма ' + x.N.h[0] + '–' + x.N.h[1] + '%'}</em></div>`;
+  }).join('');
+  const shared = `<div class="cold-tile ${u.trip ? 'wide3' : 'wide'}"><span>Где сейчас</span><b class="loc">${escHtml(lastL?.loc || '—')}</b>
+      <em class="fr-${fresh}">${u.lead.status === 'delivered' ? 'машина прибыла' : `обновлено ${_ago(last.at)}${fresh === 'bad' ? ' — нет свежих данных' : fresh === 'warn' ? ' — пора обновить' : ''}`}</em></div>
     <div class="cold-tile"><span>${lastD?.dest ? 'До ' + escHtml(lastD.dest) : 'До назначения'}</span><b>${escHtml(lastD?.dist || '—')}</b><em>${lastD?.eta ? 'ETA ' + escHtml(lastD.eta) : ''}</em></div>`;
-  return `<div class="cold-head"><div class="shp-route-h" style="margin:0">Состояние груза <span class="cold-kind">${N.label}: ${_rng(N.t, '°C')} · ${N.h[0]}–${N.h[1]}%</span> ${outs.length ? `<span class="cold-alert">${outs.length} ${outs.length === 1 ? 'замер' : outs.length < 5 ? 'замера' : 'замеров'} вне нормы</span>` : '<span>без нарушений</span>'}</div>
-      ${canEdit ? `<button class="btn btn-primary btn-sm" onclick="shpDataModal(${shp.id})">＋ Данные по машине</button>` : ''}</div>
-    <div class="cold-tiles">${tiles}</div>
+  const kinds = P.map(x => `${u.trip ? x.name.replace('Холодильник ', 'Х') + ' ' : ''}${x.N.label}: ${_rng(x.N.t, '°C')} · ${x.N.h[0]}–${x.N.h[1]}%`).join(' &nbsp;|&nbsp; ');
+  return `<div class="cold-head"><div class="shp-route-h" style="margin:0">Состояние груза <span class="cold-kind">${kinds}</span> ${outs ? `<span class="cold-alert">${outs} ${outs === 1 ? 'замер' : outs < 5 ? 'замера' : 'замеров'} вне нормы</span>` : '<span>без нарушений</span>'}</div>
+      ${canEdit ? `<button class="btn btn-primary btn-sm" onclick="shpDataModal('${u.key}')">＋ Данные по машине</button>` : ''}</div>
+    <div class="cold-tiles ${u.trip ? 'trip' : ''}">${partTiles + shared}</div>
     <div class="cold-grid">
-      <div class="cold-chart">${coldChartSVG(rd, shp)}</div>
-      <div class="cold-log"><div class="cold-log-h">Журнал</div>${shipmentJournalHTML(rows, shp)}</div>
+      <div class="cold-chart">${coldChartSVG(u, P)}</div>
+      <div class="cold-log"><div class="cold-log-h">Журнал</div>${shipmentJournalHTML(u, P)}</div>
     </div>`;
 }
 
-// График температуры за рейс: полоса коридора, линия, точки вне коридора красные; влажность — пунктиром
-function coldChartSVG(rd, shp) {
-  const pts = rd.filter(r => r.temp != null);
-  const N = shpNorm(shp), TEMP_MIN = N.t[0], TEMP_MAX = N.t[1];
-  if (!pts.length) return '<div class="cold-empty sm">Замеров температуры нет</div>';
+// График t° за рейс: полоса нормы и линия на каждый холодильник; точки вне нормы — красные; влажность пунктиром (у одного кузова)
+function coldChartSVG(u, P) {
+  const series = P.map(x => ({ ...x, pts: x.rd.filter(r => r.temp != null) })).filter(x => x.pts.length);
+  if (!series.length) return '<div class="cold-empty sm">Замеров температуры нет</div>';
+  const allPts = series.flatMap(x => x.pts);
   const W = 640, H = 200, L = 40, R = 40, T = 14, B = 26;
-  const t0 = Math.min(Date.parse(pts[0].at), shp.ship_date ? Date.parse(shp.ship_date) : Infinity);
-  const t1 = Math.max(Date.parse(pts[pts.length - 1].at), t0 + 864e5);
-  const lo = Math.min(TEMP_MIN - 4, ...pts.map(p => p.temp)) - 1, hi = Math.max(TEMP_MAX + 6, ...pts.map(p => p.temp)) + 1;
+  const times = allPts.map(p => Date.parse(p.at));
+  const t0 = Math.min(...times, u.lead.ship_date ? Date.parse(u.lead.ship_date) : Infinity);
+  const t1 = Math.max(Math.max(...times), t0 + 864e5);
+  const bounds = series.flatMap(x => x.N.t);
+  const lo = Math.min(Math.min(...bounds) - 4, ...allPts.map(p => p.temp)) - 1, hi = Math.max(Math.max(...bounds) + 6, ...allPts.map(p => p.temp)) + 1;
   const X = t => L + (Date.parse(t) - t0) / (t1 - t0) * (W - L - R);
   const Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
   const YH = v => T + (100 - Math.max(50, Math.min(100, v))) / 50 * (H - T - B);   // влажность: шкала 50–100 %
-  const humBand = `<rect x="${L}" y="${YH(N.h[1])}" width="${W - L - R}" height="${YH(N.h[0]) - YH(N.h[1])}" class="cold-hband"/>`;
-  const ticks = []; for (let v = Math.ceil(lo / 4) * 4; v <= hi; v += 4) ticks.push(v);
+  const step4 = hi - lo > 24 ? 8 : 4;
+  const ticks = []; for (let v = Math.ceil(lo / step4) * step4; v <= hi; v += step4) ticks.push(v);
   const days = []; for (let d = new Date(t0); d.getTime() <= t1; d = new Date(d.getTime() + 864e5)) days.push(d);
   const step = Math.max(1, Math.ceil(days.length / 8));
-  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.at).toFixed(1)} ${Y(p.temp).toFixed(1)}`).join(' ');
-  const hum = rd.filter(r => r.hum != null);
+  const bandsSeen = new Set();
+  const bands = series.map(x => { const k = x.N.t.join(); if (bandsSeen.has(k)) return ''; bandsSeen.add(k);
+    return `<rect x="${L}" y="${Y(x.N.t[1])}" width="${W - L - R}" height="${Y(x.N.t[0]) - Y(x.N.t[1])}" class="cold-band"/>
+      <text x="${W - R + 4}" y="${Y(x.N.t[1]) + 4}" class="cold-ax">+${x.N.t[1]}°</text><text x="${W - R + 4}" y="${Y(x.N.t[0]) + 4}" class="cold-ax">+${x.N.t[0]}°</text>`; }).join('');
+  const lines = series.map(x => {
+    const col = SHP_PART_LINE[x.i] || SHP_PART_LINE[0];
+    const d = x.pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.at).toFixed(1)} ${Y(p.temp).toFixed(1)}`).join(' ');
+    return `<path d="${d}" class="cold-line" style="stroke:${col}"/>` + x.pts.map(p => `<circle cx="${X(p.at).toFixed(1)}" cy="${Y(p.temp).toFixed(1)}" r="${tempOk(p.temp, x.N) ? 3.5 : 5}" class="${tempOk(p.temp, x.N) ? 'cold-pt' : 'cold-pt bad'}" style="${tempOk(p.temp, x.N) ? 'stroke:' + col : ''}"><title>${u.trip ? x.name + ' · ' : ''}${_fmtT(p.temp)}C · ${new Date(p.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${p.loc ? ' · ' + escHtml(p.loc) : ''}</title></circle>`).join('');
+  }).join('');
+  const hum = !u.trip ? series[0].rd.filter(r => r.hum != null) : [];
   const humLine = hum.length > 1 ? hum.map((p, i) => `${i ? 'L' : 'M'}${X(p.at).toFixed(1)} ${YH(p.hum).toFixed(1)}`).join(' ') : '';
+  const N0 = series[0].N;
   return `<svg viewBox="0 0 ${W} ${H}" class="cold-svg" role="img" aria-label="Температура в кузове за рейс">
-    <rect x="${L}" y="${Y(TEMP_MAX)}" width="${W - L - R}" height="${Y(TEMP_MIN) - Y(TEMP_MAX)}" class="cold-band"/>
-    <text x="${W - R + 4}" y="${Y(TEMP_MAX) + 4}" class="cold-ax">+${TEMP_MAX}°</text><text x="${W - R + 4}" y="${Y(TEMP_MIN) + 4}" class="cold-ax">+${TEMP_MIN}°</text>
+    ${bands}
     ${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="cold-grid-l"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end" class="cold-ax">${v}°</text>`).join('')}
     ${days.filter((_, i) => i % step === 0).map(d => `<text x="${X(d.toISOString())}" y="${H - 6}" text-anchor="middle" class="cold-ax">${_shpDM(d)}</text>`).join('')}
     ${humLine ? `<path d="${humLine}" class="cold-hum"/><text x="${L + 4}" y="${T + 10}" class="cold-ax" style="fill:#B8902F">влажн. 50–100 %</text>` : ''}
-    <path d="${line}" class="cold-line"/>
-    ${pts.map(p => `<circle cx="${X(p.at).toFixed(1)}" cy="${Y(p.temp).toFixed(1)}" r="${tempOk(p.temp, N) ? 3.5 : 5}" class="${tempOk(p.temp, N) ? 'cold-pt' : 'cold-pt bad'}"><title>${_fmtT(p.temp)}C · ${new Date(p.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${p.loc ? ' · ' + escHtml(p.loc) : ''}</title></circle>`).join('')}
+    ${lines}
   </svg>
-  <div class="cold-legend"><span><i class="lg-t"></i>температура в кузове</span><span><i class="lg-b"></i>норма t° ${_rng(N.t, '°')}</span>${humLine ? `<span><i class="lg-h"></i>влажность, % (норма ${N.h[0]}–${N.h[1]}%)</span>` : ''}</div>`;
+  <div class="cold-legend">${u.trip ? series.map(x => `<span><i style="background:${SHP_PART_LINE[x.i]}"></i>${x.name} · ${x.N.label}</span>`).join('') : '<span><i class="lg-t"></i>температура в кузове</span>'}
+    <span><i class="lg-b"></i>норма t°</span>${humLine ? `<span><i class="lg-h"></i>влажность, % (норма ${N0.h[0]}–${N0.h[1]}%)</span>` : ''}</div>`;
 }
 
-// Журнал рейса: этапы, отчёты GPS, ручные замеры — новые сверху
-function shipmentJournalHTML(rows, shp) {
+// Журнал рейса: этапы (один раз на рейс), отчёты GPS, ручные замеры — новые сверху
+function shipmentJournalHTML(u, P) {
   const canEdit = ['manager', 'warehouse'].includes(currentUser?.role);
-  const N = shpNorm(shp);
-  const items = [...(rows || [])].sort((a, b) => Date.parse(b.happened_at) - Date.parse(a.happened_at)).map(r => {
+  const rows = P.flatMap(x => (SHPV.trk[x.p.id] || []).map(r => ({ r, x })));
+  const cps = new Map();   // этап → все его записи (в каждом холодильнике)
+  rows.filter(o => o.r.kind === 'checkpoint').forEach(o => { if (!cps.has(o.r.title)) cps.set(o.r.title, []); cps.get(o.r.title).push(o.r.id); });
+  const seen = new Set();
+  const items = rows.sort((a, b) => Date.parse(b.r.happened_at) - Date.parse(a.r.happened_at)).filter(o => o.r.kind !== 'checkpoint' || (!seen.has(o.r.title) && seen.add(o.r.title))).map(({ r, x }) => {
     const m = r.kind === 'gps' ? _meta(r) : {};
     const t = r.temp_c != null ? +r.temp_c : null;
     const hv = _num(m.humidity);
-    const bad = (t != null && !tempOk(t, N)) || (hv != null && !humOk(hv, N));
+    const bad = r.kind !== 'checkpoint' && ((t != null && !tempOk(t, x.N)) || (hv != null && !humOk(hv, x.N)));
     const when = new Date(r.happened_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-    let icon, head, sub;
-    if (r.kind === 'checkpoint') { icon = '📍'; head = escHtml(String(r.title || '').split(' / ')[0]); sub = r.note ? escHtml(r.note) : 'этап пути · клиенты получили уведомление'; }
+    let icon, head, sub, ids = [r.id];
+    if (r.kind === 'checkpoint') { icon = '📍'; head = escHtml(String(r.title || '').split(' / ')[0]); sub = r.note ? escHtml(r.note) : 'этап пути · клиенты получили уведомление'; ids = cps.get(r.title) || ids; }
     else {
       icon = bad ? '🔴' : '🌡';
-      head = [t != null ? _fmtT(t) + 'C' : '', m.humidity ? 'влажн. ' + escHtml(m.humidity) : ''].filter(Boolean).join(' · ') || 'Отметка';
+      head = (u.trip ? `<i class="shp-dot" style="background:${SHP_PART_LINE[x.i]}"></i>${x.name.replace('Холодильник ', 'Х')} · ` : '')
+        + ([t != null ? _fmtT(t) + 'C' : '', m.humidity ? 'влажн. ' + escHtml(m.humidity) : ''].filter(Boolean).join(' · ') || 'Отметка');
       sub = [escHtml(m.locationRu || m.location || ''), r.kind === 'temp' || m.manual ? 'вручную' : 'GPS', escHtml(r.kind === 'temp' ? r.note || '' : m.comment || '')].filter(Boolean).join(' · ');
     }
     return `<div class="cold-ev ${bad ? 'bad' : ''}"><span class="ic">${icon}</span>
       <div><b>${head}</b><span>${sub}</span></div><time>${when}</time>
-      ${canEdit && r.id ? `<button class="shp-x" title="Удалить запись" onclick="shpDelRow(${r.id}, ${shp.id})">×</button>` : ''}</div>`;
+      ${canEdit && r.id ? `<button class="shp-x" title="Удалить запись" onclick="shpDelRow([${ids.join(',')}], '${u.key}')">×</button>` : ''}</div>`;
   });
   if (!items.length) return '<div class="shp-empty">Записей пока нет</div>';
-  return `<div class="cold-evs">${items.slice(0, 40).join('')}</div>`;
+  return `<div class="cold-evs">${items.slice(0, 50).join('')}</div>`;
 }
 
-async function shpDelRow(id, shpId) {
+async function shpDelRow(ids, key) {
   if (!confirm('Удалить эту запись из журнала рейса?')) return;
-  const { error } = await sb.from('shipment_tracking').delete().eq('id', id);
+  const { error } = await sb.from('shipment_tracking').delete().in('id', [].concat(ids));
   if (error) { toast('❌ ' + error.message); return; }
-  delete SHPV.trk[shpId]; renderShipments();
+  (shpUnitByKey(key)?.parts || []).forEach(p => delete SHPV.trk[p.id]);
+  renderShipments();
 }
 
 // ── Окно «Данные по машине» (для Юры и менеджеров) ──
-function shpDataModal(shpId, tab = 'manual') {
-  const shp = shipmentsData.find(x => x.id === shpId);
-  const done = new Set((SHPV.trk[shpId] || []).filter(r => r.kind === 'checkpoint').map(r => r.title));
+function shpDataModal(key, tab = 'manual') {
+  const u = shpUnitByKey(key); if (!u) return;
+  const done = new Set(unitCheckpoints(u).map(r => r.title));
   const tabs = [['manual', '🌡 Замер вручную'], ['gps', '📡 Отчёт GPS'], ['stage', '📍 Этап пути']];
+  const partFields = u.parts.map((p, i) => { const N = shpNorm(p);
+    return `<div class="cold-part">${u.trip ? `<div class="cold-part-h"><i class="shp-dot" style="background:${SHP_PART_LINE[i]}"></i>${partName(u, p, i)} · ${N.label}</div>` : ''}
+      <label>Температура, °C<input class="inp" id="cd-t-${i}" type="number" step="0.1" inputmode="decimal" placeholder="норма ${_rng(N.t, '')}"></label>
+      <label>Влажность, %<input class="inp" id="cd-h-${i}" type="number" step="1" inputmode="numeric" placeholder="норма ${N.h[0]}–${N.h[1]}"></label></div>`; }).join('');
   document.getElementById('modal-content').innerHTML = `
-    <div class="modal-title">Данные по машине ${escHtml(shp?.ship_number || '')}</div>
-    <div class="cold-tabs">${tabs.map(([k, l]) => `<button class="wh-tab ${k === tab ? 'active' : ''}" onclick="shpDataModal(${shpId}, '${k}')">${l}</button>`).join('')}</div>
+    <div class="modal-title">Данные по машине ${escHtml(u.num)}</div>
+    <div class="cold-tabs">${tabs.map(([k, l]) => `<button class="wh-tab ${k === tab ? 'active' : ''}" onclick="shpDataModal('${key}', '${k}')">${l}</button>`).join('')}</div>
     ${tab === 'manual' ? `
-      <div class="cold-form">
-        <label>Температура в кузове, °C<input class="inp" id="cd-t" type="number" step="0.1" inputmode="decimal" placeholder="например 3.5"></label>
-        <label>Влажность, %<input class="inp" id="cd-h" type="number" step="1" inputmode="numeric" placeholder="например 90"></label>
+      <div class="cold-form">${partFields}
         <label class="full">Где машина<input class="inp" id="cd-l" placeholder="город, трасса или «стоянка в Хоргосе»"></label>
         <label class="full">Комментарий<input class="inp" id="cd-c" placeholder="необязательно: «водитель прислал фото табло»"></label>
         <label class="full">Когда<input class="inp" id="cd-at" type="datetime-local" value="${new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16)}"></label>
       </div>
-      <div class="cold-hint">Норма для этой машины (${shpNorm(shp).label}): ${_rng(shpNorm(shp).t, ' °C')}, влажность ${shpNorm(shp).h[0]}–${shpNorm(shp).h[1]}%. Если замер выйдет за норму, менеджеры сразу получат оповещение.</div>
-      <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена</button><button class="btn btn-primary" id="cd-save" onclick="shpSaveManual(${shpId})">Записать замер</button></div>`
+      <div class="cold-hint">${u.trip ? 'Заполните то, что знаете: можно только один холодильник. ' : ''}Если замер выйдет за норму, менеджеры сразу получат оповещение.</div>
+      <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена</button><button class="btn btn-primary" id="cd-save" onclick="shpSaveManual('${key}')">Записать замер</button></div>`
     : tab === 'gps' ? `
-      <div class="cold-hint" style="margin-top:4px">Скопируйте отчёт с сайта GPS-трекинга (можно сразу по нескольким машинам) — система сама разберёт температуру, влажность, место и расстояние и переведёт адрес на русский.</div>
+      <div class="cold-hint" style="margin-top:4px">Скопируйте отчёт с сайта GPS-трекинга (можно сразу по нескольким машинам) — система сама разберёт температуру, влажность, место и расстояние и переведёт адрес на русский.${u.trip ? ' Если в отчёте две температуры через «/» — первая пойдёт в холодильник 1, вторая — в холодильник 2.' : ''}</div>
       <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена</button><button class="btn btn-primary" onclick="showGpsReportModal()">Вставить отчёт GPS</button></div>`
     : `
-      <div class="cold-stages">${CHECKPOINT_PRESETS.map((c, i) => `<button class="cold-stage ${done.has(c) ? 'done' : ''}" ${done.has(c) ? 'disabled' : ''} onclick="shpMarkStage(${shpId}, ${i})">
+      <div class="cold-stages">${CHECKPOINT_PRESETS.map((c, i) => `<button class="cold-stage ${done.has(c) ? 'done' : ''}" ${done.has(c) ? 'disabled' : ''} onclick="shpMarkStage('${key}', ${i})">
         <i>${done.has(c) ? '✓' : i + 1}</i><span>${escHtml(c.split(' / ')[0])}<small>${escHtml(c.split(' / ')[1] || '')}</small></span></button>`).join('')}</div>
-      <div class="cold-hint">Отмеченный этап сразу уходит клиентам этой машины — в систему и в Telegram. «Прибыла к клиенту» запускает 3 дня на приёмку и претензии.</div>
+      <div class="cold-hint">Отмеченный этап сразу уходит клиентам ${u.trip ? 'обоих холодильников' : 'этой машины'} — в систему и в Telegram. «Прибыла к клиенту» запускает 3 дня на приёмку и претензии.</div>
       <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Готово</button></div>`}`;
   openModal();
 }
 
-async function shpSaveManual(shpId) {
-  const t = _num(document.getElementById('cd-t').value), h = _num(document.getElementById('cd-h').value);
+async function shpSaveManual(key) {
+  const u = shpUnitByKey(key); if (!u) return;
   const loc = document.getElementById('cd-l').value.trim(), com = document.getElementById('cd-c').value.trim();
   const atV = document.getElementById('cd-at').value;
-  if (t == null && h == null && !loc) { toast('Заполните хотя бы температуру, влажность или место'); return; }
-  if (t != null && (t < -30 || t > 45)) { toast('Проверьте температуру — похоже на опечатку'); return; }
+  const vals = u.parts.map((p, i) => ({ p, t: _num(document.getElementById(`cd-t-${i}`).value), h: _num(document.getElementById(`cd-h-${i}`).value) }));
+  if (!vals.some(v => v.t != null || v.h != null) && !loc) { toast('Заполните хотя бы температуру, влажность или место'); return; }
+  if (vals.some(v => v.t != null && (v.t < -30 || v.t > 45))) { toast('Проверьте температуру — похоже на опечатку'); return; }
   const btn = document.getElementById('cd-save'); btn.disabled = true;
   const at = atV ? new Date(atV).toISOString() : new Date().toISOString();
-  const { error } = await sb.from('shipment_tracking').insert({
-    shipment_id: shpId, kind: 'gps', title: 'Замер вручную', temp_c: t,
-    note: JSON.stringify({ manual: true, humidity: h != null ? h + '%' : '', location: loc, locationRu: loc, comment: com }),
+  // в холодильник без цифр место пишем только если цифр нет нигде (чтобы «где машина» не терялось)
+  const rows = vals.filter((v, i) => v.t != null || v.h != null || (i === 0 && !vals.some(x => x.t != null || x.h != null))).map(v => ({
+    shipment_id: v.p.id, kind: 'gps', title: 'Замер вручную', temp_c: v.t,
+    note: JSON.stringify({ manual: true, humidity: v.h != null ? v.h + '%' : '', location: loc, locationRu: loc, comment: com }),
     happened_at: at, created_by: currentUser?.id || null,
-  });
+  }));
+  const { error } = await sb.from('shipment_tracking').insert(rows);
   btn.disabled = false;
   if (error) { toast('❌ ' + error.message); return; }
-  const N = shpNorm(shipmentsData.find(x => x.id === shpId));
-  const badT = t != null && !tempOk(t, N), badH = h != null && !humOk(h, N);
-  if (badT || badH) shpTempAlert(shpId, badT ? t : null, loc, badH ? h : null);
-  toast(badT || badH ? `⚠️ ${badT ? _fmtT(t) + 'C' : ''}${badT && badH ? ', ' : ''}${badH ? 'влажность ' + h + '%' : ''} — вне нормы, менеджеры оповещены` : '✅ Замер записан');
-  closeModal(); delete SHPV.trk[shpId]; renderShipments();
+  const bads = [];
+  vals.forEach(v => { const N = shpNorm(v.p), bT = v.t != null && !tempOk(v.t, N), bH = v.h != null && !humOk(v.h, N);
+    if (bT || bH) { bads.push(v); shpTempAlert(v.p.id, bT ? v.t : null, loc, bH ? v.h : null); } });
+  toast(bads.length ? `⚠️ Вне нормы — менеджеры оповещены` : '✅ Замер записан');
+  closeModal(); u.parts.forEach(p => delete SHPV.trk[p.id]); renderShipments();
 }
 
-async function shpMarkStage(shpId, idx) {
+async function shpMarkStage(key, idx) {
+  const u = shpUnitByKey(key); if (!u) return;
   const title = CHECKPOINT_PRESETS[idx];
-  if (!confirm(`Отметить этап «${title.split(' / ')[0]}»?\n\nКлиенты этой машины сразу получат уведомление.`)) return;
-  const { error } = await sb.from('shipment_tracking').insert({ shipment_id: shpId, kind: 'checkpoint', title, note: null,
-    happened_at: new Date().toISOString(), created_by: currentUser?.id || null });
+  if (!confirm(`Отметить этап «${title.split(' / ')[0]}»?\n\nКлиенты ${u.trip ? 'обоих холодильников' : 'этой машины'} сразу получат уведомление.`)) return;
+  const now = new Date().toISOString();
+  const { error } = await sb.from('shipment_tracking').insert(u.parts.map(p => ({ shipment_id: p.id, kind: 'checkpoint', title, note: null, happened_at: now, created_by: currentUser?.id || null })));
   if (error) { toast('❌ ' + error.message); return; }
-  const shp = shipmentsData.find(x => x.id === shpId);
-  if (idx === 0 && shp?.status === 'forming') await setShipmentStatus(shpId, 'departed');
-  logActivity('tracking', 'shipment', shpId, shp?.ship_number || '', '📍 ' + title);
-  notifyShipmentClients(shpId, title, null);
+  if (idx === 0 && u.lead.status === 'forming') await setUnitStatus(key, 'departed');
+  logActivity('tracking', 'shipment', u.lead.id, u.num, '📍 ' + title);
+  u.parts.forEach(p => notifyShipmentClients(p.id, title, null));
   toast('✅ ' + title.split(' / ')[0] + ' — клиенты уведомлены');
-  delete SHPV.trk[shpId];
-  await shipmentLoadTrk(shpId);
-  shpDataModal(shpId, 'stage');
+  u.parts.forEach(p => delete SHPV.trk[p.id]);
+  await shipmentLoadTrk(u.parts.map(p => p.id));
+  shpDataModal(key, 'stage');
   renderShipments();
 }
 
-// Выход из коридора → уведомление всем менеджерам (в систему; у кого подключён Telegram — придёт и туда)
+// Выход из нормы → уведомление всем менеджерам (в систему; у кого подключён Telegram — придёт и туда)
 async function shpTempAlert(shpId, t, loc, h = null) {
   try {
     const shp = shipmentsData.find(x => x.id === shpId);
     const N = shpNorm(shp);
     const what = [t != null ? _fmtT(t) + 'C' : '', h != null ? 'влажность ' + h + '%' : ''].filter(Boolean).join(', ');
+    const where = shp?.trip_id ? `${shpBaseNum(shp)}, холодильник ${shp.compartment || ''}` : (shp?.ship_number || 'Машина');
     const { data: mgrs } = await sb.from('users').select('id').eq('role', 'manager');
     const now = new Date().toISOString();
-    const rows = (mgrs || []).map(m => ({ user_id: m.id, title: `🌡 ${shp?.ship_number || 'Машина'}: ${what} — вне нормы / 温湿度异常`,
+    const rows = (mgrs || []).map(m => ({ user_id: m.id, title: `🌡 ${where}: ${what} — вне нормы / 温湿度异常`,
       body: `Норма (${N.label}): ${_rng(N.t, ' °C')}, влажность ${N.h[0]}–${N.h[1]}%${loc ? ' · ' + loc : ''}`, icon: '🌡', is_read: false, created_at: now }));
     if (rows.length) await sb.from('notifications').insert(rows);
   } catch (e) { console.warn('temp alert', e); }
 }
 
-async function shipmentLoadTrk(shpId) {
-  const { data } = await sb.from('shipment_tracking').select('*').eq('shipment_id', shpId).order('happened_at', { ascending: true });
-  SHPV.trk[shpId] = data || [];
-  return SHPV.trk[shpId];
-}
-
-// ── Создание отгрузки ──
-async function showCreateShipmentModal() {
+// ── Создание отгрузки: одна машина или рейс нашей фуры с 2 холодильниками ──
+async function showCreateShipmentModal(mode = 'single') {
   await loadTruckTypes();
   if (!truckTypesData.length) {
     toast('❌ Справочник машин пуст — выполни SQL-миграцию / 车辆目录为空');
     return;
   }
-  const opts = truckTypesData.map(t =>
-    `<option value="${t.id}" data-vol="${t.volume_m3}" data-max="${t.max_load_m3}">${t.name_ru} — ${t.volume_m3} м³ (лимит ${t.max_load_m3})</option>`).join('');
+  const opts = (sel) => truckTypesData.map(t =>
+    `<option value="${t.id}" data-vol="${t.volume_m3}" data-max="${t.max_load_m3}" ${String(t.id) === String(sel) ? 'selected' : ''}>${t.name_ru} — ${t.volume_m3} м³ (лимит ${t.max_load_m3})</option>`).join('');
+  // по умолчанию для фуры: Х1 — «наша … срезы», Х2 — «наша … горшечные»
+  const ours = truckTypesData.filter(t => /наш/i.test(t.name_ru || ''));
+  const def1 = (ours.find(t => /срез/i.test(t.name_ru)) || ours[0] || truckTypesData[0])?.id;
+  const def2 = (ours.find(t => /горш/i.test(t.name_ru)) || ours[1] || ours[0] || truckTypesData[0])?.id;
+  const part = (i, sel) => `
+    <div class="trip-part"><div class="trip-part-h"><i class="shp-dot" style="background:${SHP_PART_LINE[i - 1]}"></i>Холодильник ${i}</div>
+      <div class="field"><label>Что везёт (тип машины) / 车型</label><select class="inp" id="shp-truck-${i}" onchange="shpSyncVol(${i})">${opts(sel)}</select></div>
+      <div class="field-row">
+        <div class="field"><label>Объём, м³ / 容积</label><input type="number" class="inp" id="shp-vol-${i}" step="0.5"></div>
+        <div class="field"><label>Лимит погрузки, м³ / 装载上限</label><input type="number" class="inp" id="shp-max-${i}" step="0.5"></div>
+      </div></div>`;
   document.getElementById('modal-content').innerHTML = `
     <div class="modal-title">🚚 Новая отгрузка / 新车次</div>
+    <div class="cold-tabs">
+      <button class="wh-tab ${mode === 'single' ? 'active' : ''}" onclick="showCreateShipmentModal('single')">Одна машина</button>
+      <button class="wh-tab ${mode === 'trip' ? 'active' : ''}" onclick="showCreateShipmentModal('trip')">Наша фура · 2 холодильника</button>
+    </div>
+    ${mode === 'trip' ? `<div class="cold-hint" style="margin:0 0 10px">У каждого холодильника свой груз, объём, заказы и норма температуры: срезка + горшечные, срезка + срезка или горшечные + горшечные. Этапы пути и статус — общие.</div>
+      <div class="trip-parts">${part(1, def1)}${part(2, def2)}</div>`
+    : `<div class="field-row">
+        <div class="field"><label>Машина / 车型</label><select class="inp" id="shp-truck-1" onchange="shpSyncVol(1)">${opts()}</select></div></div>
+      <div class="field-row">
+        <div class="field"><label>Объём, м³ / 容积</label><input type="number" class="inp" id="shp-vol-1" step="0.5"></div>
+        <div class="field"><label>Лимит погрузки, м³ / 装载上限</label><input type="number" class="inp" id="shp-max-1" step="0.5"></div>
+      </div>`}
     <div class="field-row">
       <div class="field"><label>Дата выезда / 出发日期</label><input type="date" class="inp" id="shp-date"></div>
-      <div class="field"><label>Машина / 车型</label><select class="inp" id="shp-truck">${opts}</select></div>
-    </div>
-    <div class="field-row">
-      <div class="field"><label>Объём, м³ / 容积</label><input type="number" class="inp" id="shp-vol" step="0.5"></div>
-      <div class="field"><label>Лимит погрузки, м³ / 装载上限</label><input type="number" class="inp" id="shp-max" step="0.5"></div>
-    </div>
-    <div class="field-row">
       <div class="field"><label>Направление / 方向</label><input class="inp" id="shp-dir" placeholder="Куньмин → Алматы → Москва"></div>
-      <div class="field"><label>Примечание / 备注</label><input class="inp" id="shp-note"></div>
     </div>
+    <div class="field-row"><div class="field"><label>Примечание / 备注</label><input class="inp" id="shp-note"></div></div>
     <div class="modal-btns">
       <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
-      <button class="btn btn-primary" onclick="createShipment()">✅ Создать / 创建</button>
+      <button class="btn btn-primary" onclick="createShipment('${mode}')">✅ Создать / 创建</button>
     </div>`;
-  const sel = document.getElementById('shp-truck');
-  const syncVol = () => {
-    const o = sel.selectedOptions[0];
-    document.getElementById('shp-vol').value = o.dataset.vol;
-    document.getElementById('shp-max').value = o.dataset.max;
-  };
-  sel.onchange = syncVol; syncVol();
+  shpSyncVol(1); if (mode === 'trip') shpSyncVol(2);
   openModal();
 }
+function shpSyncVol(i) {
+  const o = document.getElementById(`shp-truck-${i}`)?.selectedOptions[0];
+  if (!o) return;
+  document.getElementById(`shp-vol-${i}`).value = o.dataset.vol;
+  document.getElementById(`shp-max-${i}`).value = o.dataset.max;
+}
 
-async function createShipment() {
-  const truckId = parseInt(document.getElementById('shp-truck')?.value);
-  const truck = truckTypesData.find(t => t.id === truckId);
-  const vol = parseFloat(document.getElementById('shp-vol')?.value) || truck?.volume_m3 || 0;
-  const max = parseFloat(document.getElementById('shp-max')?.value) || truck?.max_load_m3 || vol;
-  if (!vol) { toast('❌ Укажи объём машины / 请填写容积'); return; }
+async function createShipment(mode = 'single') {
+  const n = mode === 'trip' ? 2 : 1;
+  const parts = [];
+  for (let i = 1; i <= n; i++) {
+    const truckId = parseInt(document.getElementById(`shp-truck-${i}`)?.value);
+    const truck = truckTypesData.find(t => t.id === truckId);
+    const vol = parseFloat(document.getElementById(`shp-vol-${i}`)?.value) || truck?.volume_m3 || 0;
+    const max = parseFloat(document.getElementById(`shp-max-${i}`)?.value) || truck?.max_load_m3 || vol;
+    if (!vol) { toast(`❌ Укажи объём ${n > 1 ? 'холодильника ' + i : 'машины'} / 请填写容积`); return; }
+    parts.push({ truckId, truck, vol, max });
+  }
   const num = await nextDocNumber('shipments', 'ship_number', 'SHP');
-  const { error } = await sb.from('shipments').insert({
-    ship_number: num,
+  const trip = n > 1 ? (crypto.randomUUID ? crypto.randomUUID() : 'trip-' + Date.now()) : null;
+  const common = {
     ship_date: document.getElementById('shp-date')?.value || null,
-    truck_type_id: truckId || null,
-    truck_name: truck?.name_ru || null,
-    truck_volume_m3: vol,
-    max_load_m3: max,
     direction: document.getElementById('shp-dir')?.value.trim() || null,
     note: document.getElementById('shp-note')?.value.trim() || null,
-    status: 'forming',
-    created_by: currentUser?.id || null,
-  });
-  if (error) { toast('❌ Ошибка: ' + error.message); return; }
-  logActivity('shipment_create', 'shipment', null, num, 'Создана отгрузка ' + (truck?.name_ru || vol + ' м³'));
+    status: 'forming', created_by: currentUser?.id || null,
+  };
+  const rows = parts.map((p, i) => ({ ...common,
+    ship_number: n > 1 ? `${num}-Х${i + 1}` : num,
+    truck_type_id: p.truckId || null, truck_name: p.truck?.name_ru || null, truck_volume_m3: p.vol, max_load_m3: p.max,
+    ...(trip ? { trip_id: trip, compartment: i + 1 } : {}),
+  }));
+  const { error } = await sb.from('shipments').insert(rows);
+  if (error) {
+    toast(/trip_id|compartment/.test(error.message) ? '❌ Для рейсов с 2 холодильниками выполните sql_trips.sql в Supabase' : '❌ Ошибка: ' + error.message);
+    return;
+  }
+  logActivity('shipment_create', 'shipment', null, num, n > 1 ? 'Создан рейс: ' + parts.map(p => p.truck?.name_ru || p.vol + ' м³').join(' + ') : 'Создана отгрузка ' + (parts[0].truck?.name_ru || parts[0].vol + ' м³'));
   closeModal();
+  SHPV.sel = trip ? 'trip:' + trip : null;
   loadShipments();
   if (document.getElementById('od-shipment-select') && window._odOrder) {
     loadOrderShipmentSelect(window._odOrder); // селектор в открытом заказе
   }
-  toast('✅ Отгрузка создана: ' + num);
+  toast('✅ ' + (n > 1 ? 'Рейс создан: ' : 'Отгрузка создана: ') + num);
 }
 
 async function setShipmentStatus(id, status) {
@@ -16606,7 +16720,7 @@ async function notifyShipmentClients(shipmentId, title, note) {
     const shp = (typeof shipmentsData !== 'undefined' ? shipmentsData : []).find(x => x.id === shipmentId);
     for (const [cid, nums] of Object.entries(byClient)) {
       await sendNotification(cid, `🚚 ${title}`,
-        `Машина ${shp?.ship_number || ''} · заказ ${nums.join(', ')}${note ? ' · ' + note : ''}`, '📍');
+        `Машина ${shp ? shpBaseNum(shp) : ''} · заказ ${nums.join(', ')}${note ? ' · ' + note : ''}`, '📍');
     }
   } catch (e) {}
 }
@@ -18341,9 +18455,10 @@ function renderGpsPreview(parsed) {
   let savedMap = {};
   try { savedMap = JSON.parse(localStorage.getItem('amma-gps-truck-map') || '{}'); } catch (e) {}
 
-  const activeShipments = (shipmentsData || []).filter(s => s.status !== 'delivered');
+  // рейс из 2 холодильников — одной строкой (замер разложится по холодильникам при сохранении)
+  const activeShipments = (shipmentsData || []).filter(s => s.status !== 'delivered' && !(s.trip_id && s.compartment > 1));
   const shpOptions = activeShipments.map(s =>
-    `<option value="${s.id}">${escHtml(s.ship_number)} — ${escHtml(s.direction||'')} (${s.status})</option>`
+    `<option value="${s.id}">${escHtml(s.trip_id ? shpBaseNum(s) + ' · 2 холодильника' : s.ship_number)} — ${escHtml(s.direction||'')} (${s.status})</option>`
   ).join('');
 
   prev.innerHTML = `<div style="font-size:12px;font-weight:700;margin-bottom:8px">Найдено машин: ${parsed.length} — сопоставьте с отгрузками / 匹配车次:</div>` +
@@ -18450,19 +18565,24 @@ async function saveGpsReport() {
       digest: r.digest, digestRu: r.digestRu, expiry: r.expiry,
       mileageTotal: r.mileageTotal, extra: r.extra,
     };
-    const { error } = await sb.from('shipment_tracking').insert({
-      shipment_id: shipmentId, kind: 'gps',
-      title: `GPS: ${r.truckNo}号车`,
-      temp_c: firstNumber(r.temp),
-      note: JSON.stringify(meta),
-      happened_at: parseGpsDateTime(r.reportTime),
-      created_by: currentUser?.id || null,
+    // рейс из 2 холодильников: «3.2 / 3.1 ℃» → первая цифра в холодильник 1, вторая — в холодильник 2
+    const base = shipmentsData.find(x => x.id === shipmentId);
+    const parts = base?.trip_id ? shipmentsData.filter(x => x.trip_id === base.trip_id).sort((a, b) => (a.compartment || 0) - (b.compartment || 0)) : [base || { id: shipmentId }];
+    const temps = _nums(r.temp), hums = _nums(r.humidity);
+    const rowsToSave = parts.map((p, k) => {
+      const tc = parts.length > 1 ? (temps[k] ?? null) : firstNumber(r.temp);
+      const hc = parts.length > 1 ? (hums.length > 1 ? hums[k] : hums[0]) ?? null : _num(r.humidity);
+      return { p, tc, hc, row: { shipment_id: p.id, kind: 'gps', title: `GPS: ${r.truckNo}号车`, temp_c: tc,
+        note: JSON.stringify({ ...meta, humidity: hc != null ? hc + '%' : (parts.length > 1 ? '' : r.humidity) }),
+        happened_at: parseGpsDateTime(r.reportTime), created_by: currentUser?.id || null } };
     });
+    const { error } = await sb.from('shipment_tracking').insert(rowsToSave.map(x => x.row));
     if (!error) {
       saved++;
-      const N = shpNorm(shipmentsData.find(x => x.id === shipmentId)), tc = firstNumber(r.temp), hc = _num(r.humidity);
-      const badT = tc != null && !tempOk(tc, N), badH = hc != null && !humOk(hc, N);
-      if (badT || badH) shpTempAlert(shipmentId, badT ? tc : null, r.locationRu || r.location, badH ? hc : null);
+      rowsToSave.forEach(({ p, tc, hc }) => {
+        const N = shpNorm(shipmentsData.find(x => x.id === p.id)), badT = tc != null && !tempOk(tc, N), badH = hc != null && !humOk(hc, N);
+        if (badT || badH) shpTempAlert(p.id, badT ? tc : null, r.locationRu || r.location, badH ? hc : null);
+      });
     }
     else skipped++;
   }
