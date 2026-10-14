@@ -1440,6 +1440,9 @@ document.addEventListener('DOMContentLoaded', function(){
     #page-pricepdf .pg-mkrow{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--mid);flex-wrap:wrap}
     #page-pricepdf .pg-mkrow select{padding:3px 6px;border:1px solid var(--border);border-radius:6px;font-size:11px;font-family:var(--font-b)}
     #page-pricepdf .pg-mkrow .pg-prc{font-weight:700;color:var(--sage-d);font-size:11.5px;margin-left:auto}
+    #page-pricepdf .pg-rubox{border:1.5px dashed var(--border);border-radius:var(--r);padding:9px 10px 2px;margin-bottom:9px;background:var(--sage-l)}
+    #page-pricepdf .pg-mkrow .pg-ru{flex-basis:100%;text-align:right;color:var(--mid);font-size:11px}
+    #page-pricepdf .pg-mkrow .pg-ru b{color:var(--sage-d)}
     #page-pricepdf .pg-mk{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
     #page-pricepdf .pg-mk button{border:1.5px solid var(--border);background:#fff;border-radius:999px;padding:7px 14px;font-size:12px;font-weight:600;color:var(--mid);cursor:pointer;font-family:var(--font-b)}
     #page-pricepdf .pg-mk button.on{background:var(--sage-d);border-color:var(--sage-d);color:#fff}
@@ -1531,12 +1534,10 @@ document.addEventListener('DOMContentLoaded', function(){
           <div>
             <div class="pg-f"><label>Неделя / период (плашка в шапке)</label><input id="pg-week" oninput="PG.setCfg('week',this.value)"></div>
             <div class="pg-two">
-              <div class="pg-f"><label>Какую цену брать</label>
+              <div class="pg-f"><label>Цена из прайса</label>
                 <select id="pg-basis" onchange="PG.setCfg('basis',this.value,true)">
-                  <option value="a_bunch">Цена A — за банч / 扎</option>
-                  <option value="ap_bunch">Цена A+ — за банч / 扎</option>
-                  <option value="a_box">Цена A — за короб / 件</option>
-                  <option value="ap_box">Цена A+ — за короб / 件</option>
+                  <option value="a_bunch">Цена A</option>
+                  <option value="ap_bunch">Цена A+</option>
                 </select>
               </div>
               <div class="pg-f"><label>Валюта в PDF</label>
@@ -1547,7 +1548,31 @@ document.addEventListener('DOMContentLoaded', function(){
               </div>
             </div>
             <div class="pg-two">
-              <div class="pg-f"><label>Курс ¥ → ₽</label><input type="number" step="0.01" id="pg-rate" oninput="PG.setCfg('rate',this.value,true)"></div>
+              <div class="pg-f"><label>Какие цены показывать</label>
+                <select id="pg-mode" onchange="PG.setCfg('mode',this.value,true)">
+                  <option value="list">Цена по прайсу (без логистики)</option>
+                  <option value="ru">Цена в России — всё включено</option>
+                  <option value="both">Обе цены рядом</option>
+                </select>
+              </div>
+              <div class="pg-f"><label>Цена за</label>
+                <select id="pg-units" onchange="PG.setCfg('units',this.value,true)">
+                  <option value="bs">банч и стебель</option>
+                  <option value="b">только банч</option>
+                  <option value="s">только стебель</option>
+                  <option value="box">короб</option>
+                </select>
+              </div>
+            </div>
+            <div class="pg-rubox" id="pg-rubox">
+              <div class="pg-f"><label>Схема расчёта цены в России</label>
+                <select id="pg-scheme" onchange="PG.setCfg('scheme',this.value,true)"></select>
+                <div class="pg-hint" id="pg-ruinfo"></div>
+              </div>
+              <div class="pg-f"><label>Пояснение под таблицей (для цены в России)</label><textarea id="pg-runote" style="min-height:44px" oninput="PG.setCfg('ruNote',this.value)"></textarea></div>
+            </div>
+            <div class="pg-two">
+              <div class="pg-f"><label>Курс ¥ → ₽ (для цены по прайсу)</label><input type="number" step="0.01" id="pg-rate" oninput="PG.setCfg('rate',this.value,true)"></div>
               <div class="pg-f"><label>Округление цены</label>
                 <select id="pg-round" onchange="PG.setCfg('round',this.value,true)">
                   <option value="raw">как получилось</option>
@@ -1560,7 +1585,7 @@ document.addEventListener('DOMContentLoaded', function(){
             </div>
             <div class="pg-f"><label>Наценка на весь прайс</label>
               <div class="pg-mk" id="pg-mkbar"></div>
-              <div class="pg-hint">В PDF попадает уже цена с наценкой, сам процент нигде не печатается. Для отдельной позиции можно задать свой — в её карточке выше.</div>
+              <div class="pg-hint">В PDF попадает уже цена с наценкой, сам процент нигде не печатается. Для отдельной позиции можно задать свой — в её карточке выше. Наценка добавляется к цене по прайсу; у цены в России наценка задаётся в схеме калькулятора.</div>
             </div>
           </div>
           <div>
@@ -19410,6 +19435,7 @@ function exportPricePDF() {
 
   const COLORS = ['#c0392b', '#7f8c5a', '#8e44ad', '#d98c9a', '#c79a4b', '#3a6ea5', '#2f7d54', '#b5651d'];
   const MK_STEPS = [0, 5, 10, 15];
+  const RU_NOTE = 'Цена «в России» — со всеми расходами: логистика, таможенное оформление, налоги и конвертация валюты.';
 
   let curCat = 'cut', cfgMap = {}, brands = {}, curBrand = 'amma', zoom = 0.72, inited = false;
 
@@ -19429,12 +19455,22 @@ function exportPricePDF() {
     return {
       week: 'НЕДЕЛЯ ' + weekNum() + ' · ' + rangeStr(),
       basis: 'a_bunch', cur: 'cny', rate: 12, markup: 0, round: 'raw', picks: [],
+      mode: 'list', units: 'bs', scheme: '', ruNote: RU_NOTE,
       conditions: 'Минимальный заказ — 1 короб на позицию\nЦены действительны 3 дня\nОтгрузка 3–5 дней после подтверждения',
       delivery: 'Москва: 7–10 дн · зима до 14\nНовосибирск: 5–7 дн\nКазань: 6–9 дн',
       tip: 'Под осенние палитры берите тёмную гвоздику + эвкалипт: недорого, стойко, в тренде.'
     };
   }
-  function cfg() { if (!cfgMap[curCat]) cfgMap[curCat] = blankCfg(); return cfgMap[curCat]; }
+  function cfg() {
+    if (!cfgMap[curCat]) cfgMap[curCat] = blankCfg();
+    const c = cfgMap[curCat];
+    // старые настройки: «за короб» было частью basis
+    if (!c.units) c.units = String(c.basis || '').slice(-3) === 'box' ? 'box' : 'bs';
+    if (String(c.basis || '').slice(-3) === 'box') c.basis = c.basis.replace('_box', '_bunch');
+    if (!c.mode) c.mode = 'list';
+    if (c.ruNote == null) c.ruNote = RU_NOTE;
+    return c;
+  }
   function brand() { if (!brands[curBrand]) brands[curBrand] = Object.assign({}, BRAND_PRESETS.amma); return brands[curBrand]; }
   function palOf(b) { const acc = b.acc || '#1f4030'; return { acc: acc, acc2: b.acc2 || acc, gold: b.gold || '#c79a4b', soft: b.soft || '#eef3ee' }; }
   function sysLogoSrc() { const el = document.querySelector('.logo-img'); return el ? el.getAttribute('src') : ''; }
@@ -19448,12 +19484,12 @@ function exportPricePDF() {
   function cw(hex) { return 1.05 / (relLum(hex) + 0.05); }
 
   // ── цены ───────────────────────────────────────────────
+  // цена банча (¥) из прайса — A или A+
   function baseOf(f) {
     const basis = cfg().basis || 'a_bunch';
     let p = basis.indexOf('ap') === 0 ? f.price_ap : f.price_a;
     if (p == null || p === '') return null;
-    p = Number(p); if (isNaN(p)) return null;
-    if (basis.slice(-3) === 'box') p = p * (Number(f.boxes_per_box) || 1);
+    p = Number(p); if (isNaN(p) || p <= 0) return null;
     return p;
   }
   function pickMk(pk) {
@@ -19470,20 +19506,86 @@ function exportPricePDF() {
   }
   function rate() { return cfg().cur === 'rub' ? (Number(cfg().rate) || 1) : 1; }
   function curSign() { return cfg().cur === 'rub' ? '₽' : '¥'; }
-  function calcPrice(f, pk) { const b = baseOf(f); if (b == null) return null; return roundPrice(b * (1 + pickMk(pk) / 100) * rate()); }
+  // ── цена в России из калькулятора «Цена в РФ» (те же схемы, курс ЦБ и расходы) ──
+  let ruOk = false, ruErr = '';
+  async function ensureRu() {
+    if (typeof rpCalc !== 'function' || typeof _rp === 'undefined') { ruErr = 'калькулятор недоступен'; return; }
+    if (_rp.cfg) { ruOk = true; return; }
+    try {
+      const { data, error } = await sb.from('calc_price_config').select('data').eq('id', 'main').maybeSingle();
+      if (error) { ruErr = error.message; return; }
+      const c = Object.assign(RP_DEF(), (data && data.data) || {});
+      if (!Array.isArray(c.schemes) || !c.schemes.length) c.schemes = RP_DEF().schemes;
+      if (!c.schemes.some(s => s.id === c.active)) c.active = c.schemes[0].id;
+      c.comp = c.comp || {};
+      if (!_rp.cfg) _rp.cfg = c;
+      ruOk = true;
+    } catch (e) { ruErr = e.message || String(e); }
+  }
+  function ruScheme() {
+    if (!ruOk) return null;
+    const S = _rp.cfg.schemes, id = cfg().scheme;
+    return S.find(s => s.id === id) || S.find(s => s.id === _rp.cfg.active) || S[0];
+  }
+  function isWt(f) { return typeof isWeightItem === 'function' ? isWeightItem(f) : !!f.flower_weight; }
+  function stemsOf(f) { const n = Number(f.stems) || 0; return n > 0 ? n : (curCat === 'cut' ? 0 : 1); }
+  // за единицу: банч / стебель (для весовых — кг) / короб; null — посчитать нельзя
+  function ruRaw(f) {
+    const sch = ruScheme(), p = baseOf(f); if (!sch || p == null) return null;
+    const b = rpBoxInfo(f.box_size);
+    const r = rpCalc({ weight: isWt(f), perBunch: stemsOf(f), bpb: Number(f.boxes_per_box) || 0, priceCny: p, vol: b.vol, height: b.height }, sch.id);
+    if (!r || !isFinite(r.price)) return null;
+    const bpb = Number(f.boxes_per_box);
+    return { box: r.price, b: r.price / bpb, s: r.unit };
+  }
+  function listRaw(f, pk) {
+    const p = baseOf(f); if (p == null) return null;
+    const b = p * (1 + pickMk(pk) / 100) * rate(), n = stemsOf(f), bpb = Number(f.boxes_per_box) || 1;
+    return { box: b * bpb, b: b, s: n ? (isWt(f) ? b / (n / 1000) : b / n) : null };
+  }
+  function rnd(v, u, sign) {
+    if (v == null || !isFinite(v)) return null;
+    if (u !== 's') return roundPrice(v);
+    if ((cfg().round || 'raw') === 'raw') return Math.round(v * 100) / 100;
+    return sign === '₽' ? Math.round(v * 10) / 10 : Math.round(v * 100) / 100;
+  }
+  function priceOf(f, pk, kind, u) {
+    const r = kind === 'ru' ? ruRaw(f) : listRaw(f, pk);
+    return r ? rnd(r[u], u, kind === 'ru' ? '₽' : curSign()) : null;
+  }
+  function kinds() {
+    const m = cfg().mode;
+    if (m === 'ru' && ruOk) return ['ru'];
+    if (m === 'both' && ruOk) return ['list', 'ru'];
+    return ['list'];
+  }
+  function unitsOf() {
+    const u = cfg().units || 'bs', stemOk = curCat === 'cut';
+    if (u === 'box') return ['box'];
+    if (!stemOk) return ['b'];
+    if (u === 's') return ['s'];
+    if (u === 'b') return ['b'];
+    return ['b', 's'];
+  }
+  function uLbl(u, f) {
+    if (u === 'box') return 'за короб';
+    if (u === 's') return f && isWt(f) ? 'за кг' : 'за стебель';
+    return curCat === 'cut' ? 'за банч' : 'за шт.';
+  }
+  function kSign(kind) { return kind === 'ru' ? '₽' : curSign(); }
+  // «главная» цена — в списке каталога и карточках
+  function calcPrice(f, pk) { const k = kinds(), u = unitsOf(); return priceOf(f, pk, k[k.length - 1], u[0]); }
+  function mainSign() { const k = kinds(); return kSign(k[k.length - 1]); }
   function fmtPrice(v) {
     if (v == null) return '—';
     return Number(v).toLocaleString('ru-RU', { minimumFractionDigits: (v % 1 ? 1 : 0), maximumFractionDigits: 2 });
   }
-  function unitLabel() {
-    if ((cfg().basis || '').slice(-3) === 'box') return 'за короб';
-    return curCat === 'cut' ? 'за банч' : 'за шт.';
-  }
+  function unitLabel() { return uLbl(unitsOf()[0]); }
   function packOf(f) {
     const p = [];
     if (f.boxes_per_box) p.push('Короб ' + f.boxes_per_box + (curCat === 'cut' ? ' бан.' : ' шт'));
-    if (f.stems) p.push('Банч ' + f.stems + ' шт');
-    if (f.flower_weight) p.push(f.flower_weight + ' г');
+    if (f.stems) p.push('Банч ' + f.stems + (isWt(f) ? ' г' : ' шт'));
+    else if (f.flower_weight) p.push(f.flower_weight + ' г');
     if (!p.length && f.pack) p.push(esc(f.pack));
     return p.join('<br>') || '—';
   }
@@ -19539,7 +19641,7 @@ function exportPricePDF() {
       return '<div class="pg-row' + (picked[f.id] ? ' on' : '') + '" onclick="PG.togglePick(' + f.id + ')">' +
         '<div class="pg-th" style="background:' + col + '">' + th + '</div>' +
         '<div class="pg-nm"><b>' + esc(f.ru || '—') + '</b><small>' + esc(nameAlt(f) || f.cat_ru || '') + '</small></div>' +
-        '<div class="pg-pr">' + fmtPrice(calcPrice(f)) + ' ' + curSign() + '</div></div>';
+        '<div class="pg-pr">' + fmtPrice(calcPrice(f)) + ' ' + mainSign() + '</div></div>';
     }).join('') || '<div class="pg-empty">Ничего не найдено</div>';
   };
 
@@ -19581,7 +19683,8 @@ function exportPricePDF() {
         '<select onchange="PG.setPickMk(' + pk.id + ',this.value)">' +
         '<option value=""' + ((!pk.mk && pk.mk !== 0) ? ' selected' : '') + '>как у всего прайса (' + gm + '%)</option>' + opts +
         '</select>' +
-        '<span class="pg-prc">' + fmtPrice(baseOf(f)) + ' → ' + fmtPrice(calcPrice(f, pk)) + ' ' + curSign() + '</span>' +
+        '<span class="pg-prc">¥' + fmtPrice(baseOf(f)) + ' → ' + fmtPrice(priceOf(f, pk, 'list', unitsOf()[0])) + ' ' + curSign() + '</span>' +
+        (kinds().indexOf('ru') >= 0 ? '<span class="pg-ru">в России: ' + unitsOf().map(u => '<b>' + fmtPrice(priceOf(f, pk, 'ru', u)) + ' ₽</b> ' + uLbl(u, f)).join(' · ') + '</span>' : '') +
         '</div></div>';
     }).join('');
   }
@@ -19601,6 +19704,7 @@ function exportPricePDF() {
   };
   PG.setCfg = function (k, v, hard) {
     cfg()[k] = v;
+    if (k === 'mode' || k === 'basis' || k === 'scheme') syncRu();
     if (hard) { PG.renderPicker(); renderPicks(); }
     render();
   };
@@ -19691,6 +19795,10 @@ function exportPricePDF() {
     '.pgsheet table{width:100%;border-collapse:collapse;background:transparent;font-size:9.5px}',
     '.pgsheet thead th{background:var(--chip);color:var(--acc);font-size:8px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;padding:5px 6px;text-align:left;border:none;border-bottom:2px solid var(--line);white-space:normal}',
     '.pgsheet thead th.pr{text-align:right}',
+    '.pgsheet thead th .hu{display:block;font-weight:400;text-transform:none;letter-spacing:0;font-size:7.5px;opacity:.8}',
+    '.pgsheet thead th.ru{background:color-mix(in srgb, var(--gold) 22%, #fff)}',
+    '.pgsheet tbody td.pr.ru{color:var(--acc);background:color-mix(in srgb, var(--gold) 7%, transparent)}',
+    '.pgsheet .runote{font-size:8.5px;color:var(--muted);margin-top:8px;padding-left:10px;border-left:2px solid var(--gold);line-height:1.5}',
     '.pgsheet tbody td{padding:7px 6px;border:none;border-bottom:1px solid var(--line);vertical-align:top;font-size:9.5px;background:transparent;color:#26241f}',
     '.pgsheet tbody tr:nth-child(even) td{background:var(--stripe)}',
     '.pgsheet .thumb{width:36px;height:36px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;overflow:hidden}',
@@ -19732,11 +19840,20 @@ function exportPricePDF() {
       '<span class="alt">' + esc(nameAlt(f)) + '</span>' +
       (pk.comment ? '<span class="cmt">' + esc(pk.comment) + '</span>' : '') + '</td>' +
       '<td class="pack">' + packOf(f) + '</td>' +
-      '<td class="pr">' + fmtPrice(calcPrice(f, pk)) + ' ' + curSign() + '<span class="u">' + unitLabel() + '</span></td>' +
+      priceCols().map(c => {
+        const v = priceOf(f, pk, c.k, c.u);
+        return '<td class="pr' + (c.k === 'ru' ? ' ru' : '') + '">' + (v == null ? '—' : fmtPrice(v) + ' ' + kSign(c.k)) + '<span class="u">' + uLbl(c.u, f) + '</span></td>';
+      }).join('') +
       '</tr>';
   }
+  function priceCols() { const K = kinds(), U = unitsOf(), o = []; K.forEach(k => U.forEach(u => o.push({ k: k, u: u }))); return o; }
+  function colHead(c) {
+    const K = kinds(), short = { b: curCat === 'cut' ? 'банч' : 'шт.', s: 'стебель', box: 'короб' }[c.u];
+    const t = c.k === 'ru' ? 'В России' : (K.length > 1 ? 'По прайсу' : 'Цена');
+    return '<th class="pr' + (c.k === 'ru' ? ' ru' : '') + '" style="width:' + (priceCols().length > 2 ? 66 : 78) + 'px">' + t + '<span class="hu">за ' + short + '</span></th>';
+  }
   function sectionTable(picks, map) {
-    return '<table><thead><tr><th style="width:44px"></th><th>Наименование</th><th style="width:82px">Упаковка</th><th class="pr" style="width:78px">Цена</th></tr></thead><tbody>' +
+    return '<table><thead><tr><th style="width:44px"></th><th>Наименование</th><th style="width:82px">Упаковка</th>' + priceCols().map(colHead).join('') + '</tr></thead><tbody>' +
       picks.map(pk => itemRow(map[pk.id] || { id: pk.id, ru: '#' + pk.id }, pk)).join('') + '</tbody></table>';
   }
   function liList(txt) { return String(txt || '').split('\n').filter(x => x.trim()).map(x => '<li>' + esc(x) + '</li>').join(''); }
@@ -19771,6 +19888,7 @@ function exportPricePDF() {
       (hits.length ? '<div class="sec"><span>🔥</span><span class="tag">Хиты продаж</span><span class="rule"></span><span class="cnt">берут каждую неделю</span></div>' + sectionTable(hits, map) : '') +
       (recs.length ? '<div class="sec"><span>⭐</span><span class="tag">Рекомендуем</span><span class="rule"></span><span class="cnt">наш выбор недели</span></div>' + sectionTable(recs, map) : '') +
       ((!hits.length && !recs.length) ? '<div class="pgempty">Отметьте позиции в каталоге — они появятся здесь.</div>' : '') +
+      ((hits.length || recs.length) && kinds().indexOf('ru') >= 0 && c.ruNote ? '<div class="runote">' + esc(c.ruNote).replace(/\n/g, '<br>') + '</div>' : '') +
       '<div class="info">' +
       '<div class="pgcard"><h3>Условия заказа</h3><ul>' + liList(c.conditions) + '</ul></div>' +
       '<div class="pgcard"><h3>Сроки доставки</h3><ul>' + liList(c.delivery) + '</ul></div>' +
@@ -19809,10 +19927,32 @@ function exportPricePDF() {
     $('pg-cur').value = c.cur || 'cny';
     $('pg-rate').value = c.rate != null ? c.rate : 12;
     $('pg-round').value = c.round || 'raw';
+    $('pg-mode').value = c.mode || 'list';
+    $('pg-units').value = c.units || 'bs';
+    $('pg-runote').value = c.ruNote || '';
+    syncRu();
     $('pg-cond').value = c.conditions || '';
     $('pg-deliv').value = c.delivery || '';
     $('pg-tip').value = c.tip || '';
     renderMk();
+  }
+
+  function syncRu() {
+    const c = cfg(), sel = $('pg-scheme'), info = $('pg-ruinfo'), box = $('pg-rubox');
+    const md = $('pg-mode');
+    [...md.options].forEach(o => { if (o.value !== 'list') o.disabled = !ruOk; });
+    box.style.display = (c.mode !== 'list') ? '' : 'none';
+    if (!ruOk) {
+      sel.innerHTML = ''; sel.disabled = true;
+      info.innerHTML = ruErr ? '⚠️ Настройки калькулятора не загрузились (' + esc(ruErr) + ') — показывается только цена по прайсу.' : 'Загружаю схемы калькулятора…';
+      return;
+    }
+    const sch = ruScheme();
+    sel.disabled = false;
+    sel.innerHTML = _rp.cfg.schemes.map(s => '<option value="' + esc(s.id) + '"' + (sch && s.id === sch.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('');
+    const r = _rp.cfg.rate;
+    info.innerHTML = 'Курс ЦБ ' + String(r).replace('.', ',') + ' ₽/¥' + (_rp.cfg.rateDate ? ' на ' + esc(_rp.cfg.rateDate) : '') +
+      '. Схемы, курс и расходы берутся из калькулятора «Цена в РФ» — меняйте их там. В цене: цветы по прайсу (' + ((c.basis || '').indexOf('ap') === 0 ? 'A+' : 'A') + '), упаковка и расходы в Китае, место в машине, налоги и валюта, наценка схемы.';
   }
 
   // ── вход на страницу ───────────────────────────────────
@@ -19827,6 +19967,7 @@ function exportPricePDF() {
     if (typeof currentCatalog !== 'undefined' && currentCatalog) curCat = currentCatalog;
     renderCats(); renderBrandSel(); syncBrandFields(); syncFields();
     PG.renderPicker(); renderPicks(); render(); PG.setZoom(zoom);
+    if (!ruOk) ensureRu().then(() => { syncRu(); PG.renderPicker(); renderPicks(); render(); });
     if (!(typeof flowers !== 'undefined' && flowers && flowers.length)) {
       $('pg-count').textContent = 'Каталог загружается…';
       if (typeof loadFlowers === 'function') {
