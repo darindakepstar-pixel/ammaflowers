@@ -205,6 +205,22 @@ btn,button{font-family:var(--font-b);cursor:pointer}
 
 /* ═══ TABLE ═══ */
 .tbl-wrap{overflow-x:auto;border-radius:var(--r);box-shadow:var(--shadow)}
+/* Таблица позиций заказа: своя прокрутка — горизонтальная полоса всегда на экране,
+   шапка и итог прилипают, № и название остаются слева при прокрутке вбок */
+.mgr-scroll{max-height:calc(100vh - 130px);overflow:auto;overscroll-behavior:contain}
+#mgr-order-table{border-collapse:separate;border-spacing:0}
+#mgr-order-table thead th{position:sticky;top:0;z-index:3}
+#mgr-order-table tfoot td{position:sticky;bottom:0;z-index:3;background-color:var(--white);box-shadow:0 -1px 0 var(--border)}
+#mgr-order-table .mgr-stk1{position:sticky;left:0;z-index:2;width:34px;min-width:34px;max-width:34px;padding-left:3px;padding-right:3px;background-color:var(--white)}
+#mgr-order-table .mgr-stk2{position:sticky;left:34px;z-index:2;background-color:var(--white);box-shadow:1px 0 0 var(--border)}
+#mgr-order-table tbody tr.stripe td.mgr-stk1,#mgr-order-table tbody tr.stripe td.mgr-stk2{background-color:var(--white)!important}
+#mgr-order-table thead th.mgr-stk1,#mgr-order-table thead th.mgr-stk2{z-index:4}
+html[data-theme="light"] #mgr-order-table thead th.mgr-stk1,html[data-theme="light"] #mgr-order-table thead th.mgr-stk2{background:#EDF0E6}
+html[data-theme="dark"] #mgr-order-table thead th{background:#264836}
+#mgr-order-table tbody tr td{border-bottom:1px solid var(--border)}
+#mgr-order-table tbody tr:hover td.mgr-stk1,#mgr-order-table tbody tr:hover td.mgr-stk2{background:linear-gradient(rgba(220,235,164,.32),rgba(220,235,164,.32)),var(--white)!important}
+.mgr-diff{background:#fef3c7;border-radius:4px;padding:1px 4px;white-space:nowrap}
+.mgr-diff s{color:#9ca3af}
 
 /* ═══ VIEW TOGGLE (карточки / таблица) ═══ */
 .view-toggle{display:flex;background:rgba(232,239,230,.55);border:1px solid var(--border);border-radius:999px;padding:3px;gap:2px;backdrop-filter:blur(6px)}
@@ -2713,6 +2729,7 @@ function isWeightItem(x) {
 // Для позиции заказа: snapshot (полная копия цветка) → joined flower → прайс
 function itemWeightBased(item) {
   const snap = item?.flower_snapshot || {};
+  if (snap.is_weight === true || snap.is_weight === false) return snap.is_weight;
   if (snap.cat_ru || snap.cat_en || snap.pack) return isWeightItem(snap);
   if (item?.flower?.cat_ru || item?.flower?.pack) return isWeightItem(item.flower);
   const f = (typeof flowers !== 'undefined' ? flowers : []).find(z => z.id === item?.flower_id);
@@ -6374,8 +6391,8 @@ function mgrRowHTML(item, i, id) {
         : '';
     return `
     <tr class="${i%2?'stripe':''}" id="mgr-row-${i}" ${whPending?'style="background:#fff7ed"':''}>
-      <td style="color:var(--light);font-size:10px">${i+1}</td>
-      <td class="L">
+      <td class="mgr-stk1" style="color:var(--light);font-size:10px">${i+1}</td>
+      <td class="L mgr-stk2">
         <b style="font-size:12px">${item.flower?.ru || item.flower_snapshot?.ru || '—'}</b>
         <div style="font-size:10px;color:var(--mid)">${item.flower?.cn || item.flower_snapshot?.cn ||''}</div>
         ${whBadge}
@@ -6412,6 +6429,17 @@ function mgrRowHTML(item, i, id) {
           oninput="mgrUpdateItem(${i},'qty_boxes',this.value);mgrRecalcRow(${i})">
       </td>
       <td id="mgr-bn-${i}" style="color:var(--mid);font-size:11px">${(parseInt(item.qty_boxes)||0)*(parseInt(item.bunches_per_box)||0) || '—'}</td>
+      <td style="white-space:nowrap">
+        <input class="inp" type="number" min="0" step="1" value="${parseFloat(snap.stems)||''}" placeholder="—"
+          title="${snap.stems_label ? 'В файле: ' + escHtml(snap.stems_label) + ' · ' : ''}Стеблей в банче или граммов в банче / 每扎枝数或克数"
+          style="width:52px;padding:3px 4px;font-size:12px;text-align:center${!parseFloat(snap.stems)?';background:#fff7ed;border-color:#f59e0b':''}"
+          oninput="mgrUpdateSnapField(${i},'stems',this.value===''?null:(parseFloat(this.value)||0));mgrRecalcRow(${i})">
+        <select class="inp" style="padding:3px 2px;font-size:10px;width:38px" title="шт — стебли, г — вес банча в граммах"
+          onchange="mgrUpdateSnapField(${i},'is_weight',this.value==='g');mgrRecalcRow(${i})">
+          <option value="s" ${itemWeightBased(item)?'':'selected'}>шт</option>
+          <option value="g" ${itemWeightBased(item)?'selected':''}>г</option>
+        </select>
+      </td>
       <td id="mgr-un-${i}" style="color:var(--mid);font-size:11px;white-space:nowrap">${(snap.stems && item.bunches_per_box) ? fmtStems((parseInt(item.qty_boxes)||0)*(parseInt(item.bunches_per_box)||0)*(parseInt(snap.stems)||0), itemWeightBased(item)) : '—'}</td>
       <td>
         <input class="inp" type="text" value="${snap.box_size||''}"
@@ -6601,6 +6629,10 @@ function renderOrderDetail(order) {
       <button class="btn btn-secondary btn-sm" onclick="mgrOpenAddItemPicker('${id}')">
         ➕ Добавить позицию / 添加商品
       </button>
+      <label class="btn btn-secondary btn-sm" style="cursor:pointer" title="Загрузить Excel заказа/накладной: система сравнит с позициями и подставит коробы, банчи, вес, цены, размеры коробов">
+        📥 Сверить с Excel / 对照Excel
+        <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="mgrExcelSyncFile(this)">
+      </label>
       <button class="btn btn-secondary btn-sm" onclick="mgrRefreshPrices()" title="Подтянуть актуальные цены из прайс-листа">
         🔄 Обновить цены из прайса / 更新价格
       </button>
@@ -6612,17 +6644,18 @@ function renderOrderDetail(order) {
       </button>
     </div>
 
-    <div class="tbl-wrap">
-      <table style="min-width:1150px" id="mgr-order-table">
+    <div class="tbl-wrap mgr-scroll" id="mgr-order-scroll">
+      <table style="min-width:1240px" id="mgr-order-table">
         <thead><tr>
-          <th style="width:28px">№</th>
-          <th class="L" style="min-width:150px">Название / 名称</th>
+          <th class="mgr-stk1">№</th>
+          <th class="L mgr-stk2" style="min-width:190px">Название / 名称</th>
           <th style="width:55px">Грейд</th>
           <th style="width:75px">¥/банч<br>价/扎</th>
           <th style="width:65px">Бан./кор.<br>扎/件</th>
           <th style="width:80px">¥/КОРОБ<br>件价</th>
           <th style="width:65px">Кор./箱</th>
           <th style="width:60px">Банчей<br>总扎数</th>
+          <th style="width:100px">Ст(г)/банч<br>枝(克)/扎</th>
           <th style="width:78px">Всего шт/кг<br>总数</th>
           <th style="width:94px">Короб, см<br>箱规</th>
           <th style="width:58px">м³</th>
@@ -6634,10 +6667,11 @@ function renderOrderDetail(order) {
         <tbody id="mgr-order-tbody">${rows}</tbody>
         <tfoot><tr id="mgr-order-footer">
           <td colspan="6" style="text-align:right;padding:8px;font-weight:700">
-            ИТОГО / 合计: <span style="font-size:11px;color:var(--mid);font-weight:400">${items.length} поз./件</span>
+            ИТОГО / 合计: <span id="mgr-tot-count" style="font-size:11px;color:var(--mid);font-weight:400">${items.length} поз./件</span>
           </td>
           <td id="mgr-tot-boxes" style="font-weight:700;font-size:13px">${totalBoxes}</td>
           <td id="mgr-tot-bunches" style="font-weight:700;font-size:12px;color:var(--sage-d)"></td>
+          <td></td>
           <td id="mgr-tot-units" style="font-weight:700;font-size:11px;color:var(--sage-d);white-space:nowrap"></td>
           <td></td>
           <td id="mgr-tot-m3" style="font-weight:700;font-size:12px;color:var(--sage-d);white-space:nowrap"></td>
@@ -6765,6 +6799,202 @@ function mgrRefreshPrices() {
     : '✅ Все цены соответствуют прайсу / 价格均为最新');
 }
 
+// ══════════════════════════════════════════════════════════
+//  СВЕРКА ЗАКАЗА С EXCEL: загрузили таблицу (накладная/пакинг/заказ) →
+//  позиции сопоставляются по названию, показываются расхождения,
+//  выбранные значения подставляются в редактор (сохранение — кнопкой 💾).
+// ══════════════════════════════════════════════════════════
+let _mgrSync = null;
+const MGR_SYNC_FIELDS = [
+  { k: 'boxes', l: 'Коробов' }, { k: 'bpb', l: 'Банч/кор' }, { k: 'stems', l: 'Ст(г)/банч' },
+  { k: 'price', l: '¥/банч' }, { k: 'size', l: 'Размер короба' }, { k: 'comment', l: 'Коммент.' },
+];
+
+function mgrSyncCur(it) {
+  const snap = it.flower_snapshot || it.flower || {};
+  return {
+    boxes: parseFloat(it.qty_boxes) || 0,
+    bpb: parseFloat(it.bunches_per_box) || 0,
+    stems: parseFloat(snap.stems) || 0, weight: itemWeightBased(it),
+    price: parseFloat(it.price_per_bunch) || 0,
+    size: String(snap.box_size || '').replace(/\s/g, ''),
+    comment: String(it.item_comment || '').trim(),
+  };
+}
+function mgrSyncNew(r) {
+  const st = impParseStems(r.stems);
+  return {
+    boxes: r.boxes === '' ? null : parseFloat(r.boxes),
+    bpb: r.bpb === '' ? null : parseFloat(r.bpb),
+    stems: st.v, weight: st.v != null ? (st.w || !!r.weight) : null,
+    stemsLabel: /\d\s*[\/\\-]\s*\d/.test(String(r.stems || '')) ? String(r.stems).trim() : null,
+    price: r.price === '' || r.price == null ? null : parseFloat(r.price),
+    size: r.box_size ? String(r.box_size).replace(/\s/g, '') : null,
+    comment: r.comment || null,
+  };
+}
+function mgrSyncDiffs(cur, nw) {
+  const d = {};
+  if (nw.boxes != null && Math.abs(nw.boxes - cur.boxes) > 1e-6) d.boxes = true;
+  if (nw.bpb != null && nw.bpb !== cur.bpb) d.bpb = true;
+  if (nw.stems != null && (nw.stems !== cur.stems || nw.weight !== cur.weight)) d.stems = true;
+  if (nw.price != null && Math.abs(nw.price - cur.price) > 0.001) d.price = true;
+  if (nw.size && nw.size !== cur.size) d.size = true;
+  if (nw.comment && nw.comment !== cur.comment) d.comment = true;
+  return d;
+}
+
+async function mgrExcelSyncFile(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  try {
+    await impLoadFlowers();
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: null });
+    const { rows } = impParseAoa(aoa);
+    if (!rows.length) { toast('В файле не нашлось позиций / 未找到商品'); return; }
+    const items = _mgrOrderItems || [];
+    const used = new Set();
+    const names = it => [it.flower?.ru, it.flower_snapshot?.ru].filter(Boolean).map(impNorm);
+    const cns = it => [it.flower?.cn, it.flower_snapshot?.cn].filter(Boolean).map(impNorm);
+    const pairs = [], extra = [];
+    rows.forEach(r => {
+      const ru = impNorm(r.ru), cn = impNorm(r.cn);
+      const free = (fn) => items.findIndex((it, i) => !used.has(i) && fn(it));
+      let idx = free(it => ru && names(it).includes(ru));
+      if (idx < 0 && cn) idx = free(it => cns(it).includes(cn));
+      if (idx < 0 && r.fid) idx = free(it => String(it.flower_id || it.flower?.id || '') === String(r.fid));
+      if (idx < 0) { extra.push({ r, nw: mgrSyncNew(r), on: false }); return; }
+      used.add(idx);
+      const it = items[idx], cur = mgrSyncCur(it), nw = mgrSyncNew(r);
+      const d = mgrSyncDiffs(cur, nw);
+      pairs.push({ idx, r, cur, nw, d, on: Object.keys(d).length > 0 });
+    });
+    const missing = items.map((it, i) => used.has(i) ? null : (it.flower?.ru || it.flower_snapshot?.ru || '—')).filter(Boolean);
+    _mgrSync = { file: file.name, pairs, extra, missing, fields: { boxes: true, bpb: true, stems: true, price: true, size: true, comment: false } };
+    mgrSyncRender();
+    openModal();
+  } catch (e) {
+    toast('❌ Не удалось прочитать файл: ' + (e.message || e));
+  } finally { input.value = ''; }
+}
+
+function mgrSyncRender() {
+  const S = _mgrSync; if (!S) return;
+  const mc = document.getElementById('modal-content');
+  mc.classList.add('op-wide');
+  const fmt = (k, o) => {
+    if (k === 'stems') return o.stems != null && o.stems !== 0 ? fmtStems(o.stems, o.weight) : '—';
+    if (k === 'price') return o.price ? '¥' + o.price : '—';
+    const v = o[k]; return v == null || v === '' || v === 0 ? '—' : escHtml(String(v));
+  };
+  const cell = (p, k) => {
+    if (!p.d[k]) return `<td style="font-size:11px;color:var(--mid)">${fmt(k, p.cur)}</td>`;
+    const off = !S.fields[k];
+    return `<td style="font-size:11px"><span class="mgr-diff" style="${off ? 'opacity:.45' : ''}"><s>${fmt(k, p.cur)}</s> → <b>${fmt(k, p.nw)}</b></span></td>`;
+  };
+  const changed = S.pairs.filter(p => Object.keys(p.d).length);
+  const same = S.pairs.length - changed.length;
+  const rowsHtml = changed.map((p, n) => {
+    const it = _mgrOrderItems[p.idx];
+    return `<tr class="${n % 2 ? 'stripe' : ''}">
+      <td><input type="checkbox" ${p.on ? 'checked' : ''} onchange="_mgrSync.pairs[${S.pairs.indexOf(p)}].on=this.checked"></td>
+      <td class="L" style="font-size:11px"><b>${escHtml(it.flower?.ru || it.flower_snapshot?.ru || p.r.ru)}</b>
+        ${it.client_name ? `<span style="color:var(--mid)"> · ${escHtml(it.client_name)}</span>` : ''}</td>
+      ${MGR_SYNC_FIELDS.map(f => cell(p, f.k)).join('')}
+    </tr>`;
+  }).join('');
+  const extraHtml = S.extra.map((x, n) => `<tr>
+      <td><input type="checkbox" ${x.on ? 'checked' : ''} onchange="_mgrSync.extra[${n}].on=this.checked"></td>
+      <td class="L" style="font-size:11px"><b>${escHtml(x.r.ru)}</b><div style="color:var(--mid);font-size:10px">${escHtml(x.r.cn || '')}</div></td>
+      <td style="font-size:11px">${fmt('boxes', x.nw)}</td><td style="font-size:11px">${fmt('bpb', x.nw)}</td>
+      <td style="font-size:11px">${fmt('stems', x.nw)}</td><td style="font-size:11px">${fmt('price', x.nw)}</td>
+      <td style="font-size:11px">${fmt('size', x.nw)}</td><td style="font-size:10px;color:var(--mid)">${x.r.fid ? '🔗 прайс' : 'вне прайса'}</td>
+    </tr>`).join('');
+  mc.innerHTML = `
+    <div class="modal-title">📥 Сверка с Excel: ${escHtml(S.file)}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
+      <span class="badge" style="background:#fef3c7;color:#92400e">✏️ Расхождения: ${changed.length}</span>
+      <span class="badge" style="background:var(--sage-l);color:var(--sage-d)">✅ Совпадает: ${same}</span>
+      ${S.extra.length ? `<span class="badge" style="background:#e0f2fe;color:#075985">➕ Нет в заказе: ${S.extra.length}</span>` : ''}
+      ${S.missing.length ? `<span class="badge" style="background:#fee2e2;color:#991b1b">❔ Нет в файле: ${S.missing.length}</span>` : ''}
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px;font-size:12px">
+      <b>Что подставлять:</b>
+      ${MGR_SYNC_FIELDS.map(f => `<label style="display:flex;gap:4px;align-items:center;cursor:pointer">
+        <input type="checkbox" ${S.fields[f.k] ? 'checked' : ''} onchange="_mgrSync.fields['${f.k}']=this.checked;mgrSyncRender()"> ${f.l}</label>`).join('')}
+    </div>
+    ${changed.length ? `<div class="tbl-wrap" style="max-height:42vh;overflow:auto"><table style="min-width:820px">
+      <thead><tr><th style="width:26px"><input type="checkbox" checked onchange="_mgrSync.pairs.forEach(p=>{if(Object.keys(p.d).length)p.on=this.checked});mgrSyncRender()"></th>
+        <th class="L">Позиция / 品名</th>${MGR_SYNC_FIELDS.map(f => `<th>${f.l}</th>`).join('')}</tr></thead>
+      <tbody>${rowsHtml}</tbody></table></div>`
+      : '<div style="padding:12px;font-size:12px;color:var(--sage-d)">✅ Все найденные позиции совпадают с файлом.</div>'}
+    ${S.extra.length ? `<div style="margin-top:12px;font-size:12px;font-weight:700">➕ В файле есть, в заказе нет — отметьте, что добавить:</div>
+      <div class="tbl-wrap" style="max-height:24vh;overflow:auto;margin-top:6px"><table style="min-width:720px">
+      <thead><tr><th style="width:26px"></th><th class="L">Позиция</th><th>Коробов</th><th>Банч/кор</th><th>Ст(г)/банч</th><th>¥/банч</th><th>Короб</th><th></th></tr></thead>
+      <tbody>${extraHtml}</tbody></table></div>` : ''}
+    ${S.missing.length ? `<div style="margin-top:10px;font-size:11px;color:#991b1b">❔ Есть в заказе, но не нашлись в файле (не меняются): ${S.missing.map(escHtml).join(', ')}</div>` : ''}
+    <div style="margin-top:8px;font-size:10px;color:var(--light)">Значения попадут в таблицу заказа. Проверьте и нажмите 💾 «Сохранить изменения».</div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+      <button class="btn btn-primary" onclick="mgrSyncApply()">✅ Подставить / 应用</button>
+    </div>`;
+}
+
+function mgrSyncApply() {
+  const S = _mgrSync; if (!S) return;
+  const F = S.fields;
+  let nChanged = 0, nAdded = 0;
+  S.pairs.forEach(p => {
+    if (!p.on || !Object.keys(p.d).length) return;
+    const it = _mgrOrderItems[p.idx];
+    if (!it.flower_snapshot) it.flower_snapshot = it.flower ? { ...it.flower } : {};
+    const snap = it.flower_snapshot;
+    let touched = false;
+    if (F.boxes && p.d.boxes) { it.qty_boxes = Math.round(p.nw.boxes); touched = true; }
+    if (F.bpb && p.d.bpb) { it.bunches_per_box = p.nw.bpb; snap.boxes_per_box = p.nw.bpb; touched = true; }
+    if (F.stems && p.d.stems) {
+      snap.stems = p.nw.stems; snap.is_weight = !!p.nw.weight;
+      if (p.nw.stemsLabel) snap.stems_label = p.nw.stemsLabel; else delete snap.stems_label;
+      touched = true;
+    }
+    if (F.price && p.d.price) { it.price_per_bunch = p.nw.price; touched = true; }
+    if (F.size && p.d.size) { snap.box_size = p.r.box_size; touched = true; }
+    if (F.comment && p.d.comment) { it.item_comment = p.nw.comment; touched = true; }
+    if (touched) nChanged++;
+  });
+  const fl = _impFlowers || (typeof flowers !== 'undefined' ? flowers : []);
+  S.extra.forEach(x => {
+    if (!x.on) return;
+    const r = x.r, nw = x.nw;
+    const f = r.fid ? fl.find(z => String(z.id) === String(r.fid)) : null;
+    const { photo_url, ...fLight } = f || {};
+    const bpb = nw.bpb || parseInt(f?.boxes_per_box) || 0;
+    const snap = { ...(f ? fLight : {}), ru: r.ru, cn: r.cn || f?.cn || '', boxes_per_box: bpb,
+      stems: nw.stems, box_size: r.box_size || f?.box_size || null, mgr_added: true, imported: true };
+    if (!f) { snap.custom = true; }
+    if (nw.weight != null) snap.is_weight = !!nw.weight;
+    if (nw.stemsLabel) snap.stems_label = nw.stemsLabel;
+    const price = nw.price != null ? nw.price : (parseFloat(f?.price_a) || 0);
+    _mgrOrderItems.push({
+      flower_id: f ? f.id : null, flower: f || null, flower_snapshot: snap,
+      price_type: 'a', price_per_bunch: price, bunches_per_box: bpb,
+      price_per_box: +(price * (bpb || 1)).toFixed(2), qty_boxes: Math.round(nw.boxes || 1), subtotal: 0,
+      client_name: '', item_comment: r.comment || '', _mgrAdded: true,
+    });
+    nAdded++;
+  });
+  closeModal();
+  const orderId = window._mgrOrderMeta?.id || currentOrderId || '';
+  const tbody = document.getElementById('mgr-order-tbody');
+  if (tbody) tbody.innerHTML = _mgrOrderItems.map((item, idx) => mgrRowHTML(item, idx, orderId)).join('');
+  _mgrOrderItems.forEach((_, i) => mgrRecalcRow(i));
+  mgrRecalcFooter();
+  S.pairs.forEach(p => { if (p.on && Object.keys(p.d).length) { const row = document.getElementById('mgr-row-' + p.idx); if (row) row.style.background = '#fef3c7'; } });
+  toast(`📥 Обновлено позиций: ${nChanged}${nAdded ? ', добавлено: ' + nAdded : ''}. Проверьте и нажмите 💾 Сохранить / 请保存`);
+  _mgrSync = null;
+}
+
 // Open the chat page directly in the given order's room
 function openOrderChat(orderId, clientId) {
   window._pendingChatRoom = { room: 'order-' + orderId, clientId: clientId || null };
@@ -6810,7 +7040,7 @@ function mgrRecalcRow(i) {
   if (bnEl) bnEl.textContent = (q * bpb) || '—';
   const unEl = document.getElementById(`mgr-un-${i}`);
   if (unEl) unEl.textContent = (snap.stems && bpb)
-    ? fmtStems(q * bpb * (parseInt(snap.stems)||0), itemWeightBased(item)) : '—';
+    ? fmtStems(Math.round(q * bpb * (parseFloat(snap.stems)||0)), itemWeightBased(item)) : '—';
   const bv = itemBoxM3(snap);
   const m3El = document.getElementById(`mgr-m3-${i}`);
   if (m3El) m3El.textContent = (bv.est?'≈':'') + fmtM3(q * bv.m3);
@@ -6827,7 +7057,7 @@ function mgrRecalcFooter() {
     const q = parseInt(it.qty_boxes) || 0;
     const bpb = parseInt(it.bunches_per_box) || 0;
     boxes += q; bunches += q * bpb;
-    const per = parseInt(it.flower_snapshot?.stems) || 0;
+    const per = parseFloat(it.flower_snapshot?.stems) || 0;
     if (per && bpb) {
       if (itemWeightBased(it)) grams += q * bpb * per;
       else stems += q * bpb * per;
@@ -6835,9 +7065,10 @@ function mgrRecalcFooter() {
   });
   const c = orderCubes(items);
   const set = (eid, v) => { const el = document.getElementById(eid); if (el) el.textContent = v; };
+  set('mgr-tot-count', items.length + ' поз./件');
   set('mgr-tot-boxes', boxes);
   set('mgr-tot-bunches', bunches || '—');
-  set('mgr-tot-units', [stems ? stems + ' шт' : '', grams ? fmtStems(grams, true) : ''].filter(Boolean).join(' + ') || '—');
+  set('mgr-tot-units', [stems ? Math.round(stems) + ' шт' : '', grams ? fmtStems(Math.round(grams), true) : ''].filter(Boolean).join(' + ') || '—');
   set('mgr-tot-m3', (c.est?'≈':'') + fmtM3(c.m3));
   set('mgr-tot-sum', '¥' + total.toFixed(2));
   set('od-cubes', '📦 ' + boxes + ' кор · ' + (c.est?'≈':'') + fmtM3(c.m3) + ' м³');
@@ -14801,6 +15032,94 @@ function impFooter() {
   if (el) el.textContent = `${valid.length} поз. · ${valid.reduce((s, r) => s + opNum(r.boxes), 0)} кор.`;
 }
 
+// ── Разбор таблицы заказа (наш шаблон, выгрузка системы, накладная, пакинг) ──
+// Колонки определяются по смыслу заголовка, а не по первому совпадению:
+// «Связок в коробе» — это банчи/кор (не коробы), «Цена за стебель / за 1 кг» — не цена банча,
+// «Всего …» — итоги, не исходные данные. Строки после «ИТОГО» (упаковка, расходы) не читаются.
+function impDetectCols(row) {
+  const col = { names: [] };
+  (row || []).forEach((c, j) => {
+    const t = String(c ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!t) return;
+    if (/сумма|金额|小计/.test(t)) return;
+    if (/объ[её]м|体积|кубы|м³|m³/.test(t)) return;
+    if (/поставщик|供应商|земля|基地|перекуп|中间商/.test(t)) return;
+    if (/размер|箱规/.test(t)) { if (col.size == null) col.size = j; return; }
+    if (/(банч|бан\.?|扎)\s*\/\s*(кор|箱|件)|в\s*коробе|箱扎数/.test(t)) { if (col.bpb == null) col.bpb = j; return; }
+    if (/всего\s*(связ|банч)|总扎数/.test(t)) { if (col.total == null) col.total = j; return; }
+    if (/всего|总支|总重|总数|итого/.test(t)) return;
+    if (/^ед\b|^ед\.|单位/.test(t)) { if (col.unit == null) col.unit = j; return; }
+    if (/цена|¥|价/.test(t)) {
+      if (/стеб|支单价|枝单价|кг|公斤/.test(t)) return;
+      if (/банч|связ|扎/.test(t)) { if (col.price == null) col.price = j; }
+      else if (/короб|箱/.test(t)) { if (col.priceBox == null) col.priceBox = j; }
+      else if (col.priceAny == null) col.priceAny = j;
+      return;
+    }
+    if (/ст.*\/\s*банч|в\s*связке|в\s*банче|枝|克|数量\s*\/\s*扎/.test(t)) { if (col.stems == null) col.stems = j; return; }
+    if (/коммент|备注|примеч/.test(t)) { if (col.comment == null) col.comment = j; return; }
+    if (/назван|品名|名称|наимен/.test(t)) { col.names.push(j); return; }
+    if (/коробов|箱数|^кор\b|^кор\.|кол.*кор|件数|^箱$/.test(t)) { if (col.boxes == null) col.boxes = j; return; }
+  });
+  if (col.price == null && col.priceBox == null) col.price = col.priceAny;
+  return col;
+}
+
+function impParseAoa(aoa) {
+  const txt = v => String(v ?? '').toLowerCase();
+  let h = aoa.findIndex(r => r && r.some(c => /назван|品名|наимен/.test(txt(c))) && r.some(c => /кор|箱/.test(txt(c))));
+  let col;
+  if (h >= 0) col = impDetectCols(aoa[h]);
+  else { h = -1; col = { names: [0, 1], boxes: 2, size: 3, bpb: 6, stems: 7, price: 8, comment: 12 }; } // выгрузка без заголовков
+  const cRu = col.names[0] ?? 0, cCn = col.names[1];
+  const meta = {};
+  aoa.slice(0, Math.max(h, 0)).forEach(r => (r || []).forEach((c, j) => {
+    const t = txt(c), next = () => (r.slice(j + 1).find(x => x != null && x !== '') ?? null);
+    if (/номер|单号/.test(t)) meta.orig = String(next() || '').trim();
+    if (/отгрузк|出货|发货/.test(t)) {
+      const v = next();
+      let d = v instanceof Date ? v.toLocaleDateString('sv-SE') : (String(v || '').match(/\d{4}-\d{2}-\d{2}/) || [])[0];
+      if (!d) { const m = String(v || '').match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/); if (m) d = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+      if (d) meta.ship = d;
+    }
+  }));
+  const num = v => { if (v == null || v === '') return ''; const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? '' : n; };
+  const cell = (r, c) => c != null ? r[c] : null;
+  const rows = [];
+  for (const r of aoa.slice(h + 1)) {
+    if (!r) continue;
+    let ru = String(r[cRu] ?? '').trim(), cn = cCn != null ? String(r[cCn] ?? '').trim() : '';
+    if (!ru && !cn) continue;
+    if (/^(итого|всего|合计|总计|total)/i.test(ru) || /^(合计|总计)/.test(cn)) break;   // дальше — упаковка, расходы, пояснения
+    if (!ru) ru = cn;
+    const f = impMatch(ru, cn);
+    const unit = String(cell(r, col.unit) ?? '').toLowerCase().trim();
+    const unitW = /^(г|гр|g|克|кг|kg|公斤)/.test(unit), unitKg = /^(кг|kg|公斤)/.test(unit);
+    const rawSt = cell(r, col.stems);
+    let st = impParseStems(rawSt);
+    if (st.v != null && unitW) st = { v: unitKg ? st.v * 1000 : st.v, w: true };
+    let bpb = num(cell(r, col.bpb));
+    let boxes = num(cell(r, col.boxes));
+    const total = num(cell(r, col.total));
+    if (boxes === '' && total !== '' && bpb) boxes = Math.round(total / bpb * 100) / 100;
+    let price = num(cell(r, col.price));
+    if (price === '' && col.priceBox != null) { const pb = num(cell(r, col.priceBox)); if (pb !== '' && bpb) price = +(pb / bpb).toFixed(2); }
+    rows.push({
+      ru, cn: cn || f?.cn || '',
+      boxes,
+      bpb: bpb || f?.boxes_per_box || '',
+      stems: (rawSt != null && /\d\s*[\/\\-]\s*\d/.test(String(rawSt))) ? String(rawSt).trim()      // «500/1000г» оставляем как есть
+        : st.v != null ? (st.w ? st.v + 'g' : st.v) : (f?.stems || ''),
+      weight: st.v != null ? st.w : (unitW || (f ? isWeightItem(f) : false)),
+      price,
+      box_size: String(cell(r, col.size) || f?.box_size || '').trim(),
+      comment: String(cell(r, col.comment) || '').trim(),
+      fid: f?.id || null,
+    });
+  }
+  return { rows, meta, col };
+}
+
 async function impLoadFile(input) {
   const file = input.files?.[0];
   if (!file) return;
@@ -14808,64 +15127,7 @@ async function impLoadFile(input) {
     await impLoadFlowers();
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
     const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: null });
-    const txt = v => String(v ?? '').toLowerCase();
-    // строка заголовков: есть «название/品名» и что-то про коробки
-    let h = aoa.findIndex(r => r && r.some(c => /назван|品名|наимен/.test(txt(c))) && r.some(c => /кор|箱/.test(txt(c))));
-    const col = { names: [] };
-    if (h >= 0) {
-      aoa[h].forEach((c, j) => {
-        const t = txt(c);
-        if (!t) return;
-        if (/сумма|金额/.test(t)) return;
-        if (/объ[её]м|体积|кубы/.test(t)) return;
-        if (/размер|箱规/.test(t)) col.size = j;
-        else if (/банч\s*\/\s*кор|扎\s*\/\s*箱/.test(t)) col.bpb = j;
-        else if (/ст.*\/\s*банч|枝|克/.test(t)) col.stems = j;
-        else if (/¥|价|цена/.test(t)) col.price = j;
-        else if (/коммент|备注/.test(t)) col.comment = j;
-        else if (/поставщик|供应商/.test(t)) { /* поставщиков заносим в журнал закупа */ }
-        else if (/назван|品名|наимен/.test(t)) col.names.push(j);
-        else if (/кор|箱/.test(t) && col.boxes == null) col.boxes = j;
-      });
-    } else { // без заголовков — раскладка как у выгрузки из системы
-      h = -1; Object.assign(col, { names: [0, 1], boxes: 2, size: 3, bpb: 6, stems: 7, price: 8, comment: 12 });
-    }
-    const cRu = col.names[0] ?? 0, cCn = col.names[1];
-    // шапка: номер и дата отгрузки
-    const meta = {};
-    aoa.slice(0, Math.max(h, 0)).forEach(r => (r || []).forEach((c, j) => {
-      const t = txt(c), next = () => (r.slice(j + 1).find(x => x != null && x !== '') ?? null);
-      if (/номер|单号/.test(t)) meta.orig = String(next() || '').trim();
-      if (/отгрузка|出货/.test(t)) {
-        const v = next();
-        const d = v instanceof Date ? v.toLocaleDateString('sv-SE') : (String(v || '').match(/\d{4}-\d{2}-\d{2}/) || [])[0];
-        if (d) meta.ship = d;
-      }
-    }));
-    const rows = [];
-    aoa.slice(h + 1).forEach(r => {
-      if (!r) return;
-      let ru = String(r[cRu] ?? '').trim(), cn = cCn != null ? String(r[cCn] ?? '').trim() : '';
-      if (!ru && !cn) return;                       // пустые строки и строка «итого»
-      if (/^итого|^合计|^total/i.test(ru)) return;
-      if (!ru) ru = cn;
-      const st = impParseStems(col.stems != null ? r[col.stems] : null);
-      const f = impMatch(ru, cn);
-      const num = v => (v == null || v === '' || isNaN(parseFloat(v))) ? '' : parseFloat(v);
-      rows.push({
-        ru, cn: cn || f?.cn || '',
-        boxes: num(col.boxes != null ? r[col.boxes] : ''),
-        bpb: num(col.bpb != null ? r[col.bpb] : '') || f?.boxes_per_box || '',
-        stems: (() => { const raw = col.stems != null ? r[col.stems] : null;
-          if (raw != null && /\d\s*[\/\\-]\s*\d/.test(String(raw))) return String(raw).trim();   // «500/1000г» оставляем как есть
-          return st.v != null ? (st.w ? st.v + 'g' : st.v) : (f?.stems || ''); })(),
-        weight: st.w,
-        price: num(col.price != null ? r[col.price] : ''),
-        box_size: String((col.size != null ? r[col.size] : '') || f?.box_size || '').trim(),
-        comment: String((col.comment != null ? r[col.comment] : '') || '').trim(),
-        fid: f?.id || null,
-      });
-    });
+    const { rows, meta } = impParseAoa(aoa);
     if (!rows.length) { toast('В файле не нашлось позиций / 未找到商品'); return; }
     _imp.rows = rows;
     _imp.file = file.name;
