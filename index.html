@@ -7494,28 +7494,26 @@ async function openInvoice(orderId) {
   let { data: inv } = await sb.from('invoices').select('*').eq('order_id', orderId).maybeSingle();
 
   // Диантус (клиент с журналом закупа): инвойс по фактической закупочной стоимости
+  // или — если приёмки ещё нет (заказ загружен из Excel) — по ценам заказа
   window._invCostMode = false; window._invCostWarns = [];
-  let flowersTotal = order.order_items?.reduce((s,i) => s + i.subtotal, 0) || 0;
-  let totalBoxes = order.order_items?.reduce((s,i) => s + i.qty_boxes, 0) || 0;
+  window._invTracked = false; window._invLots = null; window._invDraft = null;
   if (await opClientTracked(order)) {
+    window._invTracked = true;
     await opLoadSups();
     const { lots, error } = await opFetchLots(orderId);
     if (error) toast('⚠️ Журнал закупа недоступен — инвойс по ценам заказа: ' + (opIsMissingTable(error) ? OP_SQL_HINT : error.message));
     else {
-      const c = opInvoiceCostItems(order, lots);
-      window._invCostMode = true;
-      window._invCostItems = c.items;
-      window._invCostWarns = c.warns;
-      flowersTotal = c.total;
-      // упаковка — по фактическим коробкам (как в накладной по факту)
-      totalBoxes = wbFactRows({ order_items: order.order_items || [], _fact: { lots, markup: 0 } }).rows
-        .reduce((s, r) => s + (parseInt(r.qty_boxes) || 0), 0);
+      window._invLots = lots;
+      const hasReceived = lots.some(l => l.status === 'received');
+      // сохранённый режим → он; новый инвойс: есть принятые партии → по закупу, нет → по ценам заказа
+      window._invCostMode = inv?.pricing_mode ? inv.pricing_mode === 'cost' : hasReceived;
     }
   }
+  let { flowersTotal, totalBoxes } = invComputeBase(order);
 
   // Default values
   inv = inv || {
-    markup_pct: window._invCostMode ? 0 : 15,
+    markup_pct: window._invTracked ? 0 : 15,
     flowers_subtotal: flowersTotal,
     packing_cost: totalBoxes * PACKING_RATE,
     certificates_cost: 0,
@@ -7538,7 +7536,65 @@ async function openInvoice(orderId) {
   if (window._invCur !== 'CNY' && !FX.rates[window._invCur] && !inv.fx_rate) window._invCur = 'CNY';
   window._invRate = window._invCur === 'CNY' ? 1 : (inv.currency === window._invCur && inv.fx_rate ? +inv.fx_rate : FX.rates[window._invCur]);
   window._invRateLabel = window._invCur === 'CNY' ? '' : (inv.currency === window._invCur && inv.fx_label ? inv.fx_label : fxRateLabel(window._invCur, window._invRate));
+  window._invSaved = inv;
   renderInvoiceBuilder(order, inv, flowersTotal, totalBoxes);
+}
+
+// База инвойса (цветы + коробки) для текущего режима
+function invComputeBase(order) {
+  const items = order.order_items || [];
+  let flowersTotal = items.reduce((s,i) => s + (+i.subtotal || 0), 0);
+  let totalBoxes = items.reduce((s,i) => s + (parseInt(i.qty_boxes) || 0), 0);
+  window._invCostItems = []; window._invCostWarns = [];
+  if (window._invCostMode && window._invLots) {
+    const c = opInvoiceCostItems(order, window._invLots);
+    window._invCostItems = c.items;
+    window._invCostWarns = c.warns;
+    flowersTotal = c.total;
+    // упаковка — по фактическим коробкам (как в накладной по факту)
+    totalBoxes = wbFactRows({ order_items: items, _fact: { lots: window._invLots, markup: 0 } }).rows
+      .reduce((s, r) => s + (parseInt(r.qty_boxes) || 0), 0);
+  }
+  return { flowersTotal, totalBoxes };
+}
+
+// Диантус: переключение «по факту закупа» ↔ «по ценам заказа (без приёмки / из Excel)»
+function invSetPricing(mode) {
+  const cost = mode === 'cost';
+  if (cost === !!window._invCostMode) return;
+  if (cost && !window._invLots) { toast('⚠️ Журнал закупа недоступен'); return; }
+  const g = id => document.getElementById(id);
+  const num = id => parseFloat(g(id)?.value);
+  const order = window._invOrder;
+  const oldAutoPacking = (window._invTotalBoxes || 0) * PACKING_RATE;
+  const draft = { ...(window._invSaved || {}),
+    markup_pct: isNaN(num('inv-markup')) ? 0 : num('inv-markup'),
+    certificates_cost: num('inv-certs') || 0, shipping_cost: num('inv-ship') || 0,
+    other_cost: num('inv-other') || 0, other_label: g('inv-other-label')?.value || '',
+    adjustment: num('inv-adjust') || 0, adjustment_label: g('inv-adjust-label')?.value || '',
+    notes: g('inv-notes')?.value || '', invoice_number: g('inv-number-input')?.value.trim() || window._invSaved?.invoice_number };
+  window._invCostMode = cost;
+  const { flowersTotal, totalBoxes } = invComputeBase(order);
+  // упаковку, которую не меняли руками, пересчитываем по коробкам нового режима
+  const pk = num('inv-packing');
+  draft.packing_cost = (isNaN(pk) || Math.abs(pk - oldAutoPacking) < 0.5) ? totalBoxes * PACKING_RATE : pk;
+  renderInvoiceBuilder(order, draft, flowersTotal, totalBoxes);
+  toast(cost ? '🛒 Инвойс по факту закупа' : '📋 Инвойс по ценам заказа');
+}
+
+function invPricingSwitchHTML() {
+  if (!window._invTracked) return '';
+  const hasReceived = (window._invLots || []).some(l => l.status === 'received');
+  const btn = (mode, label) => {
+    const on = (mode === 'cost') === !!window._invCostMode;
+    return `<button class="btn btn-sm ${on ? 'btn-primary' : 'btn-secondary'}" onclick="invSetPricing('${mode}')" ${on ? 'disabled' : ''}>${label}</button>`;
+  };
+  return `<div style="margin-bottom:10px;padding:8px 12px;background:var(--sage-l);border-radius:8px;font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <b>Расчёт инвойса / 开票方式:</b>
+    ${btn('cost', '🛒 По факту закупа / 按实际采购')}
+    ${btn('order', '📋 По ценам заказа / 按订单价格')}
+    ${!hasReceived ? '<span style="color:var(--mid)">· принятых партий в журнале закупа нет — по умолчанию цены из заказа (например, загруженного из Excel)</span>' : ''}
+  </div>`;
 }
 
 // ── Per-bunch markup helper ───────────────────────────────
@@ -7626,7 +7682,7 @@ function renderInvoiceBuilder(order, inv, flowersTotal, totalBoxes) {
   const grandTotal = flowersWithMarkup + packing + certs + ship + other + adj;
   const invNum = inv.invoice_number || ('INV-' + new Date().getFullYear() + '-NEW');
 
-  document.getElementById('invoice-content').innerHTML = (window._invCostMode
+  document.getElementById('invoice-content').innerHTML = invPricingSwitchHTML() + (window._invCostMode
       ? `<div style="margin-bottom:10px;padding:8px 12px;background:var(--gold-l);border-radius:8px;font-size:12px">🛒 <b>Инвойс по фактической закупочной стоимости</b> — строки взяты из журнала закупа (только принятые партии). Наценка по умолчанию 0%. / 按实际采购价开票</div>`
         + opWarnBanner('Факт закупа', window._invCostWarns || [])
       : '') + `
@@ -7809,6 +7865,11 @@ async function saveInvoice() {
     payload.currency = window._invCur || 'CNY';
     payload.fx_rate = window._invCur === 'CNY' ? 1 : window._invRate;
     payload.fx_label = window._invRateLabel || null;
+  }
+  // Диантус по ценам заказа (без приёмки): строки берутся из позиций заказа
+  if (window._invTracked && !window._invCostMode) {
+    payload.pricing_mode = 'order';
+    payload.lines = null;
   }
   // Диантус: фиксируем строки инвойса — клиент увидит ровно их
   if (window._invCostMode) {
@@ -15377,10 +15438,12 @@ async function wbAttachFact(order) {
   await opLoadSups();
   const [{ lots, error }, { data: inv }] = await Promise.all([
     opFetchLots(order.id),
-    sb.from('invoices').select('markup_pct').eq('order_id', order.id).maybeSingle(),
+    sb.from('invoices').select('*').eq('order_id', order.id).maybeSingle(),
   ]);
   if (error) { toast('⚠️ Журнал закупа недоступен: ' + (opIsMissingTable(error) ? OP_SQL_HINT : error.message)); return order; }
-  order._fact = { lots, markup: inv?.markup_pct != null ? parseFloat(inv.markup_pct) || 0 : 0 };
+  // приёмки нет (заказ из Excel) или инвойс выставлен по ценам заказа → накладная по позициям заказа
+  if (!lots.some(l => l.status === 'received') || inv?.pricing_mode === 'order') return order;
+  order._fact ={ lots, markup: inv?.markup_pct != null ? parseFloat(inv.markup_pct) || 0 : 0 };
   return order;
 }
 
@@ -15432,7 +15495,8 @@ async function wbRebuildFromFact() {
   if (!full) return;
   await wbAttachFact(full);
   renderWaybillEditor(window._wbObj || null, full, document.getElementById('wb-number')?.value || window._wbNum, null);
-  toast('↻ Накладная пересобрана по факту / 已按实际重新生成');
+  toast(full._fact ? '↻ Накладная пересобрана по факту / 已按实际重新生成'
+    : 'ℹ️ Принятых партий нет (или инвойс по ценам заказа) — накладная по позициям заказа / 按订单明细');
 }
 
 // ══════════════════════════════════════════════════════════
