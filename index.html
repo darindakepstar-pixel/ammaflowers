@@ -6863,7 +6863,10 @@ async function mgrExcelSyncFile(input) {
     rows.forEach(r => {
       const ru = impNorm(r.ru), cn = impNorm(r.cn);
       const free = (fn) => items.findIndex((it, i) => !used.has(i) && fn(it));
-      let idx = free(it => ru && names(it).includes(ru));
+      const sameCl = it => impNorm(it.client_name) === impNorm(r.client);
+      let idx = free(it => ru && names(it).includes(ru) && sameCl(it));
+      if (idx < 0 && cn) idx = free(it => cns(it).includes(cn) && sameCl(it));
+      if (idx < 0) idx = free(it => ru && names(it).includes(ru));
       if (idx < 0 && cn) idx = free(it => cns(it).includes(cn));
       if (idx < 0 && r.fid) idx = free(it => String(it.flower_id || it.flower?.id || '') === String(r.fid));
       if (idx < 0) { extra.push({ r, nw: mgrSyncNew(r), on: false }); return; }
@@ -6974,6 +6977,8 @@ function mgrSyncApply() {
     const bpb = nw.bpb || parseInt(f?.boxes_per_box) || 0;
     const snap = { ...(f ? fLight : {}), ru: r.ru, cn: r.cn || f?.cn || '', boxes_per_box: bpb,
       stems: nw.stems, box_size: r.box_size || f?.box_size || null, mgr_added: true, imported: true };
+    if (r.catalog && !f?.catalog) snap.catalog = r.catalog;
+    if (snap.catalog === 'potted') { snap.is_weight = false; if (!snap.stems) snap.stems = 1; }
     if (!f) { snap.custom = true; }
     if (nw.weight != null) snap.is_weight = !!nw.weight;
     if (nw.stemsLabel) snap.stems_label = nw.stemsLabel;
@@ -6982,7 +6987,7 @@ function mgrSyncApply() {
       flower_id: f ? f.id : null, flower: f || null, flower_snapshot: snap,
       price_type: 'a', price_per_bunch: price, bunches_per_box: bpb,
       price_per_box: +(price * (bpb || 1)).toFixed(2), qty_boxes: Math.round(nw.boxes || 1), subtotal: 0,
-      client_name: '', item_comment: r.comment || '', _mgrAdded: true,
+      client_name: r.client || '', item_comment: r.comment || '', _mgrAdded: true,
     });
     nAdded++;
   });
@@ -15016,7 +15021,7 @@ async function impLoadFlowers() {
   const out = [];
   for (let from = 0; from < 20000; from += 1000) {
     const { data, error } = await sb.from('flowers')
-      .select('id, ru, cn, en, stems, boxes_per_box, pack, cat_ru, price_a, price_ap').order('id').range(from, from + 999);
+      .select('id, ru, cn, en, stems, boxes_per_box, pack, cat_ru, price_a, price_ap, catalog, box_size').order('id').range(from, from + 999);
     if (error || !data?.length) break;
     out.push(...data);
     if (data.length < 1000) break;
@@ -15042,7 +15047,7 @@ function impParseStems(v) {
   return { v: n, w: false };
 }
 
-function impBlankRow() { return { ru: '', cn: '', boxes: '', bpb: '', stems: '', weight: false, price: '', box_size: '', comment: '', fid: null }; }
+function impBlankRow() { return { ru: '', cn: '', client: '', boxes: '', bpb: '', stems: '', weight: false, price: '', box_size: '', comment: '', catalog: '', fid: null }; }
 
 async function showNewOrderModal() {
   _imp = { rows: [impBlankRow()], file: '', meta: {}, clientId: '', dup: null };
@@ -15067,7 +15072,8 @@ function impRender() {
       <td style="color:var(--light);font-size:10px">${i + 1}</td>
       <td class="L">${inp(i, 'ru', 170)}</td>
       <td>${inp(i, 'cn', 120)}</td>
-      <td>${inp(i, 'boxes', 50, 'type="number" min="0"')}</td>
+      <td>${inp(i, 'client', 100, 'placeholder="—"')}</td>
+      <td>${inp(i, 'boxes', 50, 'type="number" min="0" step="any"')}</td>
       <td>${inp(i, 'bpb', 50, 'type="number" min="0"')}</td>
       <td>${inp(i, 'stems', 56, 'title="Стеблей в банче или граммов (для веса допишите g: 500g)"')}</td>
       <td>${inp(i, 'price', 56, 'type="number" min="0" step="0.1"')}</td>
@@ -15102,8 +15108,8 @@ function impRender() {
           ${['confirmed', 'pending_review', 'draft'].map(st => `<option value="${st}" ${(_imp.meta.status || 'confirmed') === st ? 'selected' : ''}>${statusLabel(st)}</option>`).join('')}
         </select></div>
     </div>
-    <div class="tbl-wrap" style="max-height:46vh;overflow-y:auto"><table style="min-width:980px">
-      <thead><tr><th style="width:24px">№</th><th class="L">Название RU</th><th>中文名</th><th>Кор.<br>箱数</th><th>Банч/кор<br>扎/箱</th>
+    <div class="tbl-wrap" style="max-height:46vh;overflow-y:auto"><table style="min-width:1090px">
+      <thead><tr><th style="width:24px">№</th><th class="L">Название RU</th><th>中文名</th><th>Субклиент<br>子客户</th><th>Кор.<br>箱数</th><th>Банч/кор<br>扎/箱</th>
         <th>Ст(г)/банч<br>枝(克)/扎</th><th>¥/банч<br>单价</th><th>Короб, см<br>箱规</th><th>Комментарий<br>备注</th><th></th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
@@ -15136,8 +15142,10 @@ function impDetectCols(row) {
     if (/сумма|金额|小计/.test(t)) return;
     if (/объ[её]м|体积|кубы|м³|m³/.test(t)) return;
     if (/поставщик|供应商|земля|基地|перекуп|中间商/.test(t)) return;
+    if (/субклиент|子客户|^клиент|получател/.test(t)) { if (col.client == null) col.client = j; return; }
+    if (/каталог|类别|^тип\b|^тип\s|^тип$/.test(t)) { if (col.cat == null) col.cat = j; return; }
     if (/размер|箱规/.test(t)) { if (col.size == null) col.size = j; return; }
-    if (/(банч|бан\.?|扎)\s*\/\s*(кор|箱|件)|в\s*коробе|箱扎数/.test(t)) { if (col.bpb == null) col.bpb = j; return; }
+    if (/(банч|бан\.?|扎|шт)\s*\/\s*(кор|箱|件)|в\s*коробе|箱扎数|一箱数量/.test(t)) { if (col.bpb == null) col.bpb = j; return; }
     if (/всего\s*(связ|банч)|总扎数/.test(t)) { if (col.total == null) col.total = j; return; }
     if (/всего|总支|总重|总数|итого/.test(t)) return;
     if (/^ед\b|^ед\.|单位/.test(t)) { if (col.unit == null) col.unit = j; return; }
@@ -15185,6 +15193,8 @@ function impParseAoa(aoa) {
     if (/^(итого|всего|合计|总计|total)/i.test(ru) || /^(合计|总计)/.test(cn)) break;   // дальше — упаковка, расходы, пояснения
     if (!ru) ru = cn;
     const f = impMatch(ru, cn);
+    const catRaw = String(cell(r, col.cat) ?? '').toLowerCase();
+    const catalog = /горш|potted|盆/.test(catRaw) ? 'potted' : /упак|supplies|расход/.test(catRaw) ? 'supplies' : /сре[зж]|cut|切花/.test(catRaw) ? 'cut' : '';
     const unit = String(cell(r, col.unit) ?? '').toLowerCase().trim();
     const unitW = /^(г|гр|g|克|кг|kg|公斤)/.test(unit), unitKg = /^(кг|kg|公斤)/.test(unit);
     const rawSt = cell(r, col.stems);
@@ -15206,6 +15216,8 @@ function impParseAoa(aoa) {
       price,
       box_size: String(cell(r, col.size) || f?.box_size || '').trim(),
       comment: String(cell(r, col.comment) || '').trim(),
+      client: String(cell(r, col.client) ?? '').trim(),
+      catalog: catalog || f?.catalog || '',
       fid: f?.id || null,
     });
   }
@@ -15255,7 +15267,16 @@ function impTemplate() {
 
 async function impCreate() {
   if (!_imp.clientId) { toast('Выберите клиента / 请选择客户'); return; }
-  const rows = _imp.rows.filter(r => (String(r.ru).trim() || String(r.cn).trim()) && opNum(r.boxes) > 0);
+  // Неполные коробы (0.86 кор., 4.29 кор.) → целые коробы + отдельная строка «неполный короб» на остаток штук
+  const rows = _imp.rows.filter(r => (String(r.ru).trim() || String(r.cn).trim()) && opNum(r.boxes) > 0).flatMap(r => {
+    const b = opNum(r.boxes), bpb = parseInt(r.bpb) || 0;
+    if (!(b % 1) || !bpb) return [r];
+    const pcs = Math.round(b * bpb), whole = Math.floor(pcs / bpb), rest = pcs - whole * bpb;
+    const out = [];
+    if (whole) out.push({ ...r, boxes: whole });
+    if (rest) out.push({ ...r, boxes: 1, bpb: rest, comment: [r.comment, `неполный короб: ${rest} из ${bpb}`].filter(Boolean).join(' · ') });
+    return out;
+  });
   const skipped = _imp.rows.filter(r => (String(r.ru).trim() || String(r.cn).trim()) && !(opNum(r.boxes) > 0));
   if (!rows.length) { toast('Нет позиций с количеством коробок / 请填写箱数'); return; }
   if (skipped.length && !confirm(`${skipped.length} поз. без коробок не попадут в заказ:\n${skipped.slice(0, 8).map(r => r.ru || r.cn).join(', ')}${skipped.length > 8 ? '…' : ''}\n\nПродолжить? / 继续?`)) return;
@@ -15283,13 +15304,16 @@ async function impCreate() {
       imported: true,
     };
     if (st.w || r.weight) snap.is_weight = true;
+    const cat = f?.catalog || r.catalog || '';
+    if (cat) snap.catalog = cat;
+    if (cat === 'potted') { snap.is_weight = false; if (!snap.stems) snap.stems = 1; if (!f) snap.pack = bpb ? `${bpb} шт/кор` : ''; }
     if (/\d\s*[\/\\-]\s*\d/.test(String(r.stems || ''))) snap.stems_label = String(r.stems).trim(); // «500/1000г» — смешанный пакинг
     const ppb = +(price * bpb).toFixed(2);
     return {
       order_id: order.id, flower_id: f ? f.id : null, flower_snapshot: snap,
       price_type: 'a', price_per_bunch: price, bunches_per_box: bpb, price_per_box: ppb,
       qty_boxes: parseInt(r.boxes) || 0, subtotal: +(ppb * (parseInt(r.boxes) || 0)).toFixed(2),
-      client_name: null, item_comment: String(r.comment || '').trim() || null,
+      client_name: String(r.client || '').trim() || null, item_comment: String(r.comment || '').trim() || null,
     };
   });
   const { error: itErr } = await sb.from('order_items').insert(items);
