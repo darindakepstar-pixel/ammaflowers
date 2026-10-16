@@ -16974,6 +16974,12 @@ async function tgLoadBot() {
   _tgBot = data?.value?.bot || '';
   return _tgBot;
 }
+// Сотрудник клиента привязывает Telegram к СВОЕМУ входу; база копирует ему уведомления компании
+function tgTargetId() { return currentMember?.id || currentUser.id; }
+async function tgMemberLinked() {
+  const { data } = await sb.from('users').select('tg_chat_id').eq('id', currentMember.id).maybeSingle();
+  return !!data?.tg_chat_id;
+}
 async function tgRefreshMe() {
   const { data } = await sb.from('users').select('*').eq('id', currentUser.id).maybeSingle();
   if (data) { currentUser = data; try { sessionStorage.setItem('amma_user', JSON.stringify(data)); } catch (e) {} }
@@ -16982,16 +16988,12 @@ async function tgRenderCard() {
   const el = document.getElementById('tg-card');
   if (!el || !currentUser || currentUser.role === 'guest') return;
   const isAdmin = currentUser.role === 'manager' && currentUser.is_admin;
-  if (currentMember) {
-    el.innerHTML = `<div class="card" style="margin-bottom:12px;font-size:12px;color:var(--mid)">📲 Telegram-уведомления приходят на основной аккаунт компании${currentUser.tg_chat_id ? ' (подключён ✅)' : ''}. Подключить свой Telegram к этому входу пока нельзя.</div>`;
-    return;
-  }
   if (!('tg_chat_id' in currentUser)) {
     el.innerHTML = isAdmin ? `<div class="card" style="margin-bottom:12px;font-size:12px">📲 Telegram-уведомления: выполните <b>sql_telegram.sql</b> в Supabase (см. инструкцию).</div>` : '';
     return;
   }
   const bot = await tgLoadBot();
-  const linked = !!currentUser.tg_chat_id;
+  const linked = currentMember ? await tgMemberLinked() : !!currentUser.tg_chat_id;
   el.innerHTML = `<div class="card" style="margin-bottom:12px;border-left:4px solid ${linked ? '#229ED9' : 'var(--gold)'}">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <b style="font-size:14px">📲 Telegram</b>
@@ -17017,8 +17019,9 @@ async function tgSaveBot() {
 }
 async function tgLink() {
   const code = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => 'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('');
-  const { error } = await sb.from('users').update({ tg_link_code: code }).eq('id', currentUser.id);
+  const { data: okRows, error } = await sb.from('users').update({ tg_link_code: code }).eq('id', tgTargetId()).select('id');
   if (error) { toast('❌ ' + error.message); return; }
+  if (!okRows?.length) { toast('❌ Не удалось сохранить код привязки — нет прав / 无权限'); return; }
   window.open(`https://t.me/${_tgBot}?start=${code}`, '_blank');
   const w = document.getElementById('tg-wait');
   if (w) w.innerHTML = `Откроется Telegram — нажмите там <b>«Запустить / Start»</b>. Если не открылось: <a href="https://t.me/${_tgBot}?start=${code}" target="_blank">t.me/${escHtml(_tgBot)}</a>`;
@@ -17026,17 +17029,18 @@ async function tgLink() {
   let n = 0;
   _tgPoll = setInterval(async () => {
     if (++n > 60) { clearInterval(_tgPoll); return; }   // ждём до 3 минут
-    await tgRefreshMe();
-    if (currentUser.tg_chat_id) { clearInterval(_tgPoll); toast('✅ Telegram подключён / 已绑定'); tgRenderCard(); }
+    let ok;
+    if (currentMember) ok = await tgMemberLinked(); else { await tgRefreshMe(); ok = !!currentUser.tg_chat_id; }
+    if (ok) { clearInterval(_tgPoll); toast('✅ Telegram подключён / 已绑定'); tgRenderCard(); }
   }, 3000);
 }
 async function tgUnlink() {
   if (!confirm('Отключить уведомления в Telegram? / 取消 Telegram 通知？')) return;
-  await sb.from('users').update({ tg_chat_id: null, tg_link_code: null }).eq('id', currentUser.id);
+  await sb.from('users').update({ tg_chat_id: null, tg_link_code: null }).eq('id', tgTargetId());
   await tgRefreshMe(); tgRenderCard(); toast('🔕 Отключено');
 }
 async function tgTest() {
-  await sendNotification(currentUser.id, 'Тестовое уведомление / 测试通知', 'Если вы видите это в Telegram — всё работает 🌸', '✅');
+  await sendNotification(tgTargetId(), 'Тестовое уведомление / 测试通知', 'Если вы видите это в Telegram — всё работает 🌸', '✅');
   toast('✉️ Отправлено — проверьте Telegram');
 }
 
