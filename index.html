@@ -2250,6 +2250,7 @@ async function authSignIn(id, pass) {
   return { error: 'Неверный логин или пароль / 账号或密码错误' };
 }
 // После входа: проверяем статус и открываем систему
+let currentMember = null;   // сотрудник клиента: входит своим логином, работает в аккаунте компании
 async function authEnter(silent) {
   const { data: w, error } = await sb.rpc('app_whoami');
   if (error) { if (!silent) showErr('Ошибка входа: ' + error.message); return false; }
@@ -2257,6 +2258,7 @@ async function authEnter(silent) {
     const { data } = await sb.from('users').select('*').eq('id', w.id).maybeSingle();
     if (!data) { if (!silent) showErr('Профиль не найден / 未找到账户'); return false; }
     currentUser = data;
+    currentMember = w.member_id ? { id: w.member_id, name: w.member_name || '' } : null;   // сотрудник клиента
     if (!silent) logActivity('login', 'session', null, data.company_name || data.login, 'Вход в систему');
     document.getElementById('login-err').style.display = 'none';
     showApp();
@@ -2493,7 +2495,7 @@ async function initApp() {
     isWh  ? '🏭 Склад / 仓库' :
     isGz  ? '🪴 Гуанчжоу / 广州' :
     isGuest ? 'Гость / 访客' :
-    (currentUser.company_name || currentUser.login);
+    (currentUser.company_name || currentUser.login) + (currentMember?.name ? ' · ' + currentMember.name : '');
   document.getElementById('top-role').className = 'user-pill' + (isMgr ? ' mgr' : '');
   document.getElementById('notice-bar').innerHTML =
     '⚠ Цены действительны 3 дня · 价格有效期3天 · Мин. заказ — 1 коробка/вид';
@@ -8121,7 +8123,7 @@ function renderClients() {
         <td class="L"><b>${c.company_name||'—'}</b>${c.purchase_tracking?' <span title="Видит журнал закупа" style="font-size:10px">🛒</span>':''}${c.tg_chat_id?' <span title="Telegram подключён" style="font-size:10px">📲</span>':''}${c.calc_access?' <span title="Доступ к калькулятору" style="font-size:10px">🧮</span>':''}</td>
         <td class="L" style="color:var(--mid);font-family:monospace">${escHtml(c.login)}${c.blocked ? ' <span title="Доступ закрыт">🔒</span>' : ''}${c.email ? `<div style="font-size:10px;font-family:inherit">${escHtml(c.email)}</div>` : ''}</td>
         <td style="font-size:11px;color:var(--mid)">${c.contact||'—'}</td>
-        <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?(c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':'👑 Менеджер / 经理'):c.role==='warehouse'?'🏭 Склад / 仓库':c.role==='gz'?'🪴 Гуанчжоу / 广州':'👤 Клиент / 客户'}</span></td>
+        <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?(c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':'👑 Менеджер / 经理'):c.role==='warehouse'?'🏭 Склад / 仓库':c.role==='gz'?'🪴 Гуанчжоу / 广州':c.role==='member'?'👥 Сотрудник: ' + escHtml(allClients.find(x => String(x.id) === String(c.account_of))?.company_name || '?'):'👤 Клиент / 客户'}</span></td>
         <td style="font-size:11px;color:var(--mid)">${c.role==='client' ? (escHtml(mgrName(c.manager_id)) || '<span style="color:var(--light)">— не закреплён</span>') : ''}</td>
         <td><button class="btn btn-secondary btn-sm" onclick="showEditClientModal('${c.id}')">✏️ Изменить / 修改</button></td>
       </tr>`).join('')}
@@ -8198,12 +8200,15 @@ function showEditClientModal(id) {
     </div>
     ${currentUser?.is_admin && String(user.id) !== String(currentUser.id) && !user.is_admin ? `
     <div class="field" style="margin-top:10px"><label>Роль в системе / 角色</label>
-      <select class="inp" id="ec-role" data-prev="${user.role}">
+      <select class="inp" id="ec-role" data-prev="${user.role}" onchange="document.getElementById('ec-acc-wrap').style.display=this.value==='member'?'':'none'">
         <option value="client" ${user.role === 'client' ? 'selected' : ''}>👤 Клиент / 客户</option>
         <option value="manager" ${user.role === 'manager' ? 'selected' : ''}>💼 Менеджер / 经理</option>
         <option value="warehouse" ${user.role === 'warehouse' ? 'selected' : ''}>🏭 Склад / 仓库</option>
         <option value="gz" ${user.role === 'gz' ? 'selected' : ''}>🪴 Гуанчжоу / 广州 — горшечные, без клиентов</option>
+        <option value="member" ${user.role === 'member' ? 'selected' : ''}>👥 Сотрудник клиента — видит аккаунт компании</option>
       </select>
+      <div id="ec-acc-wrap" style="margin-top:6px;${user.role === 'member' ? '' : 'display:none'}"><label style="font-size:11px">Компания (основной аккаунт)</label>
+        <select class="inp" id="ec-account-of">${memberCompanyOptions(user.account_of, user.id)}</select></div>
       <div style="font-size:10px;color:var(--mid);margin-top:2px">Новый менеджер получает полный доступ. Ограничить его своими клиентами (💼) можно после сохранения, открыв карточку ещё раз.<br>🪴 Гуанчжоу — садовники и менеджер базы: заказы и прайс только горшечных; клиентов, суммы, инвойсы, чат не видят.</div>
     </div>` : ''}
     <div style="margin-top:10px;padding:10px 12px;background:var(--sage-l);border-radius:6px;display:${isScopedMgr()||user.role!=='client'?'none':'flex'};align-items:center;gap:10px">
@@ -8273,10 +8278,16 @@ async function saveClient(id) {
     const nr = roleEl.value;
     if (!confirm(`Сменить роль «${roleEl.dataset.prev}» → «${nr}»? Пользователь увидит другие разделы при следующем входе.`)) return;
     updates.role = nr;
+    if (nr === 'member') {
+      updates.account_of = document.getElementById('ec-account-of')?.value || null;
+      if (!updates.account_of) { toast('Выберите компанию для сотрудника клиента'); return; }
+    } else if ('account_of' in (allClients.find(c => String(c.id) === String(id)) || {})) updates.account_of = null;
     if (nr !== 'client') updates.manager_id = null;          // сотрудник не закрепляется за менеджером
     if (nr === 'manager') updates.client_scope = null;       // по умолчанию полный доступ менеджера
     if (nr !== 'manager' && 'client_scope' in (allClients.find(c => String(c.id) === String(id)) || {})) updates.client_scope = null;
   }
+  const accEl = document.getElementById('ec-account-of');
+  if (accEl && currentUser?.is_admin && !updates.role && roleEl?.dataset.prev === 'member' && accEl.value) updates.account_of = accEl.value;
   const ptEl = document.getElementById('ec-purch-track');
   if (ptEl) {
     updates.purchase_tracking = ptEl.checked;
@@ -8344,10 +8355,14 @@ function approveRequestModal(rid) {
       <div class="field"><label>Логин / 账号</label><input class="inp" id="ar-login" value="${escHtml(String(r.email || '').split('@')[0].replace(/[^a-zA-Z0-9._-]/g, ''))}"></div>
     </div>
     <div class="field"><label>Контакт / 联系方式</label><input class="inp" id="ar-contact" value="${escHtml([r.contact_name, r.phone, r.city].filter(Boolean).join(', '))}"></div>
-    <div class="field"><label>Роль / 角色</label><select class="inp" id="ar-role" onchange="document.getElementById('ar-mgr-wrap').style.display=this.value==='client'?'':'none'">
+    <div class="field"><label>Роль / 角色</label><select class="inp" id="ar-role" onchange="document.getElementById('ar-mgr-wrap').style.display=this.value==='client'?'':'none';document.getElementById('ar-acc-wrap').style.display=this.value==='member'?'':'none'">
       <option value="client" ${isGzRequest(r) ? '' : 'selected'}>👤 Клиент / 客户</option>
-      ${currentUser?.is_admin ? `<option value="gz" ${isGzRequest(r) ? 'selected' : ''}>🪴 Сотрудник Гуанчжоу — горшечные, без клиентов / 广州员工</option>` : ''}
-    </select>${isGzRequest(r) && !currentUser?.is_admin ? '<div style="font-size:11px;color:#B4530B;margin-top:3px">Назначить роль «Гуанчжоу» может только админ</div>' : ''}</div>
+      ${currentUser?.is_admin ? `<option value="gz" ${isGzRequest(r) ? 'selected' : ''}>🪴 Сотрудник Гуанчжоу — горшечные, без клиентов / 广州员工</option>
+      <option value="member">👥 Сотрудник клиента — видит аккаунт компании</option>` : ''}
+    </select>
+    <div id="ar-acc-wrap" style="display:none;margin-top:6px"><label style="font-size:11px">Чей сотрудник (компания)</label>
+      <select class="inp" id="ar-account-of">${memberCompanyOptions(null)}</select>
+      <div style="font-size:10px;color:var(--mid);margin-top:2px">Будет входить своим email и паролем, а видеть всё по аккаунту этой компании: заказы, счета, претензии, чат.</div></div>${isGzRequest(r) && !currentUser?.is_admin ? '<div style="font-size:11px;color:#B4530B;margin-top:3px">Назначить роль «Гуанчжоу» может только админ</div>' : ''}</div>
     <div class="field" id="ar-mgr-wrap" style="${isGzRequest(r) && currentUser?.is_admin ? 'display:none' : ''}"><label>Ответственный менеджер / 负责经理</label><select class="inp" id="ar-manager">${mgrOptions(null)}</select></div>
     <div style="font-size:11px;color:var(--mid)">Клиент будет входить со своим email ${escHtml(r.email || '')} и паролем, который указал в заявке.</div>
     <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
@@ -8360,11 +8375,14 @@ function isGzRequest(r) {
 async function approveRequest(rid) {
   const req = (window._accessReqs || []).find(x => x.id === rid);
   const asGz = document.getElementById('ar-role')?.value === 'gz' && currentUser?.is_admin;
+  const asMember = document.getElementById('ar-role')?.value === 'member' && currentUser?.is_admin;
+  const memberOf = asMember ? (document.getElementById('ar-account-of')?.value || '') : '';
+  if (asMember && !memberOf) { toast('Выберите компанию / 请选择公司'); return; }
   const login = document.getElementById('ar-login').value.trim();
   // одобряем как обычно (клиентом), затем админ сразу переводит в роль «Гуанчжоу»
   const r = await authAdmin('approve', { request_id: rid, role: 'client',
     login, company_name: document.getElementById('ar-company').value.trim(),
-    contact: document.getElementById('ar-contact').value.trim(), manager_id: asGz ? null : (document.getElementById('ar-manager').value || null) });
+    contact: document.getElementById('ar-contact').value.trim(), manager_id: (asGz || asMember) ? null : (document.getElementById('ar-manager').value || null) });
   if (r.error) { toast('❌ ' + r.error); return; }
   closeModal();
   if (asGz) {
@@ -8376,8 +8394,21 @@ async function approveRequest(rid) {
     const { data: ok, error } = uid ? await sb.from('users').update(upd).eq('id', uid).select('id') : { data: null };
     if (error || !ok?.length) toast('⚠️ Доступ открыт, но роль «Гуанчжоу» не назначилась' + (error ? ': ' + error.message : '') + '. Откройте карточку и выберите роль вручную. Проверьте, что выполнен sql_gz_role.sql');
     else toast('✅ Доступ открыт: сотрудник Гуанчжоу / 已开通广州员工');
+  } else if (asMember) {
+    await loadClients();
+    const uid = r.user_id || r.id || r.user?.id || allClients.find(c =>
+      String(c.login || '').toLowerCase() === login.toLowerCase() || (req?.email && String(c.email || '').toLowerCase() === String(req.email).toLowerCase()))?.id;
+    const { data: ok, error } = uid ? await sb.from('users').update({ role: 'member', account_of: memberOf, manager_id: null }).eq('id', uid).select('id') : { data: null };
+    const comp = allClients.find(c => String(c.id) === String(memberOf))?.company_name || '';
+    if (error || !ok?.length) toast('⚠️ Доступ открыт, но привязка к компании не сохранилась' + (error ? ': ' + error.message : '') + '. Откройте карточку и выберите роль «Сотрудник клиента» вручную. Проверьте, что выполнен sql_client_members.sql');
+    else toast('✅ Доступ открыт: сотрудник ' + comp);
   } else toast('✅ Доступ открыт / 已开通');
   await loadClients(); renderClients();
+}
+function memberCompanyOptions(sel, selfId) {
+  const cl = (allClients || []).filter(c => c.role === 'client' && String(c.id) !== String(selfId || ''));
+  return '<option value="">— выберите компанию —</option>' + cl.map(c =>
+    `<option value="${c.id}" ${String(c.id) === String(sel || '') ? 'selected' : ''}>${escHtml(c.company_name || c.login)}</option>`).join('');
 }
 async function rejectRequest(rid) {
   if (!confirm('Отклонить заявку? / 拒绝申请？')) return;
@@ -12322,7 +12353,7 @@ async function logActivity(action, entityType, entityId, entityLabel, details) {
   try {
     await sb.from('activity_log').insert({
       user_id:    currentUser?.id || null,
-      user_login: currentUser?.company_name || currentUser?.login || '—',
+      user_login: (currentUser?.company_name || currentUser?.login || '—') + (currentMember?.name ? ' · ' + currentMember.name : ''),
       user_role:  currentUser?.role || '—',
       action, entity_type: entityType,
       entity_id: entityId ? String(entityId) : null,
@@ -16951,6 +16982,10 @@ async function tgRenderCard() {
   const el = document.getElementById('tg-card');
   if (!el || !currentUser || currentUser.role === 'guest') return;
   const isAdmin = currentUser.role === 'manager' && currentUser.is_admin;
+  if (currentMember) {
+    el.innerHTML = `<div class="card" style="margin-bottom:12px;font-size:12px;color:var(--mid)">📲 Telegram-уведомления приходят на основной аккаунт компании${currentUser.tg_chat_id ? ' (подключён ✅)' : ''}. Подключить свой Telegram к этому входу пока нельзя.</div>`;
+    return;
+  }
   if (!('tg_chat_id' in currentUser)) {
     el.innerHTML = isAdmin ? `<div class="card" style="margin-bottom:12px;font-size:12px">📲 Telegram-уведомления: выполните <b>sql_telegram.sql</b> в Supabase (см. инструкцию).</div>` : '';
     return;
