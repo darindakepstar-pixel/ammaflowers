@@ -1710,7 +1710,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <div class="page-title">Клиенты / 客户 / Clients</div>
       <div class="page-sub">Управление аккаунтами / 账户管理 / Account management</div>
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-        <button class="btn btn-primary" onclick="showAddClientModal()">+ Клиент / 客户</button>
+        <button class="btn btn-primary" id="btn-add-client" onclick="showAddClientModal()">+ Клиент / 客户</button>
         <button class="btn btn-secondary" id="btn-add-manager" onclick="showAddManagerModal()">+ Менеджер / 经理</button>
         <button class="btn btn-secondary" id="btn-add-warehouse" style="background:var(--gold);color:#fff" onclick="showAddWarehouseModal()">🏭 + Склад / 仓库</button>
       </div>
@@ -2190,6 +2190,9 @@ function switchWorkMode() {
   try { localStorage.setItem('amma-mode-' + currentUser.id, to); } catch (e) {}
   location.reload();   // сессия восстановится сама, интерфейс соберётся под новый режим
 }
+// Учётные записи (добавление пользователей, пароли, email, роли, блокировка, заявки на доступ) — только админ
+const isAdminUser = () => currentUser?.role === 'manager' && !!currentUser?.is_admin;
+function adminOnly() { if (isAdminUser()) return true; toast('🔒 Учётные записи меняет только администратор / 仅管理员可操作'); return false; }
 // Кто получает складские уведомления: склад + менеджеры с совмещением
 const isWhStaff = s => s?.role === 'warehouse' || !!s?.also_warehouse;
 // Перед запросами: у клиентского менеджера должен быть загружен список его клиентов
@@ -2572,7 +2575,7 @@ async function initApp() {
     document.getElementById('btn-manage-cats').style.display = full ? 'inline-flex' : 'none';
     document.getElementById('btn-import-catalog').style.display = full ? 'inline-flex' : 'none';
     document.getElementById('btn-showcase-edit').style.display = full ? 'inline-flex' : 'none';
-    ['btn-add-manager', 'btn-add-warehouse'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = full ? '' : 'none'; });
+    ['btn-add-client', 'btn-add-manager', 'btn-add-warehouse'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = isAdminUser() ? '' : 'none'; });
     const at = document.getElementById('admin-app-tools'); if (at) at.style.display = currentUser?.is_admin ? 'flex' : 'none';
     if (isScopedMgr()) document.getElementById('top-role').textContent = '💼 Клиентский менеджер / 客户经理';
     if (isOpsMgr()) {
@@ -8170,13 +8173,14 @@ function renderClients() {
         <td style="font-size:11px;color:var(--mid)">${c.contact||'—'}</td>
         <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?((c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':c.client_scope==='ops'?'🔑 Менеджер (операции)':'👑 Менеджер / 经理')+(c.also_warehouse?' + 🏭 склад':'')):c.role==='warehouse'?'🏭 Склад / 仓库':c.role==='gz'?'🪴 Гуанчжоу / 广州':c.role==='member'?'👥 Сотрудник: ' + escHtml(allClients.find(x => String(x.id) === String(c.account_of))?.company_name || '?'):'👤 Клиент / 客户'}</span></td>
         <td style="font-size:11px;color:var(--mid)">${c.role==='client' ? (escHtml(mgrName(c.manager_id)) || '<span style="color:var(--light)">— не закреплён</span>') : ''}</td>
-        <td><button class="btn btn-secondary btn-sm" onclick="showEditClientModal('${c.id}')">✏️ Изменить / 修改</button></td>
+        <td><button class="btn btn-secondary btn-sm" onclick="showEditClientModal('${c.id}')">${isAdminUser() ? '✏️ Изменить / 修改' : '👁 Открыть / 查看'}</button></td>
       </tr>`).join('')}
     </tbody>
   </table></div>`;
 }
 
 function showAddClientModal() {
+  if (!adminOnly()) return;
   document.getElementById('modal-content').innerHTML = `
     <div class="modal-title">+ Новый клиент / 新客户</div>
     <div class="field-row">
@@ -8198,6 +8202,7 @@ function showAddClientModal() {
 }
 
 async function addClient() {
+  if (!adminOnly()) return;
   const company = document.getElementById('nc-company').value.trim();
   const login = document.getElementById('nc-login').value.trim();
   const pass = document.getElementById('nc-pass').value;
@@ -8308,9 +8313,19 @@ function showEditClientModal(id) {
       <button class="btn btn-primary" onclick="saveClient('${id}')">💾 Сохранить</button>
     </div>`;
   openModal();
+  if (!isAdminUser()) {   // менеджеры видят карточку, но ничего в ней не меняют
+    const mc = document.getElementById('modal-content');
+    ['ec-pass', 'ec-email'].forEach(i => document.getElementById(i)?.closest('.field')?.remove());
+    mc.querySelectorAll('input,select,textarea').forEach(el => { el.disabled = true; });
+    mc.querySelectorAll('.modal-btns .btn').forEach(b => { if (!/closeModal/.test(b.getAttribute('onclick') || '')) b.remove(); });
+    const ttl = mc.querySelector('.modal-title'); if (ttl) ttl.textContent = '👁 Карточка: ' + (user.company_name || user.login);
+    [...mc.querySelectorAll('div')].find(d => /Логин нельзя изменить/.test(d.textContent) && !d.querySelector('div'))?.remove();
+    mc.querySelector('.modal-title')?.insertAdjacentHTML('afterend', '<div style="font-size:11px;color:var(--mid);margin:-6px 0 10px">🔒 Только просмотр — менять учётные записи может администратор / 仅查看</div>');
+  }
 }
 
 async function saveClient(id) {
+  if (!adminOnly()) return;
   const company = document.getElementById('ec-company').value.trim();
   const pass    = document.getElementById('ec-pass').value;
   const contact = document.getElementById('ec-contact').value.trim();
@@ -8367,6 +8382,7 @@ async function saveClient(id) {
 }
 
 async function deleteClient(id, login) {
+  if (!adminOnly()) return;
   if (!confirm(`Удалить пользователя "${login}"?\nЕсли у него есть заказы — удалить нельзя, закройте доступ.`)) return;
   const r = await authAdmin('delete', { user_id: id });
   if (r.error) { toast('❌ ' + r.error); return; }
@@ -8375,6 +8391,7 @@ async function deleteClient(id, login) {
   toast('🗑 Удалён: ' + login);
 }
 async function blockUser(id, blocked) {
+  if (!adminOnly()) return;
   if (!confirm(blocked ? 'Закрыть доступ? Пользователь сразу выйдет из системы на всех устройствах.' : 'Открыть доступ снова?')) return;
   const r = await authAdmin('block', { user_id: id, blocked });
   if (r.error) { toast('❌ ' + r.error); return; }
@@ -8382,11 +8399,11 @@ async function blockUser(id, blocked) {
   toast(blocked ? '🔒 Доступ закрыт' : '🔓 Доступ открыт');
 }
 
-// ══ Заявки на доступ (админ и полные менеджеры) ══
+// ══ Заявки на доступ (только админ) ══
 async function loadAccessRequests() {
   const box = document.getElementById('access-requests');
   if (!box) return;
-  if (currentUser?.role !== 'manager' || isScopedMgr()) { box.innerHTML = ''; return; }
+  if (!isAdminUser()) { box.innerHTML = ''; return; }
   const { data, error } = await sb.from('access_requests').select('*').eq('status', 'pending').order('created_at');
   if (error || !data?.length) { box.innerHTML = ''; return; }
   box.innerHTML = `<div class="card" style="margin-bottom:14px;border-left:4px solid var(--gold)">
@@ -8401,6 +8418,7 @@ async function loadAccessRequests() {
   window._accessReqs = data;
 }
 function approveRequestModal(rid) {
+  if (!adminOnly()) return;
   const r = (window._accessReqs || []).find(x => x.id === rid); if (!r) return;
   document.getElementById('modal-content').innerHTML = `
     <div class="modal-title">✅ Открыть доступ: ${escHtml(r.company || r.email)}</div>
@@ -8427,6 +8445,7 @@ function isGzRequest(r) {
   return /Гуанчжоу|广州|guangzhou/i.test([r?.company, r?.city, r?.comment].join(' '));
 }
 async function approveRequest(rid) {
+  if (!adminOnly()) return;
   const req = (window._accessReqs || []).find(x => x.id === rid);
   const asGz = document.getElementById('ar-role')?.value === 'gz' && currentUser?.is_admin;
   const asMember = document.getElementById('ar-role')?.value === 'member' && currentUser?.is_admin;
@@ -8465,6 +8484,7 @@ function memberCompanyOptions(sel, selfId) {
     `<option value="${c.id}" ${String(c.id) === String(sel || '') ? 'selected' : ''}>${escHtml(c.company_name || c.login)}</option>`).join('');
 }
 async function rejectRequest(rid) {
+  if (!adminOnly()) return;
   if (!confirm('Отклонить заявку? / 拒绝申请？')) return;
   const r = await authAdmin('reject', { request_id: rid });
   if (r.error) { toast('❌ ' + r.error); return; }
@@ -8499,6 +8519,7 @@ async function rollbackAppVersion() {
 }
 
 function showAddManagerModal() {
+  if (!adminOnly()) return;
   document.getElementById('modal-content').innerHTML = `
     <div class="modal-title">+ Новый менеджер / 新经理</div>
     <p style="font-size:12px;color:var(--mid);margin-bottom:16px">
@@ -8545,6 +8566,7 @@ async function addManager() {
 }
 
 function showAddWarehouseModal() {
+  if (!adminOnly()) return;
   document.getElementById('modal-content').innerHTML = `
     <div class="modal-title">+ Сотрудник склада / 新仓库员工</div>
     <p style="font-size:12px;color:var(--mid);margin-bottom:16px">
@@ -15992,7 +16014,7 @@ async function crmLeadModal(id) {
     </div>
     <div class="modal-btns">
       ${id ? `<button class="btn btn-secondary btn-sm" onclick="mlCompose({ lead_id: ${l.id} })">✉️ Письмо</button>` : ''}
-      ${id && !l.client_id ? `<button class="btn btn-gold btn-sm" onclick="crmConvert(${l.id})">✅ Сделать клиентом / 转为客户</button>` : ''}
+      ${id && !l.client_id && isAdminUser() ? `<button class="btn btn-gold btn-sm" onclick="crmConvert(${l.id})">✅ Сделать клиентом / 转为客户</button>` : ''}
       ${id && !isScopedMgr() ? `<button class="btn btn-danger btn-sm" onclick="crmLeadDelete(${l.id})">🗑</button>` : ''}
       <div style="flex:1"></div>
       <button class="btn btn-secondary" onclick="closeModal()">Закрыть / 关闭</button>
@@ -16047,6 +16069,7 @@ async function crmLeadDelete(id) {
 
 // Лид → клиент: создаём учётную запись клиента, закреплённую за тем же менеджером
 async function crmConvert(id) {
+  if (!adminOnly()) return;
   const l = _crm.leads.find(x => String(x.id) === String(id)); if (!l) return;
   const login = (prompt('Логин для входа клиента (латиницей) / 客户账号:', (l.company || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16)) || '').trim();
   if (!login) return;
