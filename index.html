@@ -205,6 +205,8 @@ btn,button{font-family:var(--font-b);cursor:pointer}
 
 /* ═══ TABLE ═══ */
 .tbl-wrap{overflow-x:auto;border-radius:var(--r);box-shadow:var(--shadow)}
+body.no-money .wh-money{display:none!important}
+body.no-money #cur-select-wrap{display:none!important}
 /* Таблица позиций заказа: своя прокрутка — горизонтальная полоса всегда на экране,
    шапка и итог прилипают, № и название остаются слева при прокрутке вбок */
 .mgr-scroll{max-height:calc(100vh - 130px);overflow:auto;overscroll-behavior:contain}
@@ -1889,6 +1891,8 @@ document.addEventListener('DOMContentLoaded', function(){
             <option value="">Все машины / 所有车次</option>
           </select>
           <button class="btn btn-secondary" onclick="loadWarehouseOrders()">🔄 Обновить / 刷新</button>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+            <input type="checkbox" id="wh-show-gone" onchange="loadWarehouseOrders()"> Показать уехавшие машины <span id="wh-gone-cnt" style="color:var(--mid)"></span></label>
         </div>
         <div id="warehouse-list"><div class="loading"><div class="spinner"></div></div></div>
       </div>
@@ -2166,6 +2170,28 @@ let allClients = [];
 function isScopedMgr() {
   return currentUser?.role === 'manager' && !currentUser?.is_admin && currentUser?.client_scope === 'own';
 }
+// Операционный менеджер (users.client_scope = 'ops'): заказы, накладные, инвойсы, отгрузки, клиенты —
+// без правки прайса и наценок, без CRM, канала и заведения сотрудников.
+function isOpsMgr() {
+  return currentUser?.role === 'manager' && !currentUser?.is_admin && currentUser?.client_scope === 'ops';
+}
+// Совмещение: менеджер, который ещё и работает на складе (users.also_warehouse).
+// Входит одним логином и переключает режим кнопкой в шапке; режим помнится в этом браузере.
+function hasDualRole(u) { return (u?._baseRole || u?.role) === 'manager' && !!u?.also_warehouse; }
+function applyWorkMode() {
+  if (!hasDualRole(currentUser)) return;
+  currentUser._dual = true;
+  let m = 'warehouse';
+  try { m = localStorage.getItem('amma-mode-' + currentUser.id) || 'warehouse'; } catch (e) {}
+  if (m === 'warehouse') { currentUser._baseRole = 'manager'; currentUser.role = 'warehouse'; }
+}
+function switchWorkMode() {
+  const to = currentUser?.role === 'warehouse' ? 'manager' : 'warehouse';
+  try { localStorage.setItem('amma-mode-' + currentUser.id, to); } catch (e) {}
+  location.reload();   // сессия восстановится сама, интерфейс соберётся под новый режим
+}
+// Кто получает складские уведомления: склад + менеджеры с совмещением
+const isWhStaff = s => s?.role === 'warehouse' || !!s?.also_warehouse;
 // Перед запросами: у клиентского менеджера должен быть загружен список его клиентов
 async function ensureScope() {
   if (isScopedMgr() && !allClients.length) await loadClients();
@@ -2258,6 +2284,7 @@ async function authEnter(silent) {
     const { data } = await sb.from('users').select('*').eq('id', w.id).maybeSingle();
     if (!data) { if (!silent) showErr('Профиль не найден / 未找到账户'); return false; }
     currentUser = data;
+    applyWorkMode();
     currentMember = w.member_id ? { id: w.member_id, name: w.member_name || '' } : null;   // сотрудник клиента
     if (!silent) logActivity('login', 'session', null, data.company_name || data.login, 'Вход в систему');
     document.getElementById('login-err').style.display = 'none';
@@ -2497,6 +2524,13 @@ async function initApp() {
     isGuest ? 'Гость / 访客' :
     (currentUser.company_name || currentUser.login) + (currentMember?.name ? ' · ' + currentMember.name : '');
   document.getElementById('top-role').className = 'user-pill' + (isMgr ? ' mgr' : '');
+  // Совмещение «менеджер + склад»: кнопка переключения режима рядом с ролью
+  document.getElementById('mode-switch')?.remove();
+  if (currentUser._dual) document.getElementById('top-role').insertAdjacentHTML('afterend',
+    `<button id="mode-switch" class="user-pill" style="cursor:pointer;border:1px dashed var(--sage);background:transparent" onclick="switchWorkMode()"
+      title="Переключить режим работы / 切换模式">⇄ ${isWh ? '🔑 В режим менеджера / 经理' : '🏭 В режим склада / 仓库'}</button>`);
+  // Складу цены и суммы не показываем; и уведомление про «цены 3 дня» ему ни к чему
+  document.body.classList.toggle('no-money', isWh);
   document.getElementById('notice-bar').innerHTML =
     '⚠ Цены действительны 3 дня · 价格有效期3天 · Мин. заказ — 1 коробка/вид';
 
@@ -2530,7 +2564,7 @@ async function initApp() {
       <div class="nav-tab" onclick="showPage('pricepdf',this)">📄 Прайс-PDF / 宣传单</div>
       <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>
     `;
-    const full = !isScopedMgr();   // клиентский менеджер не правит прайс и общие наценки
+    const full = !isScopedMgr() && !isOpsMgr();   // клиентский и операционный менеджер не правят прайс и общие наценки
     document.getElementById('btn-save-prices').style.display = full ? 'inline-flex' : 'none';
     document.getElementById('btn-import-prices').style.display = full ? 'inline-flex' : 'none';
     document.getElementById('markup-controls').style.display = full ? 'flex' : 'none';
@@ -2540,7 +2574,11 @@ async function initApp() {
     document.getElementById('btn-showcase-edit').style.display = full ? 'inline-flex' : 'none';
     ['btn-add-manager', 'btn-add-warehouse'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = full ? '' : 'none'; });
     const at = document.getElementById('admin-app-tools'); if (at) at.style.display = currentUser?.is_admin ? 'flex' : 'none';
-    if (!full) document.getElementById('top-role').textContent = '💼 Клиентский менеджер / 客户经理';
+    if (isScopedMgr()) document.getElementById('top-role').textContent = '💼 Клиентский менеджер / 客户经理';
+    if (isOpsMgr()) {
+      document.getElementById('top-role').textContent = '🔑 Менеджер (операции) / 运营经理';
+      document.querySelector('#nav-tabs .nav-tab[onclick*="\'crm\'"]')?.remove();
+    }
     if (calcAccess()) document.getElementById('tab-notif')?.insertAdjacentHTML('beforebegin', `<div class="nav-tab" onclick="showPage('calc',this)">🧮 Калькулятор</div>`);
     if (full) document.getElementById('tab-notif')?.insertAdjacentHTML('beforebegin', `<div class="nav-tab" onclick="showPage('channel',this)">📣 Канал</div>`);
     loadClients().then(() => crmBadge()).catch(() => {});
@@ -2557,6 +2595,7 @@ async function initApp() {
     document.getElementById('btn-import-prices').style.display = 'none';
     document.getElementById('markup-controls').style.display  = 'none';
     document.getElementById('btn-add-flower').style.display   = 'none';
+    document.getElementById('notice-bar').innerHTML = '🏭 Склад: сборка, приёмка, этикетки и отгрузки / 仓库：备货、收货、标签、发货';
   } else if (isGz) {
     tabs.innerHTML = `
       <div class="nav-tab active" onclick="showPage('gz-orders',this)">📦 Заказы горшечных / 盆栽订单 <span class="cnt" id="cnt-gz" style="display:none">0</span></div>
@@ -2634,6 +2673,7 @@ async function initApp() {
   // Warehouse: load orders and setup realtime
   if (isWh) {
     loadWhPending(); // start on pending tab to show new orders first
+    loadWarehouseOrders();   // счётчик «Сборка» в меню сразу, а не после открытия вкладки
     // Load assembly in background
     sb.from('orders').select('id',{count:'exact'}).in('status',['pending_review','needs_revision']).then(({count}) => {
       const badge = document.getElementById('cnt-wh-pending');
@@ -4090,7 +4130,7 @@ const SHOWCASE_N = 5;
 let showcaseCfg = null;         // { top_cut:[id], top_potted:[id], mode:'auto'|'manual', updated_at }
 let _scNewPick = null;          // случайный выбор новинок — фиксируем на сессию, чтобы не прыгал
 let _scFallback = {};
-const isFullMgr = () => currentUser?.role === 'manager' && !isScopedMgr();
+const isFullMgr = () => currentUser?.role === 'manager' && !isScopedMgr() && !isOpsMgr();
 
 async function loadShowcaseCfg() {
   try {
@@ -7276,7 +7316,7 @@ async function rejectPackingChanges(orderId) {
 
   // Notify warehouse that manager rejected
   try {
-    const whs = (await staffList()).filter(s => s.role === 'warehouse');
+    const whs = (await staffList()).filter(isWhStaff);
     const { data: orderInfo } = await sb.from('orders').select('order_number').eq('id', orderId).single();
     for (const w of (whs||[])) {
       await sendNotification(w.id,
@@ -7440,7 +7480,7 @@ async function updateOrderStatus(id, status) {
         }
         // Notify warehouse users
         if (triggers.warehouse) {
-          const whUsers = (await staffList()).filter(s => s.role === 'warehouse');
+          const whUsers = (await staffList()).filter(isWhStaff);
           for (const wu of (whUsers || [])) {
             await sendNotification(wu.id, triggers.warehouse.title, triggers.warehouse.body, triggers.warehouse.icon);
           }
@@ -8128,7 +8168,7 @@ function renderClients() {
         <td class="L"><b>${c.company_name||'—'}</b>${c.purchase_tracking?' <span title="Видит журнал закупа" style="font-size:10px">🛒</span>':''}${c.tg_chat_id?' <span title="Telegram подключён" style="font-size:10px">📲</span>':''}${c.calc_access?' <span title="Доступ к калькулятору" style="font-size:10px">🧮</span>':''}</td>
         <td class="L" style="color:var(--mid);font-family:monospace">${escHtml(c.login)}${c.blocked ? ' <span title="Доступ закрыт">🔒</span>' : ''}${c.email ? `<div style="font-size:10px;font-family:inherit">${escHtml(c.email)}</div>` : ''}</td>
         <td style="font-size:11px;color:var(--mid)">${c.contact||'—'}</td>
-        <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?(c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':'👑 Менеджер / 经理'):c.role==='warehouse'?'🏭 Склад / 仓库':c.role==='gz'?'🪴 Гуанчжоу / 广州':c.role==='member'?'👥 Сотрудник: ' + escHtml(allClients.find(x => String(x.id) === String(c.account_of))?.company_name || '?'):'👤 Клиент / 客户'}</span></td>
+        <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?((c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':c.client_scope==='ops'?'🔑 Менеджер (операции)':'👑 Менеджер / 经理')+(c.also_warehouse?' + 🏭 склад':'')):c.role==='warehouse'?'🏭 Склад / 仓库':c.role==='gz'?'🪴 Гуанчжоу / 广州':c.role==='member'?'👥 Сотрудник: ' + escHtml(allClients.find(x => String(x.id) === String(c.account_of))?.company_name || '?'):'👤 Клиент / 客户'}</span></td>
         <td style="font-size:11px;color:var(--mid)">${c.role==='client' ? (escHtml(mgrName(c.manager_id)) || '<span style="color:var(--light)">— не закреплён</span>') : ''}</td>
         <td><button class="btn btn-secondary btn-sm" onclick="showEditClientModal('${c.id}')">✏️ Изменить / 修改</button></td>
       </tr>`).join('')}
@@ -8214,9 +8254,9 @@ function showEditClientModal(id) {
       </select>
       <div id="ec-acc-wrap" style="margin-top:6px;${user.role === 'member' ? '' : 'display:none'}"><label style="font-size:11px">Компания (основной аккаунт)</label>
         <select class="inp" id="ec-account-of">${memberCompanyOptions(user.account_of, user.id)}</select></div>
-      <div style="font-size:10px;color:var(--mid);margin-top:2px">Новый менеджер получает полный доступ. Ограничить его своими клиентами (💼) можно после сохранения, открыв карточку ещё раз.<br>🪴 Гуанчжоу — садовники и менеджер базы: заказы и прайс только горшечных; клиентов, суммы, инвойсы, чат не видят.</div>
+      <div style="font-size:10px;color:var(--mid);margin-top:2px">Новый менеджер получает полный доступ. Уровень доступа (операционный / клиентский) и совмещение со складом настраиваются после сохранения — откройте карточку ещё раз.<br>🪴 Гуанчжоу — садовники и менеджер базы: заказы и прайс только горшечных; клиентов, суммы, инвойсы, чат не видят.</div>
     </div>` : ''}
-    <div style="margin-top:10px;padding:10px 12px;background:var(--sage-l);border-radius:6px;display:${isScopedMgr()||user.role!=='client'?'none':'flex'};align-items:center;gap:10px">
+    <div style="margin-top:10px;padding:10px 12px;background:var(--sage-l);border-radius:6px;display:${isScopedMgr()||isOpsMgr()||user.role!=='client'?'none':'flex'};align-items:center;gap:10px">
       <label style="font-weight:600;font-size:12px;color:var(--sage-d)">💰 Показывать цены с 15% наценкой / 显示加价15%价格:</label>
       <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px">
         <input type="checkbox" id="ec-show-markup" ${user.show_markup?'checked':''} style="width:15px;height:15px;accent-color:var(--sage-d)">
@@ -8239,10 +8279,17 @@ function showEditClientModal(id) {
     </div>` : ''}
     ${user.role === 'manager' && currentUser?.is_admin && String(user.id) !== String(currentUser.id) ? ('client_scope' in user ? `
     <div style="margin-top:10px;padding:10px 12px;background:var(--sage-l);border-radius:6px;font-size:12px">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
-        <input type="checkbox" id="ec-scope-own" ${user.client_scope==='own'?'checked':''} style="width:15px;height:15px">
-        💼 Клиентский менеджер — видит только закреплённых клиентов / 只看自己的客户</label>
-      <div style="font-size:11px;color:var(--mid);margin:4px 0 0 21px">Без доступа к прайсу, закупу, поставщикам и чужим клиентам</div>
+      <label style="font-weight:600;display:block;margin-bottom:4px">Уровень доступа менеджера / 经理权限</label>
+      <select class="inp" id="ec-scope" style="width:100%">
+        <option value="" ${!user.client_scope?'selected':''}>👑 Полный — всё, включая прайс и наценки</option>
+        <option value="ops" ${user.client_scope==='ops'?'selected':''}>🔑 Операционный — заказы и документы, без прайса, наценок и CRM</option>
+        <option value="own" ${user.client_scope==='own'?'selected':''}>💼 Клиентский — только закреплённые клиенты</option>
+      </select>
+      ${'also_warehouse' in user ? `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;margin-top:8px">
+        <input type="checkbox" id="ec-also-wh" ${user.also_warehouse?'checked':''} style="width:15px;height:15px">
+        🏭 Также работает на складе — переключатель «Склад ⇄ Менеджер» в шапке / 兼仓库</label>
+      <div style="font-size:11px;color:var(--mid);margin:2px 0 0 21px">Один логин, два режима. Получает и складские уведомления.</div>`
+      : `<div style="font-size:11px;color:var(--mid);margin-top:6px">🏭 Совмещение со складом: выполните SQL <code>alter table users add column if not exists also_warehouse boolean default false;</code></div>`}
     </div>` : '') : ''}
     ${user.role === 'client' && currentUser?.is_admin ? ('purchase_tracking' in user ? `
     <div style="margin-top:10px;padding:10px 12px;background:var(--gold-l);border-radius:6px;font-size:12px">
@@ -8269,15 +8316,17 @@ async function saveClient(id) {
   const contact = document.getElementById('ec-contact').value.trim();
   const showMk = document.getElementById('ec-show-markup')?.checked || false;
   const updates = { company_name: company, contact };
-  if (!isScopedMgr()) updates.show_markup = showMk;
+  if (!isScopedMgr() && !isOpsMgr()) updates.show_markup = showMk;
   const curEl = document.getElementById('ec-currency');
   if (curEl) updates.currency = curEl.value;
   const mgEl = document.getElementById('ec-manager');
   if (mgEl) updates.manager_id = mgEl.value || null;
   const calcEl = document.getElementById('ec-calc');
   if (calcEl && currentUser?.is_admin) updates.calc_access = calcEl.checked;
-  const scEl = document.getElementById('ec-scope-own');
-  if (scEl) updates.client_scope = scEl.checked ? 'own' : null;
+  const scEl = document.getElementById('ec-scope');
+  if (scEl) updates.client_scope = scEl.value || null;
+  const awEl = document.getElementById('ec-also-wh');
+  if (awEl) updates.also_warehouse = awEl.checked;
   const roleEl = document.getElementById('ec-role');
   if (roleEl && currentUser?.is_admin && roleEl.value !== roleEl.dataset.prev) {
     const nr = roleEl.value;
@@ -10569,7 +10618,7 @@ async function notifyChat(msg) {
   }
   // Manager in office-warehouse → notify warehouse
   if (role === 'manager' && msg.room === 'office-warehouse') {
-    const whs = (await staffList()).filter(s => s.role === 'warehouse');
+    const whs = (await staffList()).filter(isWhStaff);
     for (const w of (whs||[])) {
       await sendNotification(w.id, `💬 Сообщение от офиса / 办公室消息`, msg.body.slice(0,80), '💬');
     }
@@ -10795,8 +10844,8 @@ async function loadWhPending() {
         ? `<img src="${thumb}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0">`
         : `<div style="width:32px;height:32px;background:var(--sage-l);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">🌸</div>`;
       const bpb  = parseInt(item.bunches_per_box) || parseInt(f.boxes_per_box || snap.boxes_per_box) || '';
-      const spb  = parseInt(f.stems || snap.stems) || '';
-      const pack = f.pack || snap.pack || '';
+      const spb  = parseInt(snap.stems || f.stems) || '';
+      const pack = snap.pack || f.pack || '';
 
       // Get saved wh_pack_note for this item
       let savedNotes = {};
@@ -11094,54 +11143,96 @@ async function loadWarehouseOrders() {
   const tv = truckFilter?.value;
   if (tv === 'none') filtered = filtered.filter(o => !o.shipment_id);
   else if (tv)       filtered = filtered.filter(o => String(o.shipment_id) === tv);
+  // Уехавшие машины (в пути / доставлена) по умолчанию не показываем — список не растёт бесконечно
+  const showGone = !!document.getElementById('wh-show-gone')?.checked;
+  const gone = o => ['departed', 'delivered'].includes(o.shipment?.status);
+  const goneCnt = filtered.filter(gone).length;
+  if (!showGone) filtered = filtered.filter(o => !gone(o));
+  const goneEl = document.getElementById('wh-gone-cnt');
+  if (goneEl) goneEl.textContent = goneCnt ? `(${goneCnt})` : '';
 
   const cntEl = document.getElementById('cnt-wh-orders');
-  if (cntEl) cntEl.textContent = filtered.length;
+  if (cntEl) cntEl.textContent = filtered.filter(o => !o.wh_assembled).length;
+
+  if (!filtered.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="icon">🏭</div>
+      <p>Нет заказов для сборки по выбранным фильтрам / 暂无备货订单</p></div>`;
+    return;
+  }
 
   wrap.innerHTML = filtered.map(order => {
     const client = order.client?.company_name || order.client?.login || '—';
-    const items  = order.order_items || [];
-    const isAssembled = order.status === 'paid'; // simple proxy; extend with wh_status field later
-
-    const rows = items.map((item, idx) => {
-      const f    = item.flower || {};
-      const snap = item.flower_snapshot || {};
-      const ru   = f.ru  || snap.ru  || '—';
-      const cn   = f.cn  || snap.cn  || '';
-      const thumb = f.photo_url || THUMBS[f.en] || '';
+    const items  = (order.order_items || []).map((it, k) => ({ it, k }));
+    const hasSub = items.some(x => String(x.it.client_name || '').trim());
+    // С субклиентами — группируем по получателю (удобно собирать и клеить этикетки)
+    if (hasSub) items.sort((a, b) => String(a.it.client_name || '').localeCompare(String(b.it.client_name || ''), 'ru') || a.k - b.k);
+    const sum = { boxes: 0, bunches: 0, stems: 0, grams: 0 };
+    const subTot = {};
+    const line = (item) => {
+      const f = item.flower || {}, snap = item.flower_snapshot || {};
+      const bpb = parseInt(item.bunches_per_box) || parseInt(snap.boxes_per_box || f.boxes_per_box) || 0;
+      const per = parseFloat(snap.stems || f.stems) || 0;
+      const q = parseInt(item.qty_boxes) || 0;
+      const wgt = itemWeightBased(item);
+      return { f, snap, bpb, per, q, wgt, bunches: q * bpb, units: Math.round(q * bpb * per) };
+    };
+    items.forEach(({ it }) => {
+      const L = line(it); const sc = String(it.client_name || '').trim() || '—';
+      sum.boxes += L.q; sum.bunches += L.bunches; if (L.wgt) sum.grams += L.units; else sum.stems += L.units;
+      const t = subTot[sc] = subTot[sc] || { boxes: 0, n: 0 }; t.boxes += L.q; t.n++;
+    });
+    const cub = orderCubes(order.order_items || []);
+    let lastSub = null;
+    const rows = items.map(({ it: item }, idx) => {
+      const L = line(item);
+      const ru = L.f.ru || L.snap.ru || '—', cn = L.f.cn || L.snap.cn || '';
+      const thumb = L.f.photo_url || THUMBS[L.f.en] || '';
       const imgH = thumb
         ? `<img src="${thumb}" style="width:36px;height:36px;object-fit:cover;border-radius:5px">`
-        : `<div style="width:36px;height:36px;background:var(--sage-l);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px">🌸</div>`;
-      const bpb   = parseInt(item.bunches_per_box) || parseInt(f.boxes_per_box || snap.boxes_per_box) || '';
-      const stems = parseInt(f.stems || snap.stems) || '';
-      const totalStems = (bpb && stems) ? bpb * stems : '';
-      return `<tr class="${idx%2?'stripe':''}">
+        : `<div style="width:36px;height:36px;background:var(--sage-l);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px">${L.snap.catalog === 'potted' ? '🪴' : '🌸'}</div>`;
+      const sc = String(item.client_name || '').trim();
+      let head = '';
+      if (hasSub && (sc || '—') !== lastSub) {
+        lastSub = sc || '—';
+        const t = subTot[lastSub];
+        head = `<tr class="cat-row"><td colspan="10" style="text-align:left;font-weight:700;padding:7px 10px">👤 ${escHtml(sc || 'Без субклиента / 无子客户')}
+          <span style="font-weight:400;color:var(--mid);margin-left:6px">${t.n} поз. · ${t.boxes} кор.</span></td></tr>`;
+      }
+      const note = String(item.item_comment || '').trim();
+      const noteH = note ? `<div style="font-size:10px;margin-top:3px;padding:2px 6px;border-radius:4px;display:inline-block;${/склад|⚠|仓库|упак|нетканк|обязательно/i.test(note) ? 'background:#fef3c7;color:#92400e;font-weight:700' : 'background:var(--sage-l);color:var(--sage-d)'}">📝 ${escHtml(note)}</div>` : '';
+      const perTxt = L.per ? (L.wgt ? fmtStems(L.per, true) : L.per) + (L.snap.stems_label ? ` <span style="color:var(--mid)">(${escHtml(L.snap.stems_label)})</span>` : '') : '—';
+      return head + `<tr class="${idx % 2 ? 'stripe' : ''}">
         <td style="width:42px">${imgH}</td>
-        <td class="L"><b style="font-size:12px">${ru}</b>
-          <div style="font-size:10px;color:var(--mid)">${cn}</div></td>
-        <td style="text-align:center">${stems||'—'}</td>
-        <td style="text-align:center">${bpb||'—'}</td>
-        <td style="text-align:center;font-weight:700;color:var(--sage-d)">${totalStems||'—'}</td>
-        <td style="text-align:center;font-size:14px;font-weight:700">${item.qty_boxes||1}</td>
-        <td style="font-size:10px;color:var(--mid)">${item.comment||item.client_name||''}</td>
+        <td class="L"><b style="font-size:12px">${escHtml(ru)}</b>
+          <div style="font-size:10px;color:var(--mid)">${escHtml(cn)}</div>${noteH}</td>
+        <td style="text-align:center;font-size:16px;font-weight:800">${L.q || '—'}</td>
+        <td style="text-align:center;font-size:11px;color:var(--mid);white-space:nowrap">${escHtml(L.snap.box_size || L.f.box_size || '—')}</td>
+        <td style="text-align:center">${L.bpb || '—'}</td>
+        <td style="text-align:center;white-space:nowrap">${perTxt}</td>
+        <td style="text-align:center;font-weight:700">${L.bunches || '—'}</td>
+        <td style="text-align:center;font-weight:700;color:var(--sage-d);white-space:nowrap">${L.units ? fmtStems(L.units, L.wgt) + (L.wgt ? '' : ' шт') : '—'}</td>
+        <td style="font-size:11px;color:var(--mid)">${hasSub ? '' : escHtml(sc)}</td>
       </tr>`;
     }).join('');
 
     const assembledBadge = order.wh_assembled
       ? `<span class="badge" style="background:var(--sage-l);color:var(--sage-d)">✅ Собрано / 已备货</span>`
       : `<span class="badge" style="background:#fff3e0;color:#e65100">⏳ В работе / 备货中</span>`;
+    const totals = [`📦 <b>${sum.boxes}</b> кор.`, `${cub.est ? '≈' : ''}<b>${fmtM3(cub.m3)}</b> м³`, `<b>${sum.bunches}</b> банч.`,
+      sum.stems ? `<b>${sum.stems}</b> шт` : '', sum.grams ? `<b>${fmtStems(sum.grams, true)}</b>` : '',
+      hasSub ? `👤 <b>${Object.keys(subTot).length}</b> субклиент.` : ''].filter(Boolean).join(' · ');
 
     return `<div class="card" style="border-left:4px solid ${order.wh_assembled?'var(--sage)':'var(--sage-d)'};margin-bottom:14px" id="wh-card-${order.id}">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="font-family:var(--font-h);font-size:17px;font-weight:700;color:var(--sage-d)">${order.order_number}</span>
           ${order.shipment
-            ? `<span class="badge" style="background:#fef9e7;color:#8a6d1a;border:1px solid var(--gold);font-weight:700">🚚 ${order.shipment.ship_number} · ${order.shipment.ship_date||''}</span>`
+            ? `<span class="badge" style="background:#fef9e7;color:#8a6d1a;border:1px solid var(--gold);font-weight:700">🚚 ${order.shipment.ship_number} · ${order.shipment.ship_date||''}${gone(order) ? ' · уехала' : ''}</span>`
             : `<span class="badge" style="background:#fee2e2;color:#991b1b">⚠️ без машины / 未挂车</span>`}
           ${assembledBadge}
+          <span style="font-size:12px;color:var(--mid)">👤 ${escHtml(client)}${order.date_ship?'&nbsp;·&nbsp;🚚 '+order.date_ship:''}</span>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-size:12px;color:var(--mid)">👤 ${client}${order.date_ship?'&nbsp;·&nbsp;🚚 '+order.date_ship:''}&nbsp;·&nbsp;${items.length} поз.</span>
           <button class="btn btn-sm" style="background:${order.wh_assembled?'#e8f5e9':'var(--sage-d)'};color:${order.wh_assembled?'var(--sage-d)':'#fff'};border:1px solid var(--sage-d);padding:5px 12px;font-size:12px"
             onclick="toggleAssembled('${order.id}', ${!!order.wh_assembled})">
             ${order.wh_assembled ? '↩ Отменить / 取消' : '✅ Собрано! / 备货完成'}
@@ -11152,13 +11243,15 @@ async function loadWarehouseOrders() {
           </button>
         </div>
       </div>
+      <div style="font-size:12px;padding:6px 10px;background:var(--sage-l);border-radius:6px;margin-bottom:8px">${totals} · ${items.length} поз.</div>
+      ${order.client_comment ? `<div style="font-size:11px;margin-bottom:8px;color:#92400e">💬 Клиент: ${escHtml(order.client_comment)}</div>` : ''}
       <div class="tbl-wrap">
-        <table style="min-width:520px">
+        <table style="min-width:760px">
           <thead><tr>
             <th style="width:42px">Фото</th>
             <th class="L">Название / 花材名称</th>
-            <th>Ст./扎</th><th>Бан./扎数</th><th>Итого ст.</th>
-            <th>Кор./箱</th><th>Примечание</th>
+            <th>Кор.<br>箱</th><th>Короб, см<br>箱规</th><th>Банч/кор<br>扎/箱</th><th>Ст(г)/банч<br>枝(克)/扎</th>
+            <th>Всего банч.<br>总扎数</th><th>Всего шт/кг<br>总数</th><th>${hasSub ? '' : 'Субклиент<br>子客户'}</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -11604,7 +11697,7 @@ async function loadWhClaims() {
             ${typeLabel[item.type]||item.type}
           </span>
           <span style="font-size:10px;font-weight:700;min-width:32px;text-align:center">${item.qty_boxes||item.qty||''} кор.</span>
-          ${item.subtotal?`<span style="font-size:11px;font-weight:700;color:var(--red)">¥${parseFloat(item.subtotal).toFixed(2)}</span>`:''}
+          ${item.subtotal?`<span class="wh-money" style="font-size:11px;font-weight:700;color:var(--red)">¥${parseFloat(item.subtotal).toFixed(2)}</span>`:''}
           <span style="font-size:10px;padding:2px 6px;border-radius:3px;
             background:${isWh?'#fef2f2':'#f0f9ff'};color:${isWh?'#991b1b':'#0369a1'};font-weight:600">
             ${isWh?'🏭 склад':'🚚 поставщик'}
@@ -11620,7 +11713,7 @@ async function loadWhClaims() {
             <span class="badge" style="background:${sc}20;color:${sc};margin-left:6px">${statusMap[c.status]||c.status}</span>
           </div>
           <div style="display:flex;gap:6px;align-items:center">
-            ${total?`<span style="font-size:14px;font-weight:700;color:var(--red)">¥${total.toFixed(2)}</span>`:''}
+            ${total?`<span class="wh-money" style="font-size:14px;font-weight:700;color:var(--red)">¥${total.toFixed(2)}</span>`:''}
             ${faultBadge}
           </div>
         </div>
@@ -11731,7 +11824,7 @@ async function loadWhStats() {
           : `<div style="margin-bottom:10px">
               <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
                 <span style="color:#dc2626;font-weight:600">🏭 Ошибки склада</span>
-                <span style="font-weight:700;color:#dc2626">${whClaimCount} поз. · ¥${whClaimTotal.toFixed(2)}</span>
+                <span style="font-weight:700;color:#dc2626">${whClaimCount} поз.<span class="wh-money"> · ¥${whClaimTotal.toFixed(2)}</span></span>
               </div>
               <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">
                 <div style="height:100%;background:#dc2626;border-radius:4px;width:${whClaimCount+supClaimCount?Math.round(whClaimCount/(whClaimCount+supClaimCount)*100):0}%"></div>
@@ -11740,13 +11833,13 @@ async function loadWhStats() {
             <div>
               <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
                 <span style="color:#1d4ed8;font-weight:600">🚚 Ошибки поставщика</span>
-                <span style="font-weight:700;color:#1d4ed8">${supClaimCount} поз. · ¥${supClaimTotal.toFixed(2)}</span>
+                <span style="font-weight:700;color:#1d4ed8">${supClaimCount} поз.<span class="wh-money"> · ¥${supClaimTotal.toFixed(2)}</span></span>
               </div>
               <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">
                 <div style="height:100%;background:#3b82f6;border-radius:4px;width:${whClaimCount+supClaimCount?Math.round(supClaimCount/(whClaimCount+supClaimCount)*100):0}%"></div>
               </div>
             </div>
-            <div style="margin-top:10px;padding:8px;background:var(--sage-l);border-radius:6px;text-align:center;font-size:11px">
+            <div class="wh-money" style="margin-top:10px;padding:8px;background:var(--sage-l);border-radius:6px;text-align:center;font-size:11px">
               Общая сумма претензий: <b style="color:var(--red)">¥${(whClaimTotal+supClaimTotal).toFixed(2)}</b>
             </div>`}
       </div>
@@ -11849,7 +11942,8 @@ async function loadReceiving() {
     // ── ORDERED (agreed) values ──
     const ordBoxes = parseInt(item.qty_boxes) || 1;
     const ordBpb   = parseInt(item.bunches_per_box) || parseInt(f.boxes_per_box || snap.boxes_per_box) || 0;
-    const ordSpb   = parseInt(f.stems || snap.stems) || 0;
+    const ordSpb   = parseInt(snap.stems || f.stems) || 0;
+    const recvWgt  = itemWeightBased(item);
     const ordBunch = ordBpb ? ordBoxes * ordBpb : null;
     const ordStem  = (ordBpb && ordSpb) ? ordBoxes * ordBpb * ordSpb : null;
     const pricePerBox = parseFloat(item.price_per_box) || 0;
@@ -11930,7 +12024,7 @@ async function loadReceiving() {
               </td>
             </tr>
             <tr style="border-top:1px solid var(--border)">
-              <td style="padding:6px 8px;color:var(--mid)">🌸 Ст./банч.</td>
+              <td style="padding:6px 8px;color:var(--mid)">${recvWgt ? '⚖️ г/банч' : '🌸 Ст./банч.'}</td>
               <td style="padding:6px 8px;text-align:center;font-weight:700">${ordSpb||'—'}</td>
               <td style="padding:6px 8px;text-align:center">
                 <input type="number" min="0" value="${factSpb||''}"
@@ -11943,7 +12037,7 @@ async function loadReceiving() {
                 ${!ordSpb || factSpb===ordSpb ? '<span style="color:var(--sage-d)">✓</span>' : `<span style="color:#d97706">${factSpb-ordSpb>0?'+':''}${factSpb-ordSpb}</span>`}
               </td>
             </tr>
-            <tr style="border-top:1px solid var(--border);background:var(--sage-l)">
+            <tr class="wh-money" style="border-top:1px solid var(--border);background:var(--sage-l)">
               <td style="padding:6px 8px;color:var(--sage-d);font-weight:700">💰 Итого ¥</td>
               <td style="padding:6px 8px;text-align:center;font-weight:700;color:var(--sage-d)">¥${ordTotal.toFixed(2)}</td>
               <td id="recv-total-${item.id}" style="padding:6px 8px;text-align:center;font-weight:700;color:${hasDiff?'#d97706':'var(--sage-d)'}">¥${factTotal.toFixed(2)}</td>
@@ -11998,7 +12092,7 @@ async function loadReceiving() {
         style="width:100%;resize:vertical;font-size:12px"
         placeholder="Общее состояние груза / 货物总体状况...">${savedData._general_note||''}</textarea>
     </div>
-    <div id="recv-grand-total" style="display:flex;justify-content:flex-end;gap:20px;padding:10px 14px;background:var(--sage-l);border-radius:8px;margin-bottom:12px">
+    <div id="recv-grand-total" class="wh-money" style="display:flex;justify-content:flex-end;gap:20px;padding:10px 14px;background:var(--sage-l);border-radius:8px;margin-bottom:12px">
       <div style="text-align:center"><div style="font-size:10px;color:var(--mid)">По договору</div><div style="font-size:16px;font-weight:700;color:var(--sage-d)">¥${ordGrandTotal.toFixed(2)}</div></div>
       <div id="recv-grand-fact" style="text-align:center"><div style="font-size:10px;color:var(--mid)">По факту</div><div style="font-size:16px;font-weight:700;color:var(--sage-d)">¥${ordGrandTotal.toFixed(2)}</div></div>
     </div>
@@ -16887,7 +16981,7 @@ async function fxInit() {
   } catch (e) {}
   FX.cbr = await fxFetchCbr();
   // полные менеджеры тихо сохраняют свежий курс ЦБ — запасной вариант, если у клиента сайт ЦБ недоступен
-  if (FX.cbr && currentUser?.role === 'manager' && !isScopedMgr()
+  if (FX.cbr && currentUser?.role === 'manager' && !isScopedMgr() && !isOpsMgr()
       && (!FX.cfg.cbr || FX.cfg.cbr.date !== FX.cbr.date)) {
     FX.cfg.cbr = { cny_rub: FX.cbr.cny_rub, usd_rub: FX.cbr.usd_rub, eur_rub: FX.cbr.eur_rub, date: FX.cbr.date };
     sb.from('app_settings').upsert({ key: 'fx', value: FX.cfg, updated_at: new Date().toISOString() }).then(() => {});
@@ -16905,7 +16999,7 @@ function fxRenderSelector() {
   const el = document.getElementById('cur-select-wrap');
   if (!el) return;
   if (currentUser?.role === 'gz') { el.innerHTML = ''; return; }   // Гуанчжоу работает только в ¥
-  const canEdit = currentUser?.role === 'manager' && !isScopedMgr();
+  const canEdit = currentUser?.role === 'manager' && !isScopedMgr() && !isOpsMgr();
   el.innerHTML = `<select id="cur-select" class="cur-sel" onchange="fxSet(this.value)" title="${escHtml(fxRateLabel(FX.cur) || 'Валюта / 货币')}">
       ${['CNY', 'RUB', 'USD'].map(c => `<option value="${c}" ${FX.cur === c ? 'selected' : ''} ${c !== 'CNY' && !FX.rates[c] ? 'disabled' : ''}>${FX_SYM[c]} ${c}</option>`).join('')}
     </select>${canEdit ? `<button class="btn-theme" title="Курсы валют / 汇率" onclick="fxSettingsModal()">💱</button>` : ''}`;
@@ -17006,7 +17100,7 @@ async function tgMemberLinked() {
 }
 async function tgRefreshMe() {
   const { data } = await sb.from('users').select('*').eq('id', currentUser.id).maybeSingle();
-  if (data) { currentUser = data; try { sessionStorage.setItem('amma_user', JSON.stringify(data)); } catch (e) {} }
+  if (data) { currentUser = data; applyWorkMode(); try { sessionStorage.setItem('amma_user', JSON.stringify(data)); } catch (e) {} }
 }
 async function tgRenderCard() {
   const el = document.getElementById('tg-card');
