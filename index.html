@@ -1650,6 +1650,8 @@ document.addEventListener('DOMContentLoaded', function(){
       <div class="page-title">Все заказы / 所有订单 / All Orders</div>
       <div class="page-sub">Управление заказами / 客户订单管理 / Order management</div>
       <div class="ctrl-bar">
+        <input class="inp" id="orders-search" placeholder="🔍 № заказа, название, № инвойса / 搜索订单号、名称、发票号" style="min-width:240px"
+          oninput="clearTimeout(window._ordT);window._ordT=setTimeout(loadOrders,300)">
         <select class="inp" id="orders-client-filter" onchange="loadOrders()"><option value="">Все клиенты / 所有客户</option></select>
         <select class="inp" id="orders-status-filter" onchange="loadOrders()">
           <option value="">Все статусы / 所有状态</option>
@@ -6360,10 +6362,13 @@ async function loadOrders() {
   await ensureScope(); q = scopeQ(q);
   if (sf) q = q.eq('status', sf);
 
-  const { data } = await q;
+  const { data: raw } = await q;
+  const qs = (document.getElementById('orders-search')?.value || '').trim().toLowerCase();
+  const data = qs ? (raw || []).filter(o => [o.order_number, o.title, o.invoice_ref, o.client?.company_name, o.client?.login]
+    .some(x => String(x || '').toLowerCase().includes(qs))) : raw;
   const list = document.getElementById('orders-list');
   const cnt = document.getElementById('cnt-orders');
-  if (cnt) cnt.textContent = data?.length || 0;
+  if (cnt) cnt.textContent = raw?.length || 0;
 
   if (!data?.length) {
     list.innerHTML = `<div class="empty-state"><div class="icon">📦</div><p>Заказов пока нет</p></div>`;
@@ -6377,16 +6382,55 @@ async function loadOrders() {
       <div class="order-num">${o.order_number}</div>
       <div>
         <div class="order-client">${client}</div>
+        ${orderMetaHTML(o, true)}
         <div class="order-dates">📅 ${o.date_order} ${o.date_ship ? '→ 🚚 ' + o.date_ship : ''}</div>
       </div>
       <span class="badge badge-${o.status}">${statusLabel(o.status)}</span>
       <div class="order-sum">¥ ${total.toFixed(2)}</div>
-      <button class="btn btn-danger btn-sm" style="margin-left:4px"
+      <button class="btn btn-secondary btn-sm" style="margin-left:4px" title="Название и № инвойса / 名称和发票号"
+        onclick="event.stopPropagation();orderMetaModal('${o.id}','${escHtml(o.order_number)}',${escHtml(JSON.stringify(o.title || ''))},${escHtml(JSON.stringify(o.invoice_ref || ''))},loadOrders)">🧾 ✏️</button>
+      ${isFinMgr() ? '' : `<button class="btn btn-danger btn-sm" style="margin-left:4px"
         onclick="event.stopPropagation();confirmDeleteOrder('${o.id}','${o.order_number}')">
         🗑 Удалить / 删除
-      </button>
+      </button>`}
     </div>`;
   }).join('');
+}
+
+// ── Название заказа и № инвойса (orders.title, orders.invoice_ref) ──
+// Номер заказа системы остаётся как есть; название и номер инвойса от Лю помогают сопоставить с реальными документами.
+const ORDER_META_SQL = 'alter table orders add column if not exists title text; alter table orders add column if not exists invoice_ref text;';
+function orderMetaHTML(o, small) {
+  const t = String(o?.title || '').trim(), r = String(o?.invoice_ref || '').trim();
+  if (!t && !r) return '';
+  return `<span style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:${small ? 10 : 12}px;font-weight:600">
+    ${t ? `<span style="color:var(--sage-d)">${escHtml(t)}</span>` : ''}
+    ${r ? `<span style="background:#eef2ff;color:#3730a3;border-radius:5px;padding:1px 6px;font-weight:700" title="№ инвойса / 发票号">🧾 ${escHtml(r)}</span>` : ''}</span>`;
+}
+function orderMetaModal(id, number, title, ref, after) {
+  window._omAfter = after || null;
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">✏️ ${escHtml(number)}</div>
+    <div class="field"><label>Название заказа / 订单名称</label>
+      <input class="inp" id="om-title" value="${escHtml(title || '')}" placeholder="напр. Диантус срезка 20.10 / 例：Diantus 鲜切花 10.20"></div>
+    <div class="field"><label>№ инвойса / 发票号</label>
+      <input class="inp" id="om-ref" value="${escHtml(ref || '')}" placeholder="напр. YC20260122"></div>
+    <div style="font-size:11px;color:var(--mid)">Номер заказа в системе (${escHtml(number)}) не меняется / 系统订单号不变</div>
+    <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">取消 / Отмена</button>
+      <button class="btn btn-primary" onclick="orderMetaSave('${id}')">💾 保存 / Сохранить</button></div>`;
+  openModal();
+  setTimeout(() => document.getElementById(ref ? 'om-title' : 'om-ref')?.focus(), 50);
+}
+async function orderMetaSave(id) {
+  const title = document.getElementById('om-title')?.value.trim() || null;
+  const invoice_ref = document.getElementById('om-ref')?.value.trim() || null;
+  const { data, error } = await sb.from('orders').update({ title, invoice_ref }).eq('id', id).select('id, order_number');
+  if (error) { toast('❌ ' + (/title|invoice_ref/.test(error.message) ? 'Выполните SQL: ' + ORDER_META_SQL : error.message)); return; }
+  if (!data?.length) { toast('❌ Нет прав / 无权限'); return; }
+  logActivity('order_meta', 'order', id, data[0].order_number, `Название: ${title || '—'} · № инвойса: ${invoice_ref || '—'}`);
+  closeModal(); toast('✅ 已保存 / Сохранено');
+  const fn = window._omAfter; window._omAfter = null;
+  if (typeof fn === 'function') fn(); 
 }
 
 function statusLabel(s) {
@@ -6438,8 +6482,10 @@ async function openOrder(id) {
   document.getElementById('order-detail-title').textContent = order.order_number;
   document.getElementById('order-detail-badge').innerHTML =
     `<span class="badge badge-${order.status}">${statusLabel(order.status)}</span>`;
-  document.getElementById('order-detail-sub').textContent =
-    `👤 ${client} · 📅 ${order.date_order}`;
+  document.getElementById('order-detail-sub').innerHTML =
+    `👤 ${escHtml(client || '')} · 📅 ${order.date_order} ${orderMetaHTML(order)}
+     <button class="btn btn-secondary btn-sm" style="margin-left:6px;padding:2px 8px;font-size:11px"
+       onclick="orderMetaModal('${order.id}','${escHtml(order.order_number)}',${escHtml(JSON.stringify(order.title || ''))},${escHtml(JSON.stringify(order.invoice_ref || ''))},()=>openOrder('${order.id}'))">✏️ Название / № инвойса · 名称/发票号</button>`;
 
   renderOrderDetail(order);
 }
@@ -11468,6 +11514,7 @@ async function loadWarehouseOrders() {
             : `<span class="badge" style="background:#fee2e2;color:#991b1b">⚠️ без машины / 未挂车</span>`}
           ${assembledBadge}
           <span style="font-size:12px;color:var(--mid)">👤 ${escHtml(client)}${order.date_ship?'&nbsp;·&nbsp;🚚 '+order.date_ship:''}</span>
+          ${orderMetaHTML(order, true)}
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <button class="btn btn-sm" style="background:${order.wh_assembled?'#e8f5e9':'var(--sage-d)'};color:${order.wh_assembled?'var(--sage-d)':'#fff'};border:1px solid var(--sage-d);padding:5px 12px;font-size:12px"
@@ -13650,7 +13697,7 @@ async function loadShipments() {
   if (ids.length) {
     await ensureScope();
     const { data } = await scopeQ(sb.from('orders').select(`
-      id, order_number, status, shipment_id, date_ship, client_comment,
+      *,
       client:users!orders_client_id_fkey(company_name,login),
       order_items(qty_boxes, flower_snapshot)
     `)).in('shipment_id', ids);
@@ -13860,7 +13907,9 @@ function shipmentDetailHTML(u) {
   const partList = x => {
     const rows = x.orders.map(r => `<div class="shp-ord">
         <i style="background:${r.color}"></i>
-        <div class="shp-ord-m"><b>${escHtml(r.o.order_number)}</b><span>${escHtml(r.name)}</span></div>
+        <div class="shp-ord-m"><b>${escHtml(r.o.order_number)}</b><span>${escHtml(r.name)}</span>${orderMetaHTML(r.o, true)}</div>
+        ${isMgrLocal ? `<button class="shp-x" style="font-size:11px" title="Название и № инвойса / 名称和发票号"
+          onclick="orderMetaModal('${r.o.id}','${escHtml(r.o.order_number)}',${escHtml(JSON.stringify(r.o.title || ''))},${escHtml(JSON.stringify(r.o.invoice_ref || ''))},loadShipments)">✏️</button>` : ''}
         <div class="shp-ord-v">${r.boxes} кор<br><span>${r.est ? '≈' : ''}${fmtM3(r.m3)} м³</span></div>
         ${isMgrLocal && x.p.status === 'forming' ? `<button class="shp-x" title="Открепить / 移除" onclick="detachOrderFromShipment('${r.o.id}', ${x.p.id})">×</button>` : ''}
       </div>`).join('') || `<div class="shp-empty">Заказов пока нет</div>`;
