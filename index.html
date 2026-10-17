@@ -1789,6 +1789,14 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
   </div>
 
+  <div class="page" id="page-customs">
+    <div class="page-inner">
+      <div class="page-title">报关文件 / Таможенный пакет</div>
+      <div class="page-sub">CONTRACT · INVOICE · PACKING LIST · 报关要素 — 按车次生成，导出 Excel / По машине, выгрузка в Excel</div>
+      <div id="customs-wrap"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
   <div class="page" id="page-shipments">
     <div class="page-inner">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
@@ -2602,6 +2610,7 @@ async function initApp() {
       document.getElementById('top-role').textContent = '🧾 财务 / Финансы';
       tabs.innerHTML = `
         <div class="nav-tab active" onclick="showPage('shipments',this)">🚚 车次 / Отгрузки</div>
+        <div class="nav-tab" onclick="showPage('customs',this)">🛃 报关 / Таможня</div>
         <div class="nav-tab" onclick="showPage('docs',this)">📁 单据 / Документы</div>
         <div class="nav-tab" onclick="showPage('invoices',this)">🧾 发票 / Инвойсы</div>
         <div class="nav-tab" onclick="showPage('waybills',this)">📦 出货单 / Накладные <span class="cnt" id="cnt-waybills">0</span></div>
@@ -2737,6 +2746,7 @@ function showPage(name, tabEl) {
   if (name === 'waybills') loadWaybills();
   if (name === 'shipments') loadShipments();
   if (name === 'docs') { docsOpen(window._docsPreset || []); window._docsPreset = null; }
+  if (name === 'customs') { CUS.open(window._cusPreset || null); window._cusPreset = null; }
   if (name === 'clients') renderClients();
   if (name === 'labels') loadLabelOrders();
   if (name === 'my-order') { loadMyOrders().then(() => renderMyOrder()); }
@@ -7298,6 +7308,526 @@ async function docsDelete(id) {
   logActivity('doc_delete', 'shipment', d.shipment_id, d.file_name, 'Документ удалён');
   toast('🗑 已删除 / Удалено'); docsOpen();
 }
+
+// ══════════════════════════════════════════════════════════
+//  ТАМОЖЕННЫЙ ПАКЕТ / 报关文件 (CONTRACT · INVOICE · PACKING LIST · 报关要素)
+//  Группы, штуки и коробки считаются из заказов машины; продавец, покупатель, HS, суммы, вес,
+//  условия — Лю выбирает из справочника (customs_ref) или добавляет новые. Пакет хранится в customs_packs,
+//  выгрузка Excel (ExcelJS) сразу ложится в «Документы» этой машины.
+// ══════════════════════════════════════════════════════════
+const CUS_SQL_HINT = '报关表未创建 — 请执行 sql_customs.sql / Выполните sql_customs.sql в Supabase';
+const CUS = {
+  shp: [], shipments: [], orders: [], refs: [], packs: [], cur: null, err: null,
+
+  g(id) { return this.refs.find(r => r.kind === 'group' && String(r.id) === String(id)); },
+  list(kind) { return this.refs.filter(r => r.kind === kind); },
+
+  async open(ids) {
+    const wrap = document.getElementById('customs-wrap'); if (!wrap) return;
+    if (!canDocs()) { wrap.innerHTML = '<div class="empty-state"><p>🔒 无权限 / Нет доступа</p></div>'; return; }
+    if (Array.isArray(ids) && ids.length) this.shp = ids.map(Number);
+    wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    const [{ data: shp }, { data: refs, error: e1 }, { data: packs, error: e2 }] = await Promise.all([
+      sb.from('shipments').select('id, ship_number, ship_date, truck_name, status').order('ship_date', { ascending: false }).limit(200),
+      sb.from('customs_ref').select('*').order('id'),
+      this.shp.length ? sb.from('customs_packs').select('*').in('shipment_id', this.shp).order('created_at') : Promise.resolve({ data: [] }),
+    ]);
+    this.shipments = shp || [];
+    if (!this.shp.length && this.shipments.length) this.shp = [(this.shipments.find(s => s.status === 'forming') || this.shipments[0]).id];
+    const er = e1 || e2;
+    this.err = er ? (/does not exist|relation|schema cache/i.test(er.message) ? CUS_SQL_HINT : er.message) : null;
+    this.refs = refs || []; this.packs = packs || [];
+    const { data: ords } = this.shp.length ? await sb.from('orders').select(`*, client:users!orders_client_id_fkey(company_name,login),
+      order_items(*, flower:flowers(ru,cn,catalog,is_weight,stems,cat_ru,pack))`).in('shipment_id', this.shp) : { data: [] };
+    this.orders = ords || [];
+    this.cur = null;
+    this.render();
+  },
+
+  shpLabel(id) { const s = this.shipments.find(x => String(x.id) === String(id)); return s ? `${s.ship_number}${s.ship_date ? ' · ' + s.ship_date : ''}` : '—'; },
+  orderKind(o) {
+    const it = o.order_items || [];
+    const pot = it.filter(i => (i.flower_snapshot?.catalog || i.flower?.catalog) === 'potted').length;
+    return pot > it.length / 2 ? 'potted' : 'cut';
+  },
+  total(p) { return (p?.data?.rows || []).reduce((s, r) => s + (+r.usd || 0), 0); },
+
+  // ── список пакетов машины ──
+  render() {
+    const wrap = document.getElementById('customs-wrap'); if (!wrap) return;
+    if (this.cur) return this.renderEditor();
+    const shpSel = `<select class="inp" style="width:auto;min-width:240px" onchange="CUS.open([this.value])">
+      ${this.shipments.map(s => `<option value="${s.id}" ${this.shp.includes(s.id) ? 'selected' : ''}>🚚 ${escHtml(s.ship_number)} · ${escHtml(s.ship_date || '')}${s.truck_name ? ' · ' + escHtml(s.truck_name) : ''}</option>`).join('')}</select>`;
+    wrap.innerHTML = `
+      ${this.err ? `<div class="card" style="border-left:4px solid #f59e0b;font-size:12px;margin-bottom:12px">⚠️ ${escHtml(this.err)}</div>` : ''}
+      <div class="ctrl-bar" style="gap:8px;flex-wrap:wrap;margin-bottom:12px">${shpSel}
+        <button class="btn btn-primary" onclick="CUS.newPackModal()">＋ 新建报关文件 / Новый пакет</button>
+        <span style="font-size:12px;color:var(--mid)">订单 ${this.orders.length} 个 / заказов в машине: ${this.orders.length}</span></div>
+      ${this.packs.length ? this.packs.map(p => `<div class="card" style="margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:220px"><b style="font-size:15px">🛃 ${escHtml(p.number || '（无编号）')}</b>
+            <div style="font-size:12px;color:var(--mid)">${escHtml(p.data?.date || '')} · ${escHtml(p.data?.buyer?.name || '')} · ${(p.data?.rows || []).length} 类 / групп · ${(p.data?.rows || []).reduce((s, r) => s + (+r.cartons || 0), 0)} 件 · <b>USD ${this.total(p).toFixed(2)}</b></div>
+            <div style="font-size:11px;color:var(--light)">${escHtml(p.data?.order_numbers?.join(', ') || '')}${p.data?.exported_at ? ' · 📥 ' + new Date(p.data.exported_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}</div></div>
+          <button class="btn btn-secondary btn-sm" onclick="CUS.edit(${p.id})">✏️ 打开 / Открыть</button>
+          <button class="btn btn-gold btn-sm" onclick="CUS.edit(${p.id}).then(()=>CUS.exportXlsx())">📥 导出 Excel</button>
+          <button class="btn btn-danger btn-sm" onclick="CUS.del(${p.id})">🗑</button></div>`).join('')
+        : `<div class="empty-state"><div class="icon">🛃</div><p>此车次还没有报关文件 / Для этой машины пакетов пока нет</p></div>`}`;
+  },
+
+  newPackModal() {
+    if (!this.orders.length) { toast('车次里没有订单 / В машине нет заказов'); return; }
+    const kinds = { cut: '🌸 鲜切花 / Срезка', potted: '🪴 盆栽 / Горшечные' };
+    document.getElementById('modal-content').innerHTML = `
+      <div class="modal-title">＋ 新建报关文件 / Новый таможенный пакет</div>
+      <div style="font-size:12px;color:var(--mid);margin-bottom:8px">选择要包含的订单（鲜切花和盆栽通常分开）/ Отметьте заказы (срезку и горшечку обычно оформляют отдельно)</div>
+      ${this.orders.map(o => `<label style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);cursor:pointer">
+        <input type="checkbox" class="cus-ord" value="${o.id}" data-kind="${this.orderKind(o)}" ${this.orderKind(o) === 'cut' ? 'checked' : ''}>
+        <b>${escHtml(o.order_number)}</b> <span style="color:var(--mid);font-size:12px">${escHtml(o.client?.company_name || o.client?.login || '')} · ${kinds[this.orderKind(o)]} · ${(o.order_items || []).reduce((s, i) => s + (+i.qty_boxes || 0), 0)} 件</span>
+        ${orderMetaHTML(o, true)}</label>`).join('')}
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn btn-secondary btn-sm" onclick="document.querySelectorAll('.cus-ord').forEach(c=>c.checked=c.dataset.kind==='cut')">🌸 只选鲜切花</button>
+        <button class="btn btn-secondary btn-sm" onclick="document.querySelectorAll('.cus-ord').forEach(c=>c.checked=c.dataset.kind==='potted')">🪴 只选盆栽</button></div>
+      <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">取消 / Отмена</button>
+        <button class="btn btn-primary" onclick="CUS.create()">✅ 生成 / Создать</button></div>`;
+    openModal();
+  },
+
+  nextNumber() {
+    const all = [this.list('counter').find(r => r.name === 'last_number')?.data?.value, ...this.packs.map(p => p.number)].filter(Boolean);
+    const best = all.sort((a, b) => String(b).localeCompare(String(a), undefined, { numeric: true }))[0] || 'YC' + new Date().getFullYear() + '0000';
+    const m = String(best).match(/^(.*?)(\d+)(\D*)$/);
+    return m ? m[1] + String(+m[2] + 1).padStart(m[2].length, '0') : best + '-1';
+  },
+
+  create() {
+    const ids = [...document.querySelectorAll('.cus-ord:checked')].map(c => c.value);
+    if (!ids.length) { toast('请选择订单 / Выберите заказы'); return; }
+    closeModal();
+    const sel = this.orders.filter(o => ids.includes(String(o.id)));
+    const kind = sel.every(o => this.orderKind(o) === 'potted') ? 'potted' : 'cut';
+    const seller = this.list('party').find(p => p.data.role === 'seller'), buyer = this.list('party').find(p => p.data.role === 'buyer');
+    const terms = this.list('terms')[0]?.data || {};
+    this.cur = { id: null, shipment_id: this.shp[0], number: this.nextNumber(), data: {
+      kind, order_ids: ids, order_numbers: sel.map(o => o.order_number), date: new Date().toLocaleDateString('sv-SE'),
+      seller: seller ? { name: seller.name, addr: seller.data.addr || '', stamp: seller.data.stamp || null } : { name: '', addr: '' },
+      buyer: buyer ? { name: buyer.name, addr: buyer.data.addr || '', stamp: buyer.data.stamp || null } : { name: '', addr: '' },
+      terms: { payment: '', from: '', to: '', transport: '', term: '', marks: 'N/M', ...terms },
+      freight: '', insurance: '', ratio: 1.25, rows: [] } };
+    this.rebuild(true);
+    this.render();
+  },
+
+  async edit(id) {
+    const p = this.packs.find(x => x.id === id); if (!p) return;
+    this.cur = JSON.parse(JSON.stringify(p));
+    this.rebuild(false);
+    this.render();
+  },
+
+  // ── сорт → группа ──
+  itemKey(it) { const s = it.flower_snapshot || {}, f = it.flower || {}; return impNorm(s.cn || f.cn || s.ru || f.ru || ''); },
+  itemName(it) { const s = it.flower_snapshot || {}, f = it.flower || {}; return { ru: s.ru || f.ru || '', cn: s.cn || f.cn || '' }; },
+  autoGroup(it, kind) {
+    const map = this.list('map').find(m => m.name === this.itemKey(it));
+    if (map && this.g(map.data.gid)) return { gid: map.data.gid, how: 'map' };
+    const n = this.itemName(it), text = (n.cn + ' ' + n.ru).toLowerCase();
+    let best = null, len = 0;
+    this.list('group').filter(g => !g.data.kind || g.data.kind === kind).forEach(g => {
+      [...(g.data.keys || []), g.data.bot].filter(Boolean).forEach(k => {
+        const kk = String(k).toLowerCase().trim();
+        const ok = kk.length >= 2 || /[\u4e00-\u9fff]/.test(kk);   // китайский ключ может быть из одного знака (菊)
+        if (ok && text.includes(kk) && kk.length > len) { best = g; len = kk.length; }
+      });
+    });
+    return best ? { gid: best.id, how: 'auto' } : null;
+  },
+  // Пересчёт строк из заказов. keepEdits: сохранить введённые значения у тех групп, что уже есть
+  rebuild(fresh) {
+    const P = this.cur.data, old = {};
+    (P.rows || []).forEach(r => { old[r.gid] = r; });
+    const sel = this.orders.filter(o => P.order_ids.map(String).includes(String(o.id)));
+    const acc = {}; P.unmapped = []; P.mapping = [];
+    sel.forEach(o => (o.order_items || []).forEach(it => {
+      const q = parseInt(it.qty_boxes) || 0, bpb = parseInt(it.bunches_per_box) || 0;
+      const snap = it.flower_snapshot || {}, st = parseFloat(snap.stems || it.flower?.stems) || 0;
+      const pot = (snap.catalog || it.flower?.catalog) === 'potted', wgt = !pot && itemWeightBased(it);
+      const a = this.autoGroup(it, P.kind), nm = this.itemName(it);
+      P.mapping.push({ key: this.itemKey(it), ru: nm.ru, cn: nm.cn, gid: a?.gid || null, how: a?.how || null });
+      if (!a) { P.unmapped.push({ key: this.itemKey(it), ru: nm.ru, cn: nm.cn, boxes: q }); return; }
+      const G = this.g(a.gid);
+      const r = acc[a.gid] = acc[a.gid] || { gid: a.gid, qty: 0, cartons: 0, approx: false };
+      r.cartons += q;
+      if (pot) r.qty += q * bpb * (st || 1);
+      else if (wgt) { r.qty += q * bpb * (+G.data.pcs_per_bunch || 10); r.approx = true; }
+      else r.qty += q * bpb * (st || 1);
+    }));
+    // уникальные строки сопоставления
+    const seen = new Set(); P.mapping = P.mapping.filter(m => !seen.has(m.key) && seen.add(m.key));
+    const order = this.list('group').map(g => String(g.id));
+    P.rows = Object.values(acc).sort((a, b) => order.indexOf(String(a.gid)) - order.indexOf(String(b.gid))).map(r => {
+      const G = this.g(r.gid).data, o = old[r.gid];
+      const net = o && !fresh && o.cartons === r.cartons && o.net !== '' ? o.net : Math.round((+G.net_per_carton || 0) * r.cartons);
+      const usd = o && !fresh && o.qty === r.qty && o.usd !== '' ? o.usd : +((+G.usd_pcs || 0) * r.qty).toFixed(2);
+      return { gid: r.gid, category_cn: o?.category_cn ?? G.category_cn, category_en: o?.category_en ?? G.category_en,
+        display: o?.display ?? (G.display || G.cn), bot: o?.bot ?? G.bot, hs: o?.hs ?? (G.hs || ''), unit: o?.unit ?? (G.unit || 'PCS'),
+        qty: o && !fresh && o.qty_manual ? o.qty : r.qty, qty_manual: !!(o && !fresh && o.qty_manual), approx: r.approx,
+        usd, cartons: r.cartons, pkg: o?.pkg ?? (G.pkg || 'CARTONS'),
+        net, gross: o && !fresh && o.gross !== '' && o.net === net ? o.gross : Math.round(net * (+P.ratio || 1.25)),
+        height: o?.height ?? (G.height || ''), remark: o?.remark ?? '' };
+    });
+  },
+
+  // ── редактор ──
+  renderEditor() {
+    const wrap = document.getElementById('customs-wrap'), C = this.cur, P = C.data;
+    const parties = role => this.list('party').filter(p => !p.data.role || p.data.role === role);
+    const pSel = role => `<select class="inp" onchange="CUS.pickParty('${role}',this.value)">
+      ${parties(role).map(p => `<option value="${p.id}" ${p.name === P[role].name ? 'selected' : ''}>${escHtml(p.name)}</option>`).join('')}
+      ${P[role].name && !parties(role).some(p => p.name === P[role].name) ? `<option selected>${escHtml(P[role].name)}</option>` : ''}
+      <option value="__new">＋ 新增公司 / Добавить компанию…</option></select>`;
+    const inp = (path, val, w, ph = '') => `<input class="inp" value="${escHtml(val ?? '')}" placeholder="${escHtml(ph)}" style="${w ? 'width:' + w + 'px' : ''}" onchange="CUS.set('${path}',this.value)">`;
+    const groupsOpts = sel => this.list('group').filter(g => !g.data.kind || g.data.kind === P.kind)
+      .map(g => `<option value="${g.id}" ${String(sel) === String(g.id) ? 'selected' : ''}>${escHtml(g.data.display || g.name)}${g.data.bot ? ' · ' + escHtml(g.data.bot) : ''}</option>`).join('');
+    const T = P.rows.reduce((s, r) => ({ qty: s.qty + (+r.qty || 0), usd: s.usd + (+r.usd || 0), ct: s.ct + (+r.cartons || 0), net: s.net + (+r.net || 0), gr: s.gr + (+r.gross || 0) }), { qty: 0, usd: 0, ct: 0, net: 0, gr: 0 });
+    const cell = (i, f, w, type = 'text') => `<input class="inp" type="${type}" ${type === 'number' ? 'step="any"' : ''} value="${escHtml(P.rows[i][f] ?? '')}" style="width:${w}px;padding:3px 5px;font-size:12px" onchange="CUS.setRow(${i},'${f}',this.value)">`;
+    wrap.innerHTML = `
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <button class="btn btn-secondary btn-sm" onclick="CUS.cur=null;CUS.render()">← 返回 / Назад</button>
+        <b style="font-size:16px">🛃 ${escHtml(C.number || '')}</b>
+        <span style="font-size:12px;color:var(--mid)">🚚 ${escHtml(this.shpLabel(C.shipment_id))} · ${escHtml(P.order_numbers.join(', '))} · ${P.kind === 'potted' ? '🪴 盆栽' : '🌸 鲜切花'}</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-primary btn-sm" onclick="CUS.save()">💾 保存 / Сохранить</button>
+        <button class="btn btn-gold btn-sm" onclick="CUS.exportXlsx()">📥 导出 Excel</button>
+        <button class="btn btn-secondary btn-sm" title="把合同号写入这些订单 / Проставить номер в заказы" onclick="CUS.writeRefs()">🧾 → 订单 / № в заказы</button></div>
+
+      <div class="card" style="margin-bottom:12px">
+        <div class="field-row">
+          <div class="field"><label>合同号 / 发票号 · № контракта</label>${inp('number', C.number)}</div>
+          <div class="field"><label>日期 / Дата</label><input class="inp" type="date" value="${escHtml(P.date || '')}" onchange="CUS.set('data.date',this.value)"></div>
+          <div class="field"><label>毛重系数 / Брутто = нетто ×</label><input class="inp" type="number" step="0.01" value="${escHtml(P.ratio)}" onchange="CUS.set('data.ratio',this.value);CUS.regross()"></div>
+        </div>
+        <div class="field-row">
+          ${['seller', 'buyer'].map(role => `<div class="field"><label>${role === 'seller' ? '卖方 THE SELLER / Продавец' : '买方 THE BUYER / Покупатель'}</label>${pSel(role)}
+            <div style="font-size:11px;color:var(--mid);margin-top:2px">${escHtml(P[role].addr || '')}</div>
+            <label style="font-size:11px;cursor:pointer;color:var(--sage-d);display:inline-flex;gap:4px;align-items:center;margin-top:4px">
+              ${P[role].stamp ? `<img src="${P[role].stamp}" style="height:28px;vertical-align:middle"> ✅ 印章 / печать есть · заменить` : '🖃 上传印章 / Загрузить печать (PNG)'}
+              <input type="file" accept="image/png,image/jpeg" style="display:none" onchange="CUS.stamp('${role}',this)"></label></div>`).join('')}
+        </div>
+        <div class="field-row">
+          <div class="field"><label>条款 / Условия (шаблон)</label><select class="inp" onchange="CUS.pickTerms(this.value)">
+            <option value="">— 选择已保存 / выбрать сохранённые —</option>
+            ${this.list('terms').map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}<option value="__save">💾 保存当前条款 / Сохранить текущие как шаблон…</option></select></div>
+          <div class="field"><label>TERM OF PAYMENT</label>${inp('data.terms.payment', P.terms.payment)}</div>
+          <div class="field"><label>MEANS OF TRANSPORTATION</label>${inp('data.terms.transport', P.terms.transport)}</div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>FROM</label>${inp('data.terms.from', P.terms.from)}</div>
+          <div class="field"><label>TO</label>${inp('data.terms.to', P.terms.to)}</div>
+          <div class="field"><label>Shipping Marks</label>${inp('data.terms.marks', P.terms.marks)}</div>
+        </div>
+        <div class="field"><label>PAYMENT TERM</label>${inp('data.terms.term', P.terms.term)}</div>
+        <div class="field-row">
+          <div class="field"><label>运费 USD / Фрахт</label>${inp('data.freight', P.freight, 0, '16418')}</div>
+          <div class="field"><label>保费 USD / Страховка</label>${inp('data.insurance', P.insurance, 0, '150')}</div>
+        </div>
+      </div>
+
+      ${P.unmapped.length ? `<div class="card" style="margin-bottom:12px;border-left:4px solid #f59e0b">
+        <b>⚠️ 这些品种还没有归类 / Эти сорта ещё не отнесены к группе (${P.unmapped.length})</b>
+        <div style="font-size:11px;color:var(--mid);margin:2px 0 8px">选择类别，系统会记住 / Выберите группу — система запомнит</div>
+        ${P.unmapped.filter((u, i, a) => a.findIndex(x => x.key === u.key) === i).map(u => `<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+          <span style="min-width:260px;font-size:12px"><b>${escHtml(u.cn || u.ru)}</b> <span style="color:var(--mid)">${escHtml(u.cn ? u.ru : '')}</span></span>
+          <select class="inp" style="width:auto;max-width:360px" onchange="CUS.mapTo('${escHtml(u.key)}',this.value)"><option value="">— 选择类别 / группа —</option>${groupsOpts('')}<option value="__new">＋ 新增类别 / Новая группа…</option></select></div>`).join('')}
+      </div>` : ''}
+
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><b>📋 商品明细 / Позиции пакета</b>
+          <span style="font-size:11px;color:var(--mid)">数量和件数来自订单；金额、重量、HS可修改，下次自动带出 / Штуки и коробки — из заказов; суммы, вес, HS правятся и запоминаются</span></div>
+        <div class="tbl-wrap"><table style="min-width:1250px"><thead><tr>
+          <th>类别 / Категория</th><th class="L">品名 / Название</th><th>植物学名 / Botanical</th><th>HS</th><th>数量 QTY</th><th>单位</th>
+          <th>单价 USD/pcs</th><th>总金额 USD</th><th>件数 / Кор.</th><th>包装</th><th>净重 kg</th><th>毛重 kg</th><th>高度 cm</th><th>备注 / Remarks</th></tr></thead>
+          <tbody>${P.rows.map((r, i) => `<tr class="${i % 2 ? 'stripe' : ''}">
+            <td>${cell(i, 'category_cn', 90)}</td><td class="L">${cell(i, 'display', 150)}</td><td>${cell(i, 'bot', 150)}</td><td>${cell(i, 'hs', 80)}</td>
+            <td>${cell(i, 'qty', 80, 'number')}${r.approx && !r.qty_manual ? '<div style="font-size:9px;color:#b45309">≈ 按扎估算 / оценка по банчам</div>' : ''}</td>
+            <td>${cell(i, 'unit', 50)}</td>
+            <td style="font-size:12px;color:var(--mid)">${(+r.qty ? (+r.usd || 0) / +r.qty : 0).toFixed(4)}</td>
+            <td>${cell(i, 'usd', 90, 'number')}</td>
+            <td style="font-weight:700">${r.cartons}</td><td>${cell(i, 'pkg', 80)}</td>
+            <td>${cell(i, 'net', 70, 'number')}</td><td>${cell(i, 'gross', 70, 'number')}</td>
+            <td>${cell(i, 'height', 70)}</td><td>${cell(i, 'remark', 200)}</td></tr>`).join('')}</tbody>
+          <tfoot><tr><td colspan="4" style="text-align:right;font-weight:700">合计 TOTAL:</td><td style="font-weight:700">${T.qty}</td><td></td><td></td>
+            <td style="font-weight:700">USD ${T.usd.toFixed(2)}</td><td style="font-weight:700">${T.ct}</td><td></td><td style="font-weight:700">${T.net}</td><td style="font-weight:700">${T.gr}</td><td colspan="2"></td></tr></tfoot>
+        </table></div>
+      </div>
+
+      <details class="card"><summary style="cursor:pointer;font-weight:700">🔗 品种 → 类别 / Какой сорт в какую группу (${P.mapping.length})</summary>
+        <div class="tbl-wrap" style="margin-top:8px;max-height:50vh;overflow:auto"><table style="min-width:700px"><thead><tr><th class="L">品种 / Сорт</th><th>类别 / Группа</th></tr></thead>
+        <tbody>${P.mapping.map(m => `<tr><td class="L" style="font-size:12px"><b>${escHtml(m.cn || m.ru)}</b> <span style="color:var(--mid)">${escHtml(m.cn ? m.ru : '')}</span>${m.how === 'auto' ? ' <span style="font-size:10px;color:var(--light)">自动 / авто</span>' : ''}</td>
+          <td><select class="inp" style="width:auto;max-width:360px" onchange="CUS.mapTo('${escHtml(m.key)}',this.value)"><option value="">—</option>${groupsOpts(m.gid)}<option value="__new">＋ 新增类别 / Новая группа…</option></select></td></tr>`).join('')}</tbody></table></div>
+      </details>`;
+  },
+
+  set(path, v) {
+    if (path === 'number') { this.cur.number = v.trim(); return; }
+    const ks = path.split('.'); let o = this.cur;
+    ks.slice(0, -1).forEach(k => { o = o[k] = o[k] || {}; }); o[ks.at(-1)] = v;
+  },
+  setRow(i, f, v) {
+    const r = this.cur.data.rows[i]; if (!r) return;
+    const num = ['qty', 'usd', 'net', 'gross'].includes(f);
+    r[f] = num ? (v === '' ? '' : +v) : v;
+    if (f === 'qty') r.qty_manual = true;
+    if (f === 'net' && v !== '') r.gross = Math.round(+v * (+this.cur.data.ratio || 1.25));
+    this.renderEditor();
+  },
+  regross() { this.cur.data.rows.forEach(r => { if (r.net !== '') r.gross = Math.round(+r.net * (+this.cur.data.ratio || 1.25)); }); this.renderEditor(); },
+
+  async upsertRef(kind, name, data) {
+    const ex = this.refs.find(r => r.kind === kind && r.name === name);
+    const who = currentUser?.company_name || currentUser?.login || '';
+    const q = ex ? sb.from('customs_ref').update({ data, updated_at: new Date().toISOString(), updated_by: who }).eq('id', ex.id).select()
+                 : sb.from('customs_ref').insert({ kind, name, data, updated_by: who }).select();
+    const { data: res, error } = await q;
+    if (error) { toast('❌ ' + (/does not exist|relation|schema cache/i.test(error.message) ? CUS_SQL_HINT : error.message)); return null; }
+    const row = res?.[0]; if (!row) return null;
+    if (ex) Object.assign(ex, row); else this.refs.push(row);
+    return row;
+  },
+
+  async pickParty(role, v) {
+    const P = this.cur.data;
+    if (v === '__new') {
+      const name = (prompt('公司名称（英文）/ Название компании (как в документах):') || '').trim();
+      if (!name) { this.renderEditor(); return; }
+      const addr = (prompt('地址 / Адрес (как в документах):') || '').trim();
+      const row = await this.upsertRef('party', name, { role, addr });
+      if (row) P[role] = { name, addr, stamp: null };
+    } else {
+      const p = this.refs.find(r => String(r.id) === String(v));
+      if (p) P[role] = { name: p.name, addr: p.data.addr || '', stamp: p.data.stamp || null };
+    }
+    this.renderEditor();
+  },
+  async stamp(role, input) {
+    const f = input.files?.[0]; if (!f) return;
+    if (f.size > 400 * 1024) { toast('印章图片太大 (>400KB) / Файл печати больше 400 КБ'); return; }
+    const url = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(f); });
+    const P = this.cur.data, p = this.refs.find(r => r.kind === 'party' && r.name === P[role].name);
+    if (p) await this.upsertRef('party', p.name, { ...p.data, stamp: url });
+    P[role].stamp = url; this.renderEditor();
+    toast('✅ 印章已保存 / Печать сохранена — будет в выгрузке');
+  },
+  async pickTerms(v) {
+    const P = this.cur.data;
+    if (v === '__save') {
+      const name = (prompt('模板名称 / Название шаблона условий:', P.terms.payment || '') || '').trim();
+      if (name) { await this.upsertRef('terms', name, { ...P.terms }); toast('✅ 已保存 / Шаблон сохранён'); }
+    } else {
+      const t = this.refs.find(r => String(r.id) === String(v));
+      if (t) P.terms = { ...P.terms, ...t.data };
+    }
+    this.renderEditor();
+  },
+  async mapTo(key, gid) {
+    if (!gid) return;
+    if (gid === '__new') {
+      const u = this.cur.data.mapping.find(m => m.key === key) || {};
+      const display = (prompt('类别名称（中文+英文，如“玫瑰Rose”）/ Название группы как в инвойсе:', u.cn || '') || '').trim();
+      if (!display) { this.renderEditor(); return; }
+      const bot = (prompt('植物学名 / Ботаническое название (лат.):', '') || '').trim();
+      const same = this.list('group').find(g => g.data.kind === this.cur.data.kind);
+      const row = await this.upsertRef('group', display, { kind: this.cur.data.kind, category_cn: same?.data.category_cn || '', category_en: same?.data.category_en || '',
+        cn: (display.match(/[一-鿿]+/g) || []).join(''), display, bot, hs: '', unit: 'PCS', pkg: 'CARTONS', usd_pcs: null, net_per_carton: null, height: '',
+        keys: [(display.match(/[一-鿿]+/g) || []).join('')].filter(Boolean), pcs_per_bunch: 10 });
+      if (!row) return;
+      gid = row.id;
+    }
+    await this.upsertRef('map', key, { gid: +gid });
+    this.rebuild(false); this.renderEditor();
+    toast('✅ 已记住 / Запомнила: сорт → группа');
+  },
+
+  async save(silent) {
+    const C = this.cur, P = C.data;
+    if (!C.number) { toast('请填写合同号 / Укажите № контракта'); return false; }
+    const who = currentUser?.company_name || currentUser?.login || '';
+    const data = JSON.parse(JSON.stringify(P)); delete data.unmapped; delete data.mapping;
+    const q = C.id ? sb.from('customs_packs').update({ number: C.number, data, updated_at: new Date().toISOString() }).eq('id', C.id).select()
+                   : sb.from('customs_packs').insert({ shipment_id: C.shipment_id, number: C.number, data, created_by: who }).select();
+    const { data: res, error } = await q;
+    if (error) { toast('❌ ' + (/does not exist|relation|schema cache/i.test(error.message) ? CUS_SQL_HINT : error.message)); return false; }
+    const row = res?.[0];
+    if (row) { C.id = row.id; const i = this.packs.findIndex(p => p.id === row.id); if (i >= 0) this.packs[i] = row; else this.packs.push(row); }
+    // запоминаем значения групп на следующий раз
+    for (const r of P.rows) {
+      const G = this.g(r.gid); if (!G) continue;
+      const d = { ...G.data, category_cn: r.category_cn, category_en: r.category_en, display: r.display, bot: r.bot, hs: r.hs, unit: r.unit, pkg: r.pkg, height: r.height };
+      if (+r.qty && r.usd !== '') { const u = +(+r.usd / +r.qty).toFixed(6); if (Math.abs(u - (+G.data.usd_pcs || 0)) > 0.0005) d.usd_pcs = u; }
+      if (+r.cartons && r.net !== '') { const w = +(+r.net / +r.cartons).toFixed(3); if (Math.abs(w - (+G.data.net_per_carton || 0)) > 0.05) d.net_per_carton = w; }
+      if (JSON.stringify(d) !== JSON.stringify(G.data)) await this.upsertRef('group', G.name, d);
+    }
+    const cnt = this.list('counter').find(r => r.name === 'last_number')?.data?.value || '';
+    if (String(C.number).localeCompare(String(cnt), undefined, { numeric: true }) > 0) await this.upsertRef('counter', 'last_number', { value: C.number });
+    logActivity('customs_pack', 'shipment', C.shipment_id, C.number, `Таможенный пакет: ${P.rows.length} групп, USD ${this.total(C).toFixed(2)}`);
+    if (!silent) toast('✅ 已保存 / Сохранено');
+    return true;
+  },
+
+  async writeRefs() {
+    const C = this.cur; if (!C.number) return;
+    if (!confirm(`把 ${C.number} 写入订单 ${C.data.order_numbers.join(', ')}？/ Проставить № ${C.number} в эти заказы?`)) return;
+    const { error } = await sb.from('orders').update({ invoice_ref: C.number }).in('id', C.data.order_ids);
+    if (error) { toast('❌ ' + (/invoice_ref/.test(error.message) ? 'SQL: ' + ORDER_META_SQL : error.message)); return; }
+    toast('✅ 已写入 / Номер проставлен в заказы');
+  },
+
+  async del(id) {
+    const p = this.packs.find(x => x.id === id); if (!p) return;
+    if (!confirm(`删除报关文件 ${p.number}？/ Удалить пакет ${p.number}? (выгруженные файлы в «Документах» останутся)`)) return;
+    const { error } = await sb.from('customs_packs').delete().eq('id', id);
+    if (error) { toast('❌ ' + error.message); return; }
+    this.packs = this.packs.filter(x => x.id !== id); this.render();
+  },
+
+  // ── выгрузка Excel в формате Лю ──
+  async lib() {
+    if (window.ExcelJS) return window.ExcelJS;
+    await new Promise((ok, bad) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
+    return window.ExcelJS;
+  },
+  async exportXlsx() {
+    const C = this.cur; if (!C) return;
+    if (!(await this.save(true))) return;
+    let EJ; try { EJ = await this.lib(); } catch (e) { toast('❌ 无法加载 Excel 组件 / Не загрузилась библиотека Excel'); return; }
+    const P = C.data, R = P.rows, wb = new EJ.Workbook();
+    const thin = { style: 'thin' }, B = { top: thin, left: thin, bottom: thin, right: thin };
+    const F = { name: '宋体', size: 11 }, TF = { name: 'Times New Roman', size: 20, bold: true };
+    const [dY, dM, dD] = (P.date || new Date().toLocaleDateString('sv-SE')).split('-').map(Number);
+    const date = new Date(Date.UTC(dY, dM - 1, dD));   // UTC — чтобы в Excel не съезжало на день назад
+    const n = R.length, r0 = 9, rT = r0 + n;    // строка итога
+    // блоки категорий (объединение по вертикали, как у Лю)
+    const blocks = []; R.forEach((r, i) => { const k = (r.category_cn || '') + '\n' + (r.category_en || ''); if (!blocks.length || blocks.at(-1).k !== k) blocks.push({ k, from: i, to: i }); else blocks.at(-1).to = i; });
+    const stampAt = async (ws, party, col, row) => {
+      if (!party?.stamp || !/^data:image\/(png|jpe?g)/.test(party.stamp)) return;
+      const id = wb.addImage({ base64: party.stamp, extension: /png/.test(party.stamp) ? 'png' : 'jpeg' });
+      ws.addImage(id, { tl: { col, row: row + 0.2 }, br: { col: col + 2, row: row + 7 }, editAs: 'oneCell' });   // привязка к ячейкам — не «уплывает» при переносе строк
+    };
+    const head = (ws, title, lastCol, noLabel, noCol) => {
+      ws.mergeCells(`A1:${lastCol}1`); Object.assign(ws.getCell('A1'), { value: title }); ws.getCell('A1').font = TF; ws.getCell('A1').alignment = { horizontal: 'center' };
+      ws.getRow(1).height = 25.5;
+      ws.mergeCells('A2:B2'); ws.getCell('A2').value = 'Date Issued:'; ws.mergeCells('C2:D2'); ws.getCell('C2').value = date; ws.getCell('C2').numFmt = 'yyyy-mm-dd';
+      ws.getCell(noLabel).value = noLabel.startsWith('F') && title === 'PACKING LIST' ? 'PL No.' : (title === 'INVOICE' ? 'Invoice Number' : 'Contract no');
+      ws.getCell(noCol).value = C.number;
+    };
+    const parties = (ws, sellerR, buyerC, buyerR) => {
+      ws.mergeCells(sellerR[0]); ws.getCell(sellerR[0].split(':')[0]).value = 'THE SELLER:' + (P.seller.name || '');
+      ws.mergeCells(sellerR[1]); ws.getCell(sellerR[1].split(':')[0]).value = 'ADD:' + (P.seller.addr || '');
+      ws.mergeCells(buyerR[0]); ws.getCell(buyerR[0].split(':')[0]).value = 'THE BUYER:' + (P.buyer.name || '');
+      ws.mergeCells(buyerR[1]); ws.getCell(buyerR[1].split(':')[0]).value = 'ADD:' + (P.buyer.addr || '');
+      [sellerR[1], buyerR[1]].forEach(rg => { ws.getCell(rg.split(':')[0]).alignment = { wrapText: true, vertical: 'top' }; });
+    };
+    const box = (ws, c1, c2, rFrom, rTo) => { for (let r = rFrom; r <= rTo; r++) for (let c = c1; c <= c2; c++) { const x = ws.getCell(r, c); x.border = B; if (!x.font?.bold) x.font = { ...F, ...(x.font || {}) }; x.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true, ...(x.alignment || {}) }; } };
+    const catMerge = (ws) => blocks.forEach(b => { if (b.to > b.from) ws.mergeCells(r0 + b.from, 1, r0 + b.to, 1); ws.getCell(r0 + b.from, 1).value = b.k; });
+
+    // CONTRACT
+    const c = wb.addWorksheet('CONTRACT');
+    [16, 24, 14, 16, 9, 11, 9, 13, 16].forEach((w, i) => { c.getColumn(i + 1).width = w; });
+    head(c, 'SALES　CONTRACT', 'I', 'G2', 'I2');
+    parties(c, ['A4:E4', 'A5:E6'], null, ['G4:I4', 'G5:I6']);
+    const ch = ['类别\nCATEGORY', '', '植物学名\nBotanical name', '', '数量\nQTY', '销售单位\nSALES UNIT', '币别\nCURRENCY', '基本单价\nUNIT PRICE(per/pcs)', '总金额（美元）\nTOTAL VALUE（USD）'];
+    ch.forEach((v, i) => { if (v) c.getCell(8, i + 1).value = v; }); c.mergeCells('C8:D8'); c.getRow(8).height = 44;
+    R.forEach((r, i) => { const y = r0 + i;
+      c.getCell(y, 2).value = r.display; c.mergeCells(y, 3, y, 4); c.getCell(y, 3).value = r.bot;
+      c.getCell(y, 5).value = +r.qty || 0; c.getCell(y, 6).value = r.unit || 'PCS'; c.getCell(y, 7).value = 'USD';
+      c.getCell(y, 8).value = { formula: `I${y}/E${y}`, result: +r.qty ? (+r.usd || 0) / +r.qty : 0 }; c.getCell(y, 8).numFmt = '0.0000';
+      c.getCell(y, 9).value = +r.usd || 0; c.getCell(y, 9).numFmt = '#,##0.00'; });
+    catMerge(c);
+    c.mergeCells(rT, 1, rT, 4); c.getCell(rT, 1).value = '合计 TOTAL:';
+    c.getCell(rT, 5).value = { formula: `SUM(E${r0}:E${rT - 1})`, result: R.reduce((s, r) => s + (+r.qty || 0), 0) };
+    c.getCell(rT, 9).value = { formula: `SUM(I${r0}:I${rT - 1})`, result: R.reduce((s, r) => s + (+r.usd || 0), 0) }; c.getCell(rT, 9).numFmt = '#,##0.00';
+    box(c, 1, 9, 8, rT); c.getRow(rT).font = { ...F, bold: true };
+    const tr = rT + 1;
+    c.getCell(tr, 1).value = 'Remark:'; c.getCell(tr, 6).value = 'Shipping Marks:'; c.getCell(tr, 9).value = P.terms.marks || 'N/M';
+    c.getCell(tr + 2, 1).value = 'TERME OF PAYMENT:'; c.getCell(tr + 2, 3).value = P.terms.payment || '';
+    c.getCell(tr + 3, 1).value = 'FROM:'; c.getCell(tr + 3, 3).value = P.terms.from || ''; c.getCell(tr + 3, 5).value = 'TO:'; c.getCell(tr + 3, 6).value = P.terms.to || '';
+    c.getCell(tr + 4, 1).value = 'MEANS OF TRABSPORTATION:'; c.getCell(tr + 4, 4).value = P.terms.transport || '';
+    c.getCell(tr + 5, 1).value = 'PAYMENT TERM:'; c.mergeCells(tr + 5, 4, tr + 6, 9); c.getCell(tr + 5, 4).value = P.terms.term || ''; c.getCell(tr + 5, 4).alignment = { wrapText: true, vertical: 'top' };
+    c.getCell(tr + 8, 1).value = 'SELLER CONFIRMATION'; c.getCell(tr + 8, 7).value = 'BUYER CONFIRMATION';
+    await stampAt(c, P.seller, 1, tr + 9); await stampAt(c, P.buyer, 6, tr + 9);
+
+    // INVOICE (ссылки на CONTRACT, как у Лю) + HS
+    const v = wb.addWorksheet('INVOICE');
+    [16, 24, 14, 16, 11, 9, 9, 8, 8, 8, 9, 9, 12].forEach((w, i) => { v.getColumn(i + 1).width = w; });
+    head(v, 'INVOICE', 'M', 'H2', 'K2'); v.mergeCells('K2:L2');
+    parties(v, ['A4:F4', 'A5:F6'], null, ['H4:M4', 'H5:L6']);
+    [['A8', '类别\nCATEGORY'], ['C8', '植物学名\nBotanical name'], ['E8', 'HS'], ['F8', '数量\nQTY'], ['G8', '销售单位\nSALES UNIT'], ['H8', '币别\nCURRENCY'], ['I8', '基本单价\nUNIT PRICE(per/pcs)'], ['K8', '总金额\nTOTAL VALUE']].forEach(([a, t]) => { v.getCell(a).value = t; });
+    v.mergeCells('A8:B8'); v.mergeCells('C8:D8'); v.mergeCells('I8:J8'); v.mergeCells('K8:L8'); v.getRow(8).height = 44;
+    R.forEach((r, i) => { const y = r0 + i;
+      v.getCell(y, 2).value = { formula: `CONTRACT!B${y}`, result: r.display }; v.mergeCells(y, 3, y, 4); v.getCell(y, 3).value = { formula: `CONTRACT!C${y}`, result: r.bot };
+      v.getCell(y, 5).value = r.hs || ''; v.getCell(y, 6).value = { formula: `CONTRACT!E${y}`, result: +r.qty || 0 }; v.getCell(y, 7).value = { formula: `CONTRACT!F${y}`, result: r.unit || 'PCS' };
+      v.getCell(y, 8).value = 'USD'; v.mergeCells(y, 9, y, 10); v.getCell(y, 9).value = { formula: `CONTRACT!H${y}`, result: +r.qty ? (+r.usd || 0) / +r.qty : 0 }; v.getCell(y, 9).numFmt = '0.0000';
+      v.mergeCells(y, 11, y, 12); v.getCell(y, 11).value = { formula: `CONTRACT!I${y}`, result: +r.usd || 0 }; v.getCell(y, 11).numFmt = '#,##0.00'; });
+    catMerge(v);
+    v.mergeCells(rT, 1, rT, 5); v.getCell(rT, 1).value = '合计 TOTAL:';
+    v.getCell(rT, 6).value = { formula: `CONTRACT!E${rT}`, result: R.reduce((s, r) => s + (+r.qty || 0), 0) };
+    v.mergeCells(rT, 11, rT, 12); v.getCell(rT, 11).value = { formula: `CONTRACT!I${rT}`, result: R.reduce((s, r) => s + (+r.usd || 0), 0) }; v.getCell(rT, 11).numFmt = '#,##0.00';
+    box(v, 1, 13, 8, rT); v.getRow(rT).font = { ...F, bold: true };
+    v.getCell(tr, 1).value = 'Remark:'; v.getCell(tr, 7).value = 'Shipping Marks:'; v.getCell(tr, 9).value = P.terms.marks || 'N/M';
+    v.getCell(tr + 2, 1).value = 'TERME OF PAYMENT'; v.getCell(tr + 2, 3).value = P.terms.payment || '';
+    v.getCell(tr + 3, 1).value = 'FROM:'; v.getCell(tr + 3, 3).value = P.terms.from || ''; v.getCell(tr + 3, 6).value = 'TO:'; v.getCell(tr + 3, 7).value = P.terms.to || '';
+    v.getCell(tr + 4, 1).value = 'MEANS OF TRABSPORTATION:'; v.getCell(tr + 4, 4).value = P.terms.transport || '';
+    v.getCell(tr + 5, 1).value = 'PAYMENT TERM:'; v.mergeCells(tr + 5, 4, tr + 6, 13); v.getCell(tr + 5, 4).value = P.terms.term || ''; v.getCell(tr + 5, 4).alignment = { wrapText: true, vertical: 'top' };
+    v.getCell(tr + 8, 7).value = 'SELLER CONFIRMATION'; await stampAt(v, P.seller, 7, tr + 9);
+
+    // PACKING LIST
+    const pl = wb.addWorksheet('PACKING LIST');
+    [16, 24, 14, 16, 9, 11, 12, 12, 30].forEach((w, i) => { pl.getColumn(i + 1).width = w; });
+    head(pl, 'PACKING LIST', 'I', 'F2', 'I2'); pl.mergeCells('F2:H2');
+    parties(pl, ['A4:D4', 'A5:D6'], null, ['F4:I4', 'F5:I6']);
+    [['A8', '类别\nCATEGORY'], ['C8', '植物学名\nBotanical name'], ['E8', '件数\nPACKING'], ['F8', '单位\nUNIT'], ['G8', '净重/千克\nN.WEIGHT/kg'], ['H8', '毛重/千克\nG.WEIGHT/kg'], ['I8', '备注\nRemarks']].forEach(([a, t]) => { pl.getCell(a).value = t; });
+    pl.mergeCells('A8:B8'); pl.mergeCells('C8:D8'); pl.getRow(8).height = 44;
+    R.forEach((r, i) => { const y = r0 + i;
+      pl.getCell(y, 2).value = { formula: `CONTRACT!B${y}`, result: r.display }; pl.mergeCells(y, 3, y, 4); pl.getCell(y, 3).value = { formula: `CONTRACT!C${y}`, result: r.bot };
+      pl.getCell(y, 5).value = +r.cartons || 0; pl.getCell(y, 6).value = r.pkg || 'CARTONS'; pl.getCell(y, 7).value = +r.net || 0; pl.getCell(y, 8).value = +r.gross || 0; pl.getCell(y, 9).value = r.remark || ''; });
+    catMerge(pl);
+    pl.mergeCells(rT, 1, rT, 4); pl.getCell(rT, 1).value = '合计 TOTAL:';
+    [['E', 'cartons'], ['G', 'net'], ['H', 'gross']].forEach(([col, f]) => { pl.getCell(`${col}${rT}`).value = { formula: `SUM(${col}${r0}:${col}${rT - 1})`, result: R.reduce((s, r) => s + (+r[f] || 0), 0) }; });
+    box(pl, 1, 9, 8, rT); pl.getRow(rT).font = { ...F, bold: true };
+    pl.getCell(tr, 1).value = 'Remark:';
+    pl.getCell(tr + 2, 7).value = 'SELLER CONFIRMATION'; await stampAt(pl, P.seller, 7, tr + 3);
+
+    // 报关要素
+    const z = wb.addWorksheet('报关要素');
+    z.getColumn(1).width = 22; z.getColumn(2).width = 18;
+    z.getCell('A1').value = '品名'; z.getCell('B1').value = '植株高度（CM）';
+    R.forEach((r, i) => { z.getCell(i + 2, 1).value = r.display; z.getCell(i + 2, 2).value = r.height || ''; });
+    const zr = n + 4;
+    z.getCell(zr, 1).value = '运费'; z.getCell(zr, 2).value = P.freight ? `${P.freight}美元` : '';
+    z.getCell(zr + 1, 1).value = '保费'; z.getCell(zr + 1, 2).value = P.insurance ? `${P.insurance}美元` : '';
+
+    // явная высота строк: тогда печати и переносы одинаково выглядят в Excel и WPS/LibreOffice
+    const lines = (t, w) => Math.max(1, Math.ceil(String(t || '').length / w));
+    [c, v, pl].forEach(ws => {
+      ws.getRow(5).height = 30; ws.getRow(6).height = 30;
+      R.forEach((r, i) => { ws.getRow(r0 + i).height = 15 * Math.max(lines(r.display, 20), lines(r.bot, 26), 1) + 3; });
+      for (let y = rT; y <= rT + 20; y++) if (!ws.getRow(y).height) ws.getRow(y).height = 16;
+    });
+    wb.worksheets.forEach(ws => { ws.pageSetup = { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } }; });
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const fname = `${C.number}.xlsx`;
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    // копия — в «Документы» машины
+    try {
+      const path = `${C.shipment_id || 'general'}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.xlsx`;
+      const { error: ue } = await sb.storage.from(DOC_BUCKET).upload(path, blob, { contentType: blob.type });
+      if (!ue) await sb.from('shipment_docs').insert({ shipment_id: C.shipment_id, category: 'customs', title: `${C.number} 报关文件`, file_name: fname, file_path: path,
+        file_size: blob.size, mime: blob.type, note: P.order_numbers.join(', '), uploaded_by: String(currentUser?.id || ''), uploaded_by_name: currentUser?.company_name || currentUser?.login || '' });
+    } catch (e) {}
+    C.data.exported_at = new Date().toISOString(); await this.save(true);
+    toast('📥 已导出并保存到单据 / Выгружено и сохранено в «Документы»');
+  },
+};
+function customsForShipments(ids) { window._cusPreset = ids; showPage('customs', document.querySelector('#nav-tabs .nav-tab[onclick*="\'customs\'"]') || undefined); }
 
 // Open the chat page directly in the given order's room
 function openOrderChat(orderId, clientId) {
@@ -13920,7 +14450,8 @@ function shipmentDetailHTML(u) {
   };
 
   const actions = `
-    ${canDocs() ? `<button class="btn btn-secondary btn-sm" onclick="docsForShipments([${u.parts.map(x => x.id).join(',')}])">📁 单据 / Документы</button>` : ''}
+    ${canDocs() ? `<button class="btn btn-secondary btn-sm" onclick="docsForShipments([${u.parts.map(x => x.id).join(',')}])">📁 单据 / Документы</button>
+      <button class="btn btn-secondary btn-sm" onclick="customsForShipments([${u.parts.map(x => x.id).join(',')}])">🛃 报关 / Таможня</button>` : ''}
     ${canData && lead.status === 'forming' ? `<button class="btn btn-secondary btn-sm" onclick="shpDataModal('${u.key}', 'stage')">📍 Отметить выезд</button>` : ''}
     ${isMgrLocal ? `
       <select class="inp" style="width:auto;padding:6px 10px;font-size:12px" onchange="setUnitStatus('${u.key}', this.value)">
