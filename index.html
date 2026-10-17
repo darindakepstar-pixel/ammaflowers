@@ -1779,6 +1779,14 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 
   <!-- PAGE: SHIPMENTS (отгрузки/машины) -->
+  <div class="page" id="page-docs">
+    <div class="page-inner">
+      <div class="page-title">车次单据 / Документы отгрузок</div>
+      <div class="page-sub">报关文件、证书、检疫、发票等 — 按车次保存，随时查看 / Таможня, сертификаты, фитосанитария, инвойсы — хранятся по машинам</div>
+      <div id="docs-wrap"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
   <div class="page" id="page-shipments">
     <div class="page-inner">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
@@ -2172,9 +2180,15 @@ function isScopedMgr() {
 }
 // Операционный менеджер (users.client_scope = 'ops'): заказы, накладные, инвойсы, отгрузки, клиенты —
 // без правки прайса и наценок, без CRM, канала и заведения сотрудников.
-function isOpsMgr() {
-  return currentUser?.role === 'manager' && !currentUser?.is_admin && currentUser?.client_scope === 'ops';
+function isOpsMgr() {   // 'fin' — частный случай операционного: те же ограничения + своё меню
+  return currentUser?.role === 'manager' && !currentUser?.is_admin && ['ops', 'fin'].includes(currentUser?.client_scope);
 }
+// Финансы (users.client_scope = 'fin', Лю): отгрузки, документы, инвойсы, накладные; интерфейс на китайском
+function isFinMgr() {
+  return currentUser?.role === 'manager' && !currentUser?.is_admin && currentUser?.client_scope === 'fin';
+}
+// Архив документов отгрузок: админ, финансы и те, кому админ открыл users.docs_access
+function canDocs() { return isAdminUser() || isFinMgr() || (currentUser?.role === 'manager' && !!currentUser?.docs_access); }
 // Совмещение: менеджер, который ещё и работает на складе (users.also_warehouse).
 // Входит одним логином и переключает режим кнопкой в шапке; режим помнится в этом браузере.
 function hasDualRole(u) { return (u?._baseRole || u?.role) === 'manager' && !!u?.also_warehouse; }
@@ -2582,6 +2596,20 @@ async function initApp() {
       document.getElementById('top-role').textContent = '🔑 Менеджер (операции) / 运营经理';
       document.querySelector('#nav-tabs .nav-tab[onclick*="\'crm\'"]')?.remove();
     }
+    if (isFinMgr()) {   // Лю: своё короткое меню, китайский первым
+      document.getElementById('top-role').textContent = '🧾 财务 / Финансы';
+      tabs.innerHTML = `
+        <div class="nav-tab active" onclick="showPage('shipments',this)">🚚 车次 / Отгрузки</div>
+        <div class="nav-tab" onclick="showPage('docs',this)">📁 单据 / Документы</div>
+        <div class="nav-tab" onclick="showPage('invoices',this)">🧾 发票 / Инвойсы</div>
+        <div class="nav-tab" onclick="showPage('waybills',this)">📦 出货单 / Накладные <span class="cnt" id="cnt-waybills">0</span></div>
+        <div class="nav-tab" onclick="showPage('orders',this)">📋 订单 / Заказы <span class="cnt" id="cnt-orders">0</span></div>
+        <div class="nav-tab" onclick="showPage('chat',this)">💬 聊天 / Чат <span class="cnt" id="cnt-chat" style="display:none">0</span></div>
+        <div class="nav-tab" id="tab-notif" onclick="showPage('notifications',this)">🔔 <span id="notif-cnt" class="cnt" style="display:none">0</span></div>`;
+      document.getElementById('notice-bar').innerHTML = '🧾 财务：车次、单据、发票、出货单 / Финансы: отгрузки, документы, инвойсы, накладные';
+    } else if (canDocs()) {
+      document.getElementById('tab-notif')?.insertAdjacentHTML('beforebegin', `<div class="nav-tab" onclick="showPage('docs',this)">📁 Документы / 单据</div>`);
+    }
     if (calcAccess()) document.getElementById('tab-notif')?.insertAdjacentHTML('beforebegin', `<div class="nav-tab" onclick="showPage('calc',this)">🧮 Калькулятор</div>`);
     if (full) document.getElementById('tab-notif')?.insertAdjacentHTML('beforebegin', `<div class="nav-tab" onclick="showPage('channel',this)">📣 Канал</div>`);
     loadClients().then(() => crmBadge()).catch(() => {});
@@ -2633,6 +2661,8 @@ async function initApp() {
   // Activate first page based on role
   if (isWh) {
     document.getElementById('page-warehouse').classList.add('active');
+  } else if (isFinMgr()) {
+    showPage('shipments', document.querySelector('#nav-tabs .nav-tab'));
   } else if (isGz) {
     document.getElementById('page-gz-orders').classList.add('active');
   } else {
@@ -2704,6 +2734,7 @@ function showPage(name, tabEl) {
   if (name === 'invoices') loadInvoices();
   if (name === 'waybills') loadWaybills();
   if (name === 'shipments') loadShipments();
+  if (name === 'docs') { docsOpen(window._docsPreset || []); window._docsPreset = null; }
   if (name === 'clients') renderClients();
   if (name === 'labels') loadLabelOrders();
   if (name === 'my-order') { loadMyOrders().then(() => renderMyOrder()); }
@@ -7045,6 +7076,183 @@ function mgrSyncApply() {
   _mgrSync = null;
 }
 
+// ══════════════════════════════════════════════════════════
+//  ДОКУМЕНТЫ ОТГРУЗОК / 车次单据
+//  Закрытый бакет shipment-docs + таблица shipment_docs. Файлы открываются по временной ссылке.
+//  Доступ: админ, финансы (Лю) и users.docs_access. Удаляет только админ — документы хранятся.
+// ══════════════════════════════════════════════════════════
+const DOC_BUCKET = 'shipment-docs';
+const DOC_CATS = {
+  customs:   { i: '🛃', cn: '报关文件', ru: 'Таможенный пакет' },
+  cert:      { i: '📜', cn: '证书',     ru: 'Сертификаты' },
+  phyto:     { i: '🌿', cn: '检疫',     ru: 'Фитосанитария' },
+  invoice:   { i: '🧾', cn: '发票',     ru: 'Инвойсы / счета' },
+  transport: { i: '🚚', cn: '运输单据', ru: 'CMR / транспорт' },
+  photo:     { i: '📷', cn: '照片',     ru: 'Фото' },
+  other:     { i: '📎', cn: '其他',     ru: 'Прочее' },
+};
+const DOC_SQL_HINT = '单据表未创建 — 请执行SQL «Документы отгрузок» / Таблица документов ещё не создана — выполните SQL «Документы отгрузок»';
+const _docs = { list: [], shp: [], f: { shp: '', cat: '', q: '' }, err: null };
+
+function docsForShipments(ids) {
+  window._docsPreset = (ids || []).map(String);
+  const tab = document.querySelector('#nav-tabs .nav-tab[onclick*="\'docs\'"]');
+  showPage('docs', tab || undefined);
+}
+function docSize(b) { b = +b || 0; return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
+function docShpLabel(sh) { return sh ? `🚚 ${sh.ship_number}${sh.ship_date ? ' · ' + sh.ship_date : ''}${sh.truck_name ? ' · ' + sh.truck_name : ''}` : '📂 不属于车次 / Без машины'; }
+
+async function docsOpen(preset) {
+  const wrap = document.getElementById('docs-wrap');
+  if (!wrap) return;
+  if (!canDocs()) { wrap.innerHTML = '<div class="empty-state"><p>🔒 无权限 / Нет доступа к документам</p></div>'; return; }
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  if (Array.isArray(preset)) _docs.f.shp = preset.join(',');   // из карточки машины — её документы; из меню — все
+  const [{ data: shp }, { data: docs, error }] = await Promise.all([
+    sb.from('shipments').select('id, ship_number, ship_date, truck_name, status').order('ship_date', { ascending: false }).limit(300),
+    sb.from('shipment_docs').select('*').order('created_at', { ascending: false }).limit(2000),
+  ]);
+  _docs.shp = shp || []; _docs.list = docs || []; _docs.err = error ? (/does not exist|relation|schema cache/i.test(error.message) ? DOC_SQL_HINT : error.message) : null;
+  docsRender();
+}
+
+function docsRender() {
+  const wrap = document.getElementById('docs-wrap');
+  if (!wrap) return;
+  const F = _docs.f;
+  const shpOpts = (sel, withAll) => (withAll ? `<option value="">全部车次 / Все машины</option>` : '') +
+    `<option value="none" ${sel === 'none' ? 'selected' : ''}>📂 不属于车次 / Без машины</option>` +
+    _docs.shp.map(sh => `<option value="${sh.id}" ${String(sel) === String(sh.id) ? 'selected' : ''}>${escHtml(docShpLabel(sh))}</option>`).join('');
+  const catOpts = (sel, withAll) => (withAll ? `<option value="">全部类型 / Все типы</option>` : '') +
+    Object.entries(DOC_CATS).map(([k, c]) => `<option value="${k}" ${sel === k ? 'selected' : ''}>${c.i} ${c.cn} / ${c.ru}</option>`).join('');
+  const shpSet = F.shp ? new Set(F.shp.split(',')) : null;
+  const q = F.q.trim().toLowerCase();
+  const rows = _docs.list.filter(d =>
+    (!shpSet || (shpSet.has('none') && !d.shipment_id) || shpSet.has(String(d.shipment_id))) &&
+    (!F.cat || d.category === F.cat) &&
+    (!q || [d.title, d.file_name, d.note, d.uploaded_by_name].some(x => String(x || '').toLowerCase().includes(q))));
+  // группируем по машине
+  const groups = {};
+  rows.forEach(d => { const k = d.shipment_id ? String(d.shipment_id) : 'none'; (groups[k] = groups[k] || []).push(d); });
+  const order = Object.keys(groups).sort((a, b) => {
+    const A = _docs.shp.find(x => String(x.id) === a), B = _docs.shp.find(x => String(x.id) === b);
+    return String(B?.ship_date || '') .localeCompare(String(A?.ship_date || ''));
+  });
+  const uploadShp = shpSet && shpSet.size === 1 ? [...shpSet][0] : (_docs.shp.find(x => x.status === 'forming')?.id || 'none');
+  wrap.innerHTML = `
+    ${_docs.err ? `<div class="card" style="border-left:4px solid #f59e0b;font-size:12px;margin-bottom:12px">⚠️ ${escHtml(_docs.err)}</div>` : ''}
+    <div class="card" style="margin-bottom:14px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:8px">⬆️ 上传文件 / Загрузить документы</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select class="inp" id="doc-up-shp" style="width:auto;min-width:240px">${shpOpts(uploadShp, false)}</select>
+        <select class="inp" id="doc-up-cat" style="width:auto">${catOpts('customs', false)}</select>
+        <input class="inp" id="doc-up-note" placeholder="备注 / Примечание (необязательно)" style="flex:1;min-width:180px">
+        <label class="btn btn-primary btn-sm" style="cursor:pointer">📎 选择文件 / Выбрать файлы
+          <input type="file" multiple style="display:none" onchange="docsUpload(this)"></label>
+      </div>
+      <div style="font-size:10px;color:var(--light);margin-top:6px">PDF、Excel、Word、图片均可，可多选 / Любые файлы: PDF, Excel, Word, фото — можно несколько сразу</div>
+      <div id="doc-up-progress" style="font-size:12px;margin-top:6px"></div>
+    </div>
+    <div class="ctrl-bar" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <select class="inp" style="width:auto;min-width:220px" onchange="_docs.f.shp=this.value;docsRender()">${shpOpts(F.shp && !F.shp.includes(',') ? F.shp : '', true)}${F.shp.includes(',') ? `<option value="${F.shp}" selected>🚚 选中的车次 / Выбранная машина</option>` : ''}</select>
+      <select class="inp" style="width:auto" onchange="_docs.f.cat=this.value;docsRender()">${catOpts(F.cat, true)}</select>
+      <input class="inp" placeholder="🔍 搜索 / Поиск по названию, примечанию" value="${escHtml(F.q)}" style="flex:1;min-width:200px"
+        oninput="_docs.f.q=this.value;clearTimeout(window._docsT);window._docsT=setTimeout(docsRender,250)">
+      <span style="font-size:12px;color:var(--mid)">${rows.length} 份 / файлов</span>
+    </div>
+    ${order.length ? order.map(k => {
+      const sh = _docs.shp.find(x => String(x.id) === k);
+      return `<div class="card" style="margin-bottom:12px">
+        <div style="font-weight:700;font-size:14px;margin-bottom:8px">${escHtml(docShpLabel(sh))} <span style="font-weight:400;color:var(--mid);font-size:12px">· ${groups[k].length} 份</span></div>
+        <div class="tbl-wrap"><table style="min-width:720px"><thead><tr>
+          <th style="width:110px">类型 / Тип</th><th class="L">文件 / Файл</th><th>大小</th><th>上传人 / Кто</th><th>日期 / Дата</th><th style="width:150px"></th></tr></thead>
+          <tbody>${groups[k].map((d, i) => { const c = DOC_CATS[d.category] || DOC_CATS.other; return `<tr class="${i % 2 ? 'stripe' : ''}">
+            <td style="font-size:11px;white-space:nowrap">${c.i} ${c.cn}<div style="color:var(--mid);font-size:10px">${c.ru}</div></td>
+            <td class="L"><b style="font-size:12px">${escHtml(d.title || d.file_name || '—')}</b>${d.note ? `<div style="font-size:10px;color:var(--mid)">${escHtml(d.note)}</div>` : ''}</td>
+            <td style="font-size:11px;color:var(--mid)">${docSize(d.file_size)}</td>
+            <td style="font-size:11px">${escHtml(d.uploaded_by_name || '—')}</td>
+            <td style="font-size:11px;white-space:nowrap">${d.created_at ? new Date(d.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}</td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-secondary btn-sm" title="查看 / Открыть" onclick="docsGet(${d.id}, false)">👁</button>
+              <button class="btn btn-secondary btn-sm" title="下载 / Скачать" onclick="docsGet(${d.id}, true)">⬇</button>
+              <button class="btn btn-secondary btn-sm" title="修改 / Изменить" onclick="docsEdit(${d.id})">✏️</button>
+              ${isAdminUser() ? `<button class="btn btn-danger btn-sm" title="删除 / Удалить" onclick="docsDelete(${d.id})">🗑</button>` : ''}
+            </td></tr>`; }).join('')}</tbody></table></div></div>`;
+    }).join('') : `<div class="empty-state"><div class="icon">📁</div><p>暂无文件 / Документов пока нет</p></div>`}`;
+}
+
+async function docsUpload(input) {
+  const files = [...(input.files || [])];
+  if (!files.length) return;
+  const shpVal = document.getElementById('doc-up-shp')?.value;
+  const shipment_id = shpVal && shpVal !== 'none' ? parseInt(shpVal) : null;
+  const category = document.getElementById('doc-up-cat')?.value || 'other';
+  const note = document.getElementById('doc-up-note')?.value.trim() || null;
+  const prog = document.getElementById('doc-up-progress');
+  const who = currentMember?.name || currentUser?.company_name || currentUser?.login || '';
+  let ok = 0;
+  for (const [n, f] of files.entries()) {
+    if (prog) prog.textContent = `⏳ ${n + 1}/${files.length} · ${f.name}`;
+    if (f.size > 50 * 1048576) { toast('❌ 文件太大 (>50MB) / Файл больше 50 МБ: ' + f.name); continue; }
+    const ext = (f.name.match(/\.([a-z0-9]{1,6})$/i) || [, 'bin'])[1].toLowerCase();
+    const path = `${shipment_id || 'general'}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;   // ключ латиницей — имя храним в таблице
+    const { error: upErr } = await sb.storage.from(DOC_BUCKET).upload(path, f, { contentType: f.type || 'application/octet-stream', upsert: false });
+    if (upErr) { toast('❌ ' + f.name + ': ' + upErr.message); continue; }
+    const { error } = await sb.from('shipment_docs').insert({ shipment_id, category, title: f.name.replace(/\.[^.]+$/, ''), file_name: f.name,
+      file_path: path, file_size: f.size, mime: f.type || null, note, uploaded_by: currentUser?.id ? String(currentUser.id) : null, uploaded_by_name: who });
+    if (error) { await sb.storage.from(DOC_BUCKET).remove([path]); toast('❌ ' + (/does not exist|relation|schema cache/i.test(error.message) ? DOC_SQL_HINT : error.message)); break; }
+    ok++;
+  }
+  input.value = '';
+  if (prog) prog.textContent = ok ? `✅ 已上传 ${ok} 份 / Загружено файлов: ${ok}` : '';
+  if (ok) {
+    const sh = _docs.shp.find(x => x.id === shipment_id);
+    logActivity('doc_upload', 'shipment', shipment_id, sh?.ship_number || '—', `Документы (${DOC_CATS[category]?.ru || category}): ${ok} шт.`);
+    await docsOpen();
+  }
+}
+
+async function docsGet(id, download) {
+  const d = _docs.list.find(x => x.id === id); if (!d) return;
+  const w = download ? null : window.open('', '_blank');   // окно открываем сразу — иначе браузер заблокирует
+  const { data, error } = await sb.storage.from(DOC_BUCKET).createSignedUrl(d.file_path, 600, download ? { download: d.file_name || true } : undefined);
+  if (error || !data?.signedUrl) { if (w) w.close(); toast('❌ ' + (error?.message || '无法打开 / Не удалось открыть')); return; }
+  if (w) w.location = data.signedUrl; else location.href = data.signedUrl;
+}
+
+function docsEdit(id) {
+  const d = _docs.list.find(x => x.id === id); if (!d) return;
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-title">✏️ ${escHtml(d.file_name || '')}</div>
+    <div class="field"><label>名称 / Название</label><input class="inp" id="de-title" value="${escHtml(d.title || '')}"></div>
+    <div class="field-row">
+      <div class="field"><label>车次 / Машина</label><select class="inp" id="de-shp"><option value="none">📂 不属于车次 / Без машины</option>
+        ${_docs.shp.map(sh => `<option value="${sh.id}" ${String(d.shipment_id) === String(sh.id) ? 'selected' : ''}>${escHtml(docShpLabel(sh))}</option>`).join('')}</select></div>
+      <div class="field"><label>类型 / Тип</label><select class="inp" id="de-cat">${Object.entries(DOC_CATS).map(([k, c]) => `<option value="${k}" ${d.category === k ? 'selected' : ''}>${c.i} ${c.cn} / ${c.ru}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label>备注 / Примечание</label><input class="inp" id="de-note" value="${escHtml(d.note || '')}"></div>
+    <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">取消 / Отмена</button>
+      <button class="btn btn-primary" onclick="docsEditSave(${id})">💾 保存 / Сохранить</button></div>`;
+  openModal();
+}
+async function docsEditSave(id) {
+  const v = i => document.getElementById(i)?.value;
+  const upd = { title: v('de-title').trim() || null, category: v('de-cat'), note: v('de-note').trim() || null, shipment_id: v('de-shp') === 'none' ? null : parseInt(v('de-shp')) };
+  const { error } = await sb.from('shipment_docs').update(upd).eq('id', id);
+  if (error) { toast('❌ ' + error.message); return; }
+  closeModal(); toast('✅ 已保存 / Сохранено'); docsOpen();
+}
+async function docsDelete(id) {
+  if (!adminOnly()) return;
+  const d = _docs.list.find(x => x.id === id); if (!d) return;
+  if (!confirm(`删除文件？/ Удалить документ «${d.file_name}» насовсем?`)) return;
+  const { error } = await sb.from('shipment_docs').delete().eq('id', id);
+  if (error) { toast('❌ ' + error.message); return; }
+  await sb.storage.from(DOC_BUCKET).remove([d.file_path]);
+  logActivity('doc_delete', 'shipment', d.shipment_id, d.file_name, 'Документ удалён');
+  toast('🗑 已删除 / Удалено'); docsOpen();
+}
+
 // Open the chat page directly in the given order's room
 function openOrderChat(orderId, clientId) {
   window._pendingChatRoom = { room: 'order-' + orderId, clientId: clientId || null };
@@ -8171,7 +8379,7 @@ function renderClients() {
         <td class="L"><b>${c.company_name||'—'}</b>${c.purchase_tracking?' <span title="Видит журнал закупа" style="font-size:10px">🛒</span>':''}${c.tg_chat_id?' <span title="Telegram подключён" style="font-size:10px">📲</span>':''}${c.calc_access?' <span title="Доступ к калькулятору" style="font-size:10px">🧮</span>':''}</td>
         <td class="L" style="color:var(--mid);font-family:monospace">${escHtml(c.login)}${c.blocked ? ' <span title="Доступ закрыт">🔒</span>' : ''}${c.email ? `<div style="font-size:10px;font-family:inherit">${escHtml(c.email)}</div>` : ''}</td>
         <td style="font-size:11px;color:var(--mid)">${c.contact||'—'}</td>
-        <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?((c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':c.client_scope==='ops'?'🔑 Менеджер (операции)':'👑 Менеджер / 经理')+(c.also_warehouse?' + 🏭 склад':'')):c.role==='warehouse'?'🏭 Склад / 仓库':c.role==='gz'?'🪴 Гуанчжоу / 广州':c.role==='member'?'👥 Сотрудник: ' + escHtml(allClients.find(x => String(x.id) === String(c.account_of))?.company_name || '?'):'👤 Клиент / 客户'}</span></td>
+        <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?((c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':c.client_scope==='ops'?'🔑 Менеджер (операции)':c.client_scope==='fin'?'🧾 Финансы / 财务':'👑 Менеджер / 经理')+(c.also_warehouse?' + 🏭 склад':'')+(c.docs_access?' + 📁':'')):c.role==='warehouse'?'🏭 Склад / 仓库':c.role==='gz'?'🪴 Гуанчжоу / 广州':c.role==='member'?'👥 Сотрудник: ' + escHtml(allClients.find(x => String(x.id) === String(c.account_of))?.company_name || '?'):'👤 Клиент / 客户'}</span></td>
         <td style="font-size:11px;color:var(--mid)">${c.role==='client' ? (escHtml(mgrName(c.manager_id)) || '<span style="color:var(--light)">— не закреплён</span>') : ''}</td>
         <td><button class="btn btn-secondary btn-sm" onclick="showEditClientModal('${c.id}')">${isAdminUser() ? '✏️ Изменить / 修改' : '👁 Открыть / 查看'}</button></td>
       </tr>`).join('')}
@@ -8289,7 +8497,12 @@ function showEditClientModal(id) {
         <option value="" ${!user.client_scope?'selected':''}>👑 Полный — всё, включая прайс и наценки</option>
         <option value="ops" ${user.client_scope==='ops'?'selected':''}>🔑 Операционный — заказы и документы, без прайса, наценок и CRM</option>
         <option value="own" ${user.client_scope==='own'?'selected':''}>💼 Клиентский — только закреплённые клиенты</option>
+        <option value="fin" ${user.client_scope==='fin'?'selected':''}>🧾 Финансы / 财务 — отгрузки, документы, инвойсы, накладные; интерфейс на китайском</option>
       </select>
+      ${'docs_access' in user ? `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;margin-top:8px">
+        <input type="checkbox" id="ec-docs" ${user.docs_access?'checked':''} style="width:15px;height:15px">
+        📁 Доступ к документам отгрузок / 车次单据 (таможня, сертификаты)</label>`
+      : `<div style="font-size:11px;color:var(--mid);margin-top:6px">📁 Доступ к документам: выполните SQL «Документы отгрузок»</div>`}
       ${'also_warehouse' in user ? `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;margin-top:8px">
         <input type="checkbox" id="ec-also-wh" ${user.also_warehouse?'checked':''} style="width:15px;height:15px">
         🏭 Также работает на складе — переключатель «Склад ⇄ Менеджер» в шапке / 兼仓库</label>
@@ -8342,6 +8555,8 @@ async function saveClient(id) {
   if (scEl) updates.client_scope = scEl.value || null;
   const awEl = document.getElementById('ec-also-wh');
   if (awEl) updates.also_warehouse = awEl.checked;
+  const dcEl = document.getElementById('ec-docs');
+  if (dcEl) updates.docs_access = dcEl.checked;
   const roleEl = document.getElementById('ec-role');
   if (roleEl && currentUser?.is_admin && roleEl.value !== roleEl.dataset.prev) {
     const nr = roleEl.value;
@@ -13656,6 +13871,7 @@ function shipmentDetailHTML(u) {
   };
 
   const actions = `
+    ${canDocs() ? `<button class="btn btn-secondary btn-sm" onclick="docsForShipments([${u.parts.map(x => x.id).join(',')}])">📁 单据 / Документы</button>` : ''}
     ${canData && lead.status === 'forming' ? `<button class="btn btn-secondary btn-sm" onclick="shpDataModal('${u.key}', 'stage')">📍 Отметить выезд</button>` : ''}
     ${isMgrLocal ? `
       <select class="inp" style="width:auto;padding:6px 10px;font-size:12px" onchange="setUnitStatus('${u.key}', this.value)">
