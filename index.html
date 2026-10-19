@@ -1286,6 +1286,12 @@ document.addEventListener('DOMContentLoaded', function(){
 .bxs-fm{display:grid;gap:10px;padding:12px;border:1px dashed var(--border);border-radius:8px;background:var(--sage-l)}
 .bxs-fm label{display:grid;gap:4px;font-size:12px;color:var(--mid)}
 @media (max-width:900px){.bxs-grid{display:flex;flex-direction:column}.bxs-left{display:contents}.bxs-scan{order:1}.bxs-side{order:2}.bxs-left>.card:last-child{order:3}}
+/* ══ Кнопка «Наверх» ══ */
+#to-top{position:fixed;right:20px;bottom:20px;z-index:450;width:46px;height:46px;border-radius:50%;border:0;background:var(--sage-d,#1f3a2a);color:#fff;font-size:20px;line-height:1;box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;opacity:0;transform:translateY(12px);pointer-events:none;transition:opacity .2s,transform .2s,bottom .2s}
+#to-top.on{opacity:.92;transform:none;pointer-events:auto}
+#to-top:hover{opacity:1}
+@media (max-width:600px){#to-top{right:14px;bottom:14px;width:42px;height:42px}}
+@media print{#to-top{display:none!important}}
 
 /* ══ Качество поставщиков (перенесено из amma-quality) ══ */
 .qa-scope{
@@ -3032,6 +3038,31 @@ async function addReceiverUser() {
   closeModal();
   await loadClients(); renderClients();
 }
+
+// ── Кнопка «Наверх / 回到顶部»: появляется, когда страницу пролистали вниз ──
+(function(){
+  function init(){
+    if (document.getElementById('to-top')) return;
+    const b = document.createElement('button');
+    b.id = 'to-top'; b.type = 'button'; b.textContent = '↑';
+    b.title = 'Наверх / 回到顶部'; b.setAttribute('aria-label', 'Наверх');
+    b.onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+    document.body.appendChild(b);
+    let raf = 0;
+    const upd = () => {
+      raf = 0;
+      b.classList.toggle('on', window.scrollY > 400);
+      // не перекрывать нижнюю панель корзины у клиентов
+      const cf = document.querySelector('.cart-footer');
+      const h = cf && cf.offsetParent !== null && getComputedStyle(cf).display !== 'none' ? cf.offsetHeight : 0;
+      b.style.bottom = h ? (h + 14) + 'px' : '';
+    };
+    window.addEventListener('scroll', () => { if (!raf) raf = requestAnimationFrame(upd); }, { passive: true });
+    window.addEventListener('resize', upd);
+    upd();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
 </script>
 <script>
 // ══════════════════════════════════════════════════════════
