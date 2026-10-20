@@ -23288,12 +23288,91 @@ function exportPricePDF() {
       { t: 'Хорошего просмотра! 🌸', x: 'Вопросы можно задать в Telegram-боте <b>@Amma_Flowers_bot</b>.' },
     ],
   };
-  const key = () => `amma_tour_v1_${currentUser?.role}_${currentUser?.id || 'g'}`;
+  // ══ Подробные экскурсии на китайском для сотрудников (склад, финансы, закуп, Гуанчжоу) ══
+  // Шаг: s — что подсветить, run — что открыть перед шагом (раздел, вкладку), t — заголовок, x — текст.
+  // Русская строка мелко под китайской — чтобы и Даша, и Юра понимали, о чём шаг.
+  const R = ru => `<div style="color:var(--mid);font-size:11.5px;margin-top:6px;line-height:1.35">${ru}</div>`;
+  const P = (page) => () => { const t = document.querySelector(nav(page)); if (t) t.click(); else if (typeof showPage === 'function') showPage(page); };
+  const WT = (tab) => () => { P('warehouse')(); setTimeout(() => { const b = document.getElementById('whtab-' + tab); if (b) switchWhTab(tab, b); }, 250); };
+  const FB = `<br><br><button class="tour-btn" type="button" style="background:var(--pistachio,#DCEBA4);color:var(--ink,#1D2A21)" onclick="AmmikTour.feedback()">📝 填写意见反馈 / Оставить отзыв</button>`;
+  const CN_STEPS = {
+    warehouse: [
+      { t: '你好！我是 Ammik 🌷', x: '我来详细介绍<b>仓库账号</b>的所有功能，大约 3 分钟。每一步都会告诉你在哪里点、要注意什么。最后可以给 Даша 写意见和问题。' + R('Подробная экскурсия по складу (~3 мин). В конце — форма отзыва для Даши.') },
+      { s: nav('warehouse'), run: P('warehouse'), t: '备货 / Сборка', x: '左边菜单第一个是<b>仓库主页</b>。圆圈里的数字 = 还没备完的订单数。里面有几个标签页：待审核、备货、收货、标签、投诉、统计、采购。' + R('Главный раздел склада: вкладки Входящие, Сборка, Приёмка, Этикетки, Претензии, Сводка, Закуп.') },
+      { s: '#whtab-pending', run: WT('pending'), t: '① 待审核订单 / Входящие', x: '客户的新订单在经理确认<b>之前</b>先到这里。请核对每一个品种：<br>• <b>扎/箱</b>（每箱扎数）<br>• <b>枝/扎 或 克/扎</b>（每扎枝数或重量）<br>和实际不一样就直接改数字，改过的格子会变<b>橙色</b>。' + R('Новые заказы до подтверждения: сверьте банчи в коробе и стебли/граммы в банче; изменённое подсвечивается оранжевым.') },
+      { s: '#wh-pending-list .card', t: '包装备注 / Заметки', x: '每个品种右边可以写<b>包装备注</b>（缺货、替换、规格问题）。下面还有<b>订单总体备注</b>。🌐 按钮可以把备注翻译成俄语。写完一定点 <b>“💾 保存备注”</b>，经理会收到通知并确认修改。' + R('Заметки по позициям и общая; 🌐 переводит на русский; обязательно «Сохранить заметки» — менеджер получит уведомление.') },
+      { s: '#whtab-assembly', run: WT('assembly'), t: '② 备货 / Сборка', x: '已确认的订单都在这里。上面可以按<b>出货日期</b>和<b>车次</b>筛选。已经出发的车默认<b>隐藏</b>，需要看就勾选“显示已出发的车”。' + R('Подтверждённые заказы. Фильтр по дате и машине; уехавшие машины скрыты (галочка — показать).') },
+      { s: '#warehouse-list .card', t: '订单卡片 / Карточка заказа', x: '每个订单顶部有汇总：<b>箱数、m³、总扎数、总枝数/公斤</b>。表格里每行：箱数、箱规、扎/箱、枝(克)/扎、总扎数、总数量。<br>如果有<b>子客户</b>，品种会按子客户分组，方便分开装箱和贴标签。' + R('Итоги заказа: коробки, м³, банчи, шт/кг. Строки: коробки, размер, банчи, стебли/граммы. Субклиенты — группами.') },
+      { s: '#warehouse-list .card', t: '⚠️ 黄色备注 / Жёлтые пометки', x: '品名下面<b>黄色的📝</b>是装箱要求，比如“用无纺布包装”、“只用软包装，不用纸箱”、“必须放红玫瑰”。<b>一定要看！</b>灰绿色的是一般说明。' + R('Жёлтые 📝 — требования к упаковке (нетканка, мягкая упаковка и т.п.). Обязательно читать.') },
+      { s: '#warehouse-list .card .btn-sm', t: '备货完成 / Собрано', x: '订单全部装好后点 <b>“✅ 备货完成”</b>，经理马上收到通知。点错了可以“↩ 取消”。旁边 <b>“🏷 打印标签”</b> 直接打印这个订单的箱标。' + R('«Собрано!» — менеджер получит уведомление; «Этикетки» — печать этикеток заказа.') },
+      { s: '#whtab-receiving', run: WT('receiving'), t: '③ 收货 / Приёмка', x: '<b>上半部分：供应商到货。</b>选择车次，就能看到每个供应商送什么、多少扎、几点送到。可以打印<b>验收单</b>（📄）、导出 Excel、上传验收照片或单据（📤）。' + R('Верх: кто из поставщиков что везёт; печать формы приёмки, загрузка актов/фото.') },
+      { s: '#whtab-receiving', t: '按订单收货 / Приёмка по заказу', x: '<b>下半部分：按订单录入实际到货。</b>选择订单，在“实际”一栏填写真实的<b>箱数、扎/箱、枝/扎（克）</b>。品种被替换就勾选<b>“换货”</b>并写替换成什么。点<b>“保存并通知经理”</b>——经理确认后，出货单和发票会自动更新。' + R('Низ: факт по заказу — коробки, банчи, стебли; «Замена» с указанием на что. После подтверждения менеджером накладная и инвойс обновятся.') },
+      { s: '#whtab-labels', run: WT('labels'), t: '④ 标签 / Этикетки', x: '选择一个或几个订单，生成箱标表格，然后打印。每箱一张，标签上有品名、温度、卖方、进口商等信息。' + R('Этикетки по одному или нескольким заказам — по одной на коробку.') },
+      { s: '#whtab-claims', run: WT('claims'), t: '⑤ 投诉 / Претензии', x: '客户收到货后的投诉（有照片）。系统会区分<b>仓库责任</b>（质量、破损、数量）和<b>供应商责任</b>。请看看照片，下次装箱时注意。' + R('Претензии клиентов с фото: ответственность склада или поставщика.') },
+      { s: '#whtab-stats', run: WT('stats'), t: '⑥ 统计 / Сводка', x: '选择时间段，可以看到备货完成率、收货、缺货和投诉数量。' + R('Сводка за период: собрано, принято, недостачи, претензии.') },
+      { s: '#whtab-purchase', run: WT('purchase'), t: '⑦ 采购记录 / Закуп', x: '透明采购的客户（Диантус）的订单：每次采购的<b>日期、供应商、价格、拒收（价格/质量）和替换</b>。打开订单就能添加或修改记录，也可以从 Excel 导入采购表。' + R('Журнал закупа по заказам Диантуса: даты, поставщики, цены, отказы, замены; можно загрузить из Excel.') },
+      { s: nav('shipments'), run: P('shipments'), t: '🚚 车次 / Отгрузки', x: '所有车次：每辆车装了哪些订单、多少箱、多少 m³、还剩多少空间。装好出发时点 <b>“📍 标记出发”</b>——这辆车上的客户会<b>马上</b>在 Telegram 机器人里收到消息。' + R('Машины и загрузка. «Отметить выезд» — клиенты машины сразу получают сообщение в боте.') },
+      { s: '#mode-switch', t: '切换模式 / Режим', x: '你的账号同时有<b>仓库</b>和<b>经理</b>两种模式。点右上角这个按钮切换，页面会重新加载。系统会记住你上次用的模式。' + R('Переключатель «Склад ⇄ Менеджер» (если у аккаунта два режима).') },
+      { s: nav('chat'), t: '💬 聊天 / Чат', x: '和办公室、经理沟通的聊天。有关订单的问题最好写在这里，大家都能看到，不会丢。' + R('Чат с офисом и менеджерами.') },
+      { s: '#tab-notif', t: '🔔 通知 / Уведомления', x: '新订单、修改、确认都会出现在这里。在通知页面可以绑定 Telegram 机器人 <b>@Amma_Flowers_bot</b>，这样手机上也能收到。' + R('Уведомления; там же можно подключить Telegram-бот.') },
+      { t: '完成！🌸 / Готово', x: '以后想再看一次，点左下角 <b>“Экскурсия с Аммиком”</b>。<br><b>请帮我们改进系统：</b>哪里不方便、需要增加什么、有什么问题——写下来，会直接发到 Даша 的 Telegram。' + FB + R('Повторить — кнопка внизу меню. Отзыв уходит Даше в Telegram.') },
+    ],
+    fin: [
+      { t: '你好！我是 Ammik 🌷', x: '我来详细介绍<b>财务账号</b>：车次、报关文件、单据存档、发票和出货单。大约 4 分钟。最后可以给 Даша 写意见和问题。' + R('Экскурсия для финансов (Лю): отгрузки, таможенный пакет, архив документов, инвойсы, накладные.') },
+      { s: nav('shipments'), run: P('shipments'), t: '🚚 车次 / Отгрузки', x: '这是你的主页。上面是车次列表，点一辆车就能看到：装了哪些订单、多少箱、多少 m³、哪些客户。' + R('Главная страница: список машин, в карточке — заказы, коробки, кубы, клиенты.') },
+      { s: '#shipments-list [onclick^="customsForShipments"]', t: '🛃 报关 / Таможня', x: '车次卡片上的 <b>“🛃 报关”</b> 按钮：直接打开这辆车的报关文件（合同、发票、装箱单、报关要素）。' + R('Кнопка «Таможня» в карточке машины — таможенный пакет этой машины.') },
+      { s: '#shipments-list [onclick^="docsForShipments"]', t: '📁 单据 / Документы', x: '<b>“📁 单据”</b> 按钮：这辆车的所有文件——报关文件、证书、检疫证、发票、CMR、照片。' + R('Кнопка «Документы» — все файлы машины.') },
+      { s: '#shipments-list .shp-ord', t: '订单名称和发票号 / Название и № инвойса', x: '车里的每个订单旁边有 <b>✏️</b>：可以填写<b>订单名称</b>和<b>发票号</b>（例如 YC20260122）。这样系统里的订单和真实发票就能对上。' + R('✏️ у заказа — название и № инвойса, чтобы заказы совпадали с реальными инвойсами.') },
+      { s: nav('customs'), run: P('customs'), t: '🛃 报关文件 / Таможенный пакет', x: '<b>第一步：</b>上面选择车次。<br><b>第二步：</b>点 <b>“＋ 新建报关文件”</b>，勾选要包含的订单。鲜切花和盆栽一般分开做，有快捷按钮“只选鲜切花 / 只选盆栽”。' + R('Выбрать машину → «Новый пакет» → отметить заказы (срезка и горшечка отдельно).') },
+      { s: '#customs-wrap', t: '自动汇总 / Автоматически', x: '系统会<b>自动</b>把各个品种按类别汇总（玫瑰 Rose、康乃馨 Carnation…），算出<b>数量（枝/盆）</b>和<b>箱数</b>。合同号会自动建议下一个（比如 YC20260123），可以改。' + R('Группы, штуки и коробки считаются сами; № контракта предлагается следующий.') },
+      { s: '#customs-wrap', t: '卖方、买方、条款 / Стороны и условия', x: '<b>卖方 / 买方</b>：从列表选择，或选“＋ 新增公司”添加新的（公司名和地址按文件写）。<br><b>🖃 上传印章</b>：上传一次公司印章 PNG，以后每次导出都会自动盖章。<br><b>条款</b>：可以选保存过的模板（CIF Orenburg…），也可以“保存当前条款”为新模板。运费、保费填在下面。' + R('Продавец/покупатель из списка или новый; печать загружается один раз; шаблоны условий; фрахт и страховка.') },
+      { s: '#customs-wrap', t: '商品明细 / Таблица', x: '表格里可以修改：<b>HS 编码、总金额 USD、净重、毛重、高度、备注</b>。改净重时毛重自动 = 净重 × 系数（默认 1.25）。<b>保存后系统会记住</b>每个类别的单价、每箱重量、HS——下次自动带出。<br>“≈ 按扎估算”的行（尤加利、满天星等按重量的品种）请检查数量。' + R('Правятся HS, сумма, нетто/брутто, высота; значения групп запоминаются. Строки «≈» — проверить штуки.') },
+      { s: '#customs-wrap', t: '新品种 / Новые сорта', x: '如果车里有<b>新品种还没归类</b>，会显示<b>黄色提示</b>：选一个类别，或“＋ 新增类别”。系统<b>永远记住</b>，下次自动归类。页面最下面“品种 → 类别”可以随时修改归类。' + R('Новый сорт подсвечивается жёлтым — выбрать группу, система запомнит; таблица соответствий внизу.') },
+      { s: '#customs-wrap', t: '导出 Excel / Выгрузка', x: '点 <b>“📥 导出 Excel”</b>：下载 CONTRACT、INVOICE、PACKING LIST、报关要素四个表，格式和你原来的一样（INVOICE 引用 CONTRACT 的公式）。文件会<b>自动保存到这辆车的“单据”</b>里。<br><b>“🧾 → 订单”</b>：把合同号写入这些订单的发票号。' + R('Выгрузка 4 листов в её формате, копия в «Документы»; кнопка проставляет № в заказы.') },
+      { s: nav('docs'), run: P('docs'), t: '📁 单据存档 / Документы', x: '所有车次的文件都存在这里。<b>上传：</b>选车次、选类型（报关/证书/检疫/发票/运输单据/照片/其他）、可写备注，然后“选择文件”（可多选，PDF、Excel、Word、图片都可以）。' + R('Архив: выбрать машину и тип, примечание, загрузить файлы (можно несколько).') },
+      { s: '#docs-wrap .ctrl-bar', t: '查找和查看 / Поиск', x: '可以按车次、类型筛选，也可以搜索名称或备注。👁 查看、⬇ 下载、✏️ 修改名称/类型/车次。<b>只有授权的人</b>（Даша、你、Антон、Наташа）能看到这些文件；删除只能由 Даша 操作，文件会一直保存。' + R('Фильтры и поиск; открыть/скачать/изменить. Видят только допущенные; удаляет только Даша.') },
+      { s: nav('invoices'), run: P('invoices'), t: '🧾 发票 / Инвойсы', x: '给客户的发票列表（俄文）：金额、状态、付款情况。打开一张可以查看和下载。' + R('Инвойсы клиентам: суммы, статусы, оплаты.') },
+      { s: nav('waybills'), t: '📦 出货单 / Накладные', x: '按实际装箱生成的出货单。Даша 根据你的表格做出货单，以后这些数据会直接从系统来。' + R('Товарные накладные по факту.') },
+      { s: nav('orders'), run: P('orders'), t: '📋 订单 / Заказы', x: '所有订单。上面的搜索框可以按<b>订单号、名称、发票号</b>查找。每个订单的 <b>🧾 ✏️</b> 可以填写名称和发票号。' + R('Все заказы; поиск по №, названию и № инвойса; 🧾✏️ — название и № инвойса.') },
+      { s: '#tab-notif', t: '🔔 通知 / Уведомления', x: '系统通知在这里。可以绑定 Telegram 机器人 <b>@Amma_Flowers_bot</b>，手机上也能收到。' + R('Уведомления и подключение Telegram-бота.') },
+      { t: '完成！🌸 / Готово', x: '以后想再看一次，点左下角 <b>“Экскурсия с Аммиком”</b>。<br><b>请告诉我们：</b>哪里不方便、表格还缺什么、报关文件格式哪里不对、有什么问题——写下来会直接发到 Даша 的 Telegram。' + FB + R('Повторить — кнопка внизу меню. Отзыв уходит Даше в Telegram.') },
+    ],
+    purchase: [
+      { t: '你好！我是 Ammik 🌷', x: '我来详细介绍<b>采购</b>相关的功能：订单、采购记录、按车采购和供应商到货。大约 3 分钟。最后可以给 Даша 写意见和问题。' + R('Экскурсия для закупа (Ли, Вера): заказы, журнал закупа, закуп по машине.') },
+      { s: nav('price'), run: P('price'), t: '📋 价格表 / Прайс', x: '所有品种：名称（俄/中）、包装、每箱扎数、每扎枝数、箱规、照片。上面可以切换<b>鲜切花 / 盆栽 / 配套商品</b>，可以搜索中文名。' + R('Прайс: позиции, упаковка, банчи/коробки, размеры; разделы срезка/горшечка/сопутка; поиск по-китайски.') },
+      { s: nav('orders'), run: P('orders'), t: '📋 订单 / Заказы', x: '客户订单列表。可以按订单号、名称、发票号搜索。点订单打开明细：每个品种的箱数、扎/箱、枝/扎、子客户和备注。' + R('Заказы клиентов; в заказе — позиции, коробки, банчи, субклиенты, примечания.') },
+      { s: '#orders-list', t: '采购记录 / Журнал закупа', x: '打开 <b>Диантус</b> 的订单，下面有 <b>“🛒 采购记录”</b>：每次采购记一条——<b>采购日期、供应商、品种、扎数、单价、枝/扎</b>。<br>价格太高或质量不好拒收的，标记<b>拒收</b>并写原因；换了别的品种就记<b>替换</b>。' + R('В заказе Диантуса — «Журнал закупа»: дата, поставщик, сорт, банчи, цена; отказы по цене/качеству и замены.') },
+      { s: '#orders-list', t: '从 Excel 导入 / Импорт закупа', x: '采购记录也可以<b>从 Excel 导入</b>，格式就是你们的采购表：<b>电话 | 供应商名称 | 品名 | 单价 | 扎/箱 | 总扎数 | 枝(克)/扎</b>。系统会自动对上订单里的品种，新供应商会自动创建。导入前会显示预览，确认后才保存。' + R('Импорт закупа из Excel в формате закупщиков; предпросмотр, новые поставщики создаются сами.') },
+      { s: nav('shipments'), run: P('shipments'), t: '🚚 按车采购 / Закуп по машине', x: '车次卡片里的 <b>🛒</b> 按钮：系统把这辆车所有订单的品种<b>汇总</b>（每个品种总共多少扎），你给每个品种分配<b>供应商</b>和<b>送货时间</b>。' + R('В карточке машины 🛒 — сводный закуп по всем заказам машины: поставщик и время доставки по каждой позиции.') },
+      { s: '#shipments-list', t: '仓库收货 / Связь со складом', x: '你填好的按车采购，仓库会在<b>“收货”</b>页面看到：哪个供应商送什么、多少扎、几点送到，并按供应商打印验收单。' + R('Склад видит закуп по машине во вкладке «Приёмка»: кто что везёт и когда.') },
+      { s: nav('chat'), t: '💬 聊天 / Чат', x: '缺货、换品种、价格变化——请写在聊天里，经理和仓库都能马上看到。' + R('Нехватка, замены, цены — пишите в чат.') },
+      { s: '#tab-notif', t: '🔔 通知 / Уведомления', x: '新订单和修改会出现在这里。可以绑定 Telegram 机器人 <b>@Amma_Flowers_bot</b>。' + R('Уведомления и Telegram-бот.') },
+      { t: '完成！🌸 / Готово', x: '以后想再看一次，点左下角 <b>“Экскурсия с Аммиком”</b>。<br><b>请告诉我们：</b>采购记录还缺什么字段、导入格式是否合适、哪里不方便、有什么问题——会直接发到 Даша 的 Telegram。' + FB + R('Повторить — кнопка внизу меню. Отзыв уходит Даше в Telegram.') },
+    ],
+    gz: [
+      { t: '你好！我是 Ammik 🌷', x: '我来详细介绍<b>盆栽账号</b>：盆栽订单和盆栽价格表。大约 2 分钟。最后可以给 Даша 写意见和问题。' + R('Экскурсия по горшечным: заказы и прайс.') },
+      { s: nav('gz-orders'), run: P('gz-orders'), t: '🪴 盆栽订单 / Заказы', x: '所有包含盆栽的订单：订单号、出货日期、品种。每一行请核对：<b>箱数、每箱盆数、箱规</b>。和实际不一样就修改。' + R('Заказы с горшечкой: проверить коробки, штук в коробке, размер короба.') },
+      { s: nav('gz-orders'), t: '缺货和替换 / Замены', x: '某个品种没有货，点 <b>“替换”</b>，选择替换的品种，写上原因。数量修改和替换都需要<b>经理确认</b>，确认后客户会看到。' + R('Нет растения — «Заменить»; изменения подтверждает менеджер.') },
+      { s: nav('gz-price'), run: P('gz-price'), t: '💰 盆栽价格 / Прайс', x: '价格（¥/盆）、是否有货、每箱盆数、箱规。修改后一定点 <b>“保存”</b>。新品种点 <b>“＋ 新增”</b>，填写中文名、俄文名、盆径、高度和价格。' + R('Цены ¥/шт, наличие, штук в коробке; «Сохранить»; новая позиция — «+ Новая».') },
+      { s: '#tab-notif', t: '🔔 通知 / Уведомления', x: '新的盆栽订单和经理的回复会出现在这里。' + R('Новые заказы и ответы менеджера.') },
+      { t: '完成！🌸 / Готово', x: '以后想再看一次，点左下角的按钮。<br><b>请告诉我们：</b>哪里不方便、需要增加什么、有什么问题——会直接发到 Даша 的 Telegram。' + FB + R('Отзыв уходит Даше в Telegram.') },
+    ],
+  };
+  // Какую экскурсию показать: по роли и галочкам аккаунта
+  const tourId = () => {
+    const u = currentUser || {};
+    if (u.role === 'warehouse') return 'warehouse';
+    if (u.role === 'gz') return 'gz';
+    if (u.role === 'manager' && !u.is_admin && u.client_scope === 'fin') return 'fin';
+    if (u.role === 'manager' && !u.is_admin && u.purchase_access) return 'purchase';
+    return null;
+  };
+  const key = () => tourId() ? `amma_tour_cn2_${tourId()}_${currentUser?.id || 'g'}` : `amma_tour_v1_${currentUser?.role}_${currentUser?.id || 'g'}`;
   // Аммик для пустых экранов: ammikEmpty('Ничего не нашлось', 'подсказка', 'think')
   window.ammikEmpty = (title, sub = '', pose = 'think') =>
     `<div class="amm-empty"><img src="ammik-${pose}.webp" alt="" onerror="this.remove()"><b>${title}</b>${sub ? `<span>${sub}</span>` : ''}</div>`;
   const POSE = (k, n, hasTarget) => k === 0 ? 'wave' : k === n - 1 ? 'joy' : hasTarget ? 'pointing' : 'think';
-  let steps = [], i = 0, box = null;
+  let steps = [], i = 0, box = null, ranFor = -1, cn = false;
 
   function el(sel) {
     if (!sel) return null;
@@ -23304,6 +23383,8 @@ function exportPricePDF() {
   }
   function render() {
     const st = steps[i];
+    // шаг открывает нужный раздел/вкладку — сначала переходим, потом подсвечиваем
+    if (st.run && ranFor !== i) { ranFor = i; try { st.run(); } catch (e) {} setTimeout(() => { if (box) render(); }, 700); return; }
     const target = el(st.s);
     if (target) target.scrollIntoView({ block: 'nearest', inline: 'center' });
     const hole = box.querySelector('.tour-hole'), card = box.querySelector('.tour-card');
@@ -23314,7 +23395,8 @@ function exportPricePDF() {
     card.querySelector('.tour-text').innerHTML = st.x;
     card.querySelector('.tour-dots').innerHTML = steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
     card.querySelector('.back').style.visibility = i ? 'visible' : 'hidden';
-    card.querySelector('.next').textContent = i === steps.length - 1 ? 'Начать работу' : i === 0 ? 'Поехали' : 'Дальше';
+    card.querySelector('.next').textContent = cn ? (i === steps.length - 1 ? '开始工作 / Начать' : i === 0 ? '开始 / Поехали' : '下一步 / Дальше')
+      : (i === steps.length - 1 ? 'Начать работу' : i === 0 ? 'Поехали' : 'Дальше');
     const W = card.offsetWidth, H = card.offsetHeight, vw = innerWidth, vh = innerHeight;
     if (target) {
       const r = target.getBoundingClientRect(), p = 6;
@@ -23351,11 +23433,70 @@ function exportPricePDF() {
     render();
   }
   window.AmmikTour = {
-    start(force) {
+    // ── Отзыв сотрудника → Даше (админам) уведомлением, а оттуда в Telegram-бот ──
+    feedback() {
+      close(true);
+      const secs = [['', '— 选择 / раздел —'], ['备货', '备货 / Сборка'], ['收货', '收货 / Приёмка'], ['车次', '车次 / Отгрузки'], ['报关', '报关 / Таможня'],
+        ['单据', '单据 / Документы'], ['发票', '发票 / Инвойсы'], ['出货单', '出货单 / Накладные'], ['订单', '订单 / Заказы'], ['采购', '采购 / Закуп'],
+        ['价格表', '价格表 / Прайс'], ['标签', '标签 / Этикетки'], ['其他', '其他 / Другое']];
+      document.getElementById('modal-content').innerHTML = `
+        <div class="modal-title">📝 意见反馈 / Отзыв о системе</div>
+        <div style="font-size:12px;color:var(--mid);margin:-6px 0 12px">你的意见会直接发给 Даша（Telegram）。可以用中文写，系统会自动翻译成俄语。<br>Отзыв уйдёт Даше в Telegram; китайский текст переведётся автоматически.</div>
+        <div class="field"><label>你觉得系统好用吗？/ Насколько удобно?</label>
+          <div id="fb-rate" style="display:flex;gap:6px;flex-wrap:wrap">${[['1', '😣 很难用'], ['2', '🙁 不太方便'], ['3', '😐 一般'], ['4', '🙂 方便'], ['5', '😍 很好用']].map(([v, l]) =>
+            `<label style="display:flex;gap:4px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:5px 10px;cursor:pointer;font-size:12px"><input type="radio" name="fb-rate" value="${v}"> ${l}</label>`).join('')}</div></div>
+        <div class="field"><label>哪个部分？/ Раздел</label><select class="inp" id="fb-sec">${secs.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
+        <div class="field"><label>✏️ 哪些地方需要修改？哪里不方便？/ Что изменить, что неудобно?</label><textarea class="inp" id="fb-change" rows="3" placeholder="例如：表格太长，希望可以……"></textarea></div>
+        <div class="field"><label>➕ 希望增加什么功能？/ Что добавить?</label><textarea class="inp" id="fb-add" rows="3" placeholder="例如：希望能导出……"></textarea></div>
+        <div class="field"><label>❓ 有什么问题？/ Какие есть вопросы?</label><textarea class="inp" id="fb-q" rows="3" placeholder="例如：报关文件里的……怎么填？"></textarea></div>
+        <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">取消 / Отмена</button>
+          <button class="btn btn-primary" id="fb-send" onclick="AmmikTour.sendFeedback()">📨 发送 / Отправить</button></div>`;
+      openModal();
+    },
+    async sendFeedback() {
+      const v = id => (document.getElementById(id)?.value || '').trim();
+      const rate = document.querySelector('input[name="fb-rate"]:checked')?.value || '';
+      const parts = [['✏️ Что изменить', v('fb-change')], ['➕ Что добавить', v('fb-add')], ['❓ Вопросы', v('fb-q')]].filter(p => p[1]);
+      if (!parts.length && !rate) { toast('请至少写一项 / Заполните хотя бы одно поле'); return; }
+      const btn = document.getElementById('fb-send'); if (btn) { btn.disabled = true; btn.textContent = '⏳ 发送中…'; }
+      const tr = async t => { if (!/[\u4e00-\u9fff]/.test(t) || typeof doTranslate !== 'function') return ''; try { return (await doTranslate(t, 'zh-CN', 'ru')) || ''; } catch (e) { return ''; } };
+      const who = currentMember?.name || currentUser?.company_name || currentUser?.login || '—';
+      const lines = [];
+      if (rate) lines.push(`Оценка: ${rate}/5`);
+      if (v('fb-sec')) lines.push(`Раздел: ${document.getElementById('fb-sec').selectedOptions[0].textContent}`);
+      for (const [k, t] of parts) { const ru = await tr(t); lines.push(`\n${k}:\n${t}${ru ? `\n→ ${ru}` : ''}`); }
+      const body = lines.join('\n');
+      try {
+        const admins = (await staffList()).filter(s => s.role === 'manager' && s.is_admin);
+        if (!admins.length) throw new Error('no admin');
+        for (const a of admins) await sendNotification(a.id, `📝 Отзыв о системе · ${who}`, body, '📝');
+        logActivity('feedback', 'system', null, who, body.slice(0, 900));
+        closeModal(); toast('✅ 已发送，谢谢！/ Отправлено, спасибо!');
+      } catch (e) {
+        if (btn) { btn.disabled = false; btn.textContent = '📨 发送 / Отправить'; }
+        toast('❌ 发送失败 / Не удалось отправить: ' + (e.message || e));
+      }
+    },
+    // Даше (админу) — выбор, какую экскурсию посмотреть: свою или любую из сотрудничьих
+    pick() {
+      document.getElementById('modal-content').innerHTML = `<div class="modal-title">🌷 Какую экскурсию показать?</div>
+        <div style="display:grid;gap:8px">${[['', '🇷🇺 Обычная (менеджер)'], ['warehouse', '📦 仓库 · Склад'], ['fin', '🧾 财务 · Лю (финансы, таможня, документы)'],
+          ['purchase', '🛒 采购 · Ли / Вера (закуп)'], ['gz', '🪴 盆栽 · Гуанчжоу (горшечка)']].map(([k, l]) =>
+          `<button class="btn btn-secondary" style="text-align:left" onclick="closeModal();AmmikTour.start(true,'${k}')">${l}</button>`).join('')}</div>
+        <div style="font-size:12px;color:var(--mid);margin-top:10px">Сотрудники видят свою экскурсию автоматически по настройкам аккаунта. Здесь можно посмотреть любую — шаги, которых нет в админском меню, просто покажутся без подсветки.</div>
+        <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Закрыть</button></div>`;
+      openModal();
+    },
+    start(force, which) {
       if (typeof currentUser === 'undefined' || !currentUser || box) return;
+      if (force && which === undefined && currentUser.is_admin) { AmmikTour.pick(); return; }
       if (!force) { try { if (localStorage.getItem(key())) return; } catch (e) { return; } }
-      steps = STEPS[currentUser.role] || STEPS.client;
-      i = 0;
+      const tid = which !== undefined ? (which || null) : tourId();
+      cn = !!tid;
+      steps = (tid && CN_STEPS[tid]) || STEPS[currentUser.role] || STEPS.client;
+      // шаги, у которых на экране нет цели (например, переключателя режима), пропускаем
+      steps = steps.filter(st => !st.s || !/mode-switch/.test(st.s) || document.querySelector(st.s));
+      i = 0; ranFor = -1;
       box = document.createElement('div');
       box.id = 'tour';
       box.className = 'on';
@@ -23368,8 +23509,8 @@ function exportPricePDF() {
             <div><div class="tour-who">Аммик · AMMA FLOWERS</div><div class="tour-title"></div></div></div>
           <div class="tour-text"></div>
           <div class="tour-dots"></div>
-          <div class="tour-foot"><button class="tour-skip" type="button">Пропустить</button><span style="flex:1"></span>
-            <button class="tour-btn back" type="button">Назад</button><button class="tour-btn next" type="button">Дальше</button></div></div>`;
+          <div class="tour-foot"><button class="tour-skip" type="button">${cn ? '跳过 / Пропустить' : 'Пропустить'}</button><span style="flex:1"></span>
+            <button class="tour-btn back" type="button">${cn ? '上一步 / Назад' : 'Назад'}</button><button class="tour-btn next" type="button">Дальше</button></div></div>`;
       document.body.appendChild(box);
       box.querySelector('.tour-skip').onclick = () => close(true);
       box.querySelector('.back').onclick = () => go(-1);
@@ -23394,6 +23535,12 @@ function exportPricePDF() {
   if (typeof _initApp === 'function') window.initApp = async function () {
     const r = await _initApp.apply(this, arguments);
     hello(); splitTabs();
+    // сотрудникам — кнопка «Отзыв» под экскурсией в меню
+    if (['manager', 'warehouse', 'gz'].includes(currentUser?.role) && !currentUser?.is_admin && !document.getElementById('side-feedback')) {
+      document.querySelector('#side .side-foot')?.insertAdjacentHTML('beforeend',
+        `<button id="side-feedback" class="side-tour" type="button" style="margin-top:6px" onclick="AmmikTour.feedback()"><span style="font-size:20px;width:34px;text-align:center">📝</span>
+          <span>意见反馈 / Отзыв<small>问题和建议 → Даша</small></span></button>`);
+    }
     setTimeout(() => AmmikTour.start(false), 900);
     return r;
   };
