@@ -10814,7 +10814,7 @@ function renderClients() {
         <td class="L"><b>${c.company_name||'—'}</b>${c.purchase_tracking?' <span title="Видит журнал закупа" style="font-size:10px">🛒</span>':''}${c.tg_chat_id?' <span title="Telegram подключён" style="font-size:10px">📲</span>':''}${c.calc_access?' <span title="Доступ к калькулятору" style="font-size:10px">🧮</span>':''}</td>
         <td class="L" style="color:var(--mid);font-family:monospace">${escHtml(c.login)}${c.blocked ? ' <span title="Доступ закрыт">🔒</span>' : ''}${c.email ? `<div style="font-size:10px;font-family:inherit">${escHtml(c.email)}</div>` : ''}</td>
         <td style="font-size:11px;color:var(--mid)">${c.contact||'—'}</td>
-        <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?((c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':c.client_scope==='ops'?'🔑 Менеджер (операции)':c.client_scope==='fin'?'🧾 Финансы / 财务':'👑 Менеджер / 经理')+(c.also_warehouse?' + 🏭 склад':'')+(c.docs_access?' + 📁':'')):c.role==='receiver'?'📷 Приёмка' + (c.box_site ? ' · ' + escHtml(c.box_site) : ''):c.role==='warehouse'?'🏭 Склад / 仓库':c.role==='gz'?'🪴 Гуанчжоу / 广州':c.role==='member'?'👥 Сотрудник: ' + escHtml(allClients.find(x => String(x.id) === String(c.account_of))?.company_name || '?'):'👤 Клиент / 客户'}</span></td>
+        <td><span class="badge ${c.role==='manager'?'badge-invoiced':c.role==='warehouse'?'badge-sent':'badge-confirmed'}">${c.role==='manager'?((c.is_admin?'👑 Админ / 管理员':c.client_scope==='own'?'💼 Клиентский менеджер':c.client_scope==='ops'?'🔑 Менеджер (операции)':c.client_scope==='fin'?'🧾 Финансы / 财务':'👑 Менеджер / 经理')+(c.also_warehouse?' + 🏭 склад':'')+(c.docs_access?' + 📁':'')+(c.purchase_access?' + 🛒 закуп':'')):c.role==='receiver'?'📷 Приёмка' + (c.box_site ? ' · ' + escHtml(c.box_site) : ''):c.role==='warehouse'?'🏭 Склад / 仓库':c.role==='gz'?'🪴 Гуанчжоу / 广州':c.role==='member'?'👥 Сотрудник: ' + escHtml(allClients.find(x => String(x.id) === String(c.account_of))?.company_name || '?'):'👤 Клиент / 客户'}</span></td>
         <td style="font-size:11px;color:var(--mid)">${c.role==='client' ? (escHtml(mgrName(c.manager_id)) || '<span style="color:var(--light)">— не закреплён</span>') : ''}</td>
         <td><button class="btn btn-secondary btn-sm" onclick="showEditClientModal('${c.id}')">${isAdminUser() ? '✏️ Изменить / 修改' : '👁 Открыть / 查看'}</button></td>
       </tr>`).join('')}
@@ -10935,6 +10935,10 @@ function showEditClientModal(id) {
         <option value="own" ${user.client_scope==='own'?'selected':''}>💼 Клиентский — только закреплённые клиенты</option>
         <option value="fin" ${user.client_scope==='fin'?'selected':''}>🧾 Финансы / 财务 — отгрузки, документы, инвойсы, накладные; интерфейс на китайском</option>
       </select>
+      ${'purchase_access' in user ? `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;margin-top:8px">
+        <input type="checkbox" id="ec-purch-access" ${user.purchase_access?'checked':''} style="width:15px;height:15px">
+        🛒 Заполнение закупа / 采购 — журнал закупа в заказах и закуп по машине (поставщики, цены)</label>`
+      : `<div style="font-size:11px;color:var(--mid);margin-top:6px">🛒 Доступ к закупу: выполните SQL <code>alter table users add column if not exists purchase_access boolean default false;</code></div>`}
       ${'docs_access' in user ? `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;margin-top:8px">
         <input type="checkbox" id="ec-docs" ${user.docs_access?'checked':''} style="width:15px;height:15px">
         📁 Доступ к документам отгрузок / 车次单据 (таможня, сертификаты)</label>`
@@ -11001,6 +11005,8 @@ async function saveClient(id) {
   if (awEl) updates.also_warehouse = awEl.checked;
   const dcEl = document.getElementById('ec-docs');
   if (dcEl) updates.docs_access = dcEl.checked;
+  const paEl = document.getElementById('ec-purch-access');
+  if (paEl) updates.purchase_access = paEl.checked;
   const baEl = document.getElementById('ec-box-accept');
   if (baEl) updates.box_accept = baEl.checked;
   const bsEl = document.getElementById('ec-box-site');
@@ -16317,7 +16323,7 @@ function shipmentDetailHTML(u) {
         ${isMgrLocal && x.p.status === 'forming' ? `<button class="shp-x" title="Открепить / 移除" onclick="detachOrderFromShipment('${r.o.id}', ${x.p.id})">×</button>` : ''}
       </div>`).join('') || `<div class="shp-empty">Заказов пока нет</div>`;
     const btns = `${isMgrLocal && x.p.status === 'forming' ? `<button class="btn btn-primary btn-sm" onclick="showAttachOrdersModal(${x.p.id})">+ Заказы</button>` : ''}
-      ${isMgrLocal && !isScopedMgr() ? `<button class="btn btn-gold btn-sm" title="Закуп под этот ${u.trip ? 'холодильник' : 'рейс'}" onclick="openPurchase(${x.p.id})">🛒</button>` : ''}
+      ${isMgrLocal && (!isScopedMgr() || currentUser?.purchase_access) ? `<button class="btn btn-gold btn-sm" title="Закуп под этот ${u.trip ? 'холодильник' : 'рейс'}" onclick="openPurchase(${x.p.id})">🛒</button>` : ''}
       ${x.p._docCount ? `<button class="btn btn-secondary btn-sm" title="Акты приёмки" onclick="showReceivingDocsModal(${x.p.id})">📄 ${x.p._docCount}</button>` : ''}`;
     return `<div class="shp-part"><div class="shp-side-h"><span>${u.trip ? `<i class="shp-dot" style="background:${SHP_PART_LINE[x.i]}"></i>${escHtml(x.label)}` : 'Заказы в машине'}</span><span class="shp-part-b">${btns}</span></div>${rows}</div>`;
   };
@@ -17183,7 +17189,8 @@ let _op = { order: null, items: [], lots: [], groups: [], sups: [], filter: 'all
 // Доступ к журналу закупа: админ (менеджер с is_admin), склад, и клиент с включённым purchase_tracking (только просмотр).
 // Остальные менеджеры журнал не видят.
 function opStaffAccess() {
-  return (currentUser?.role === 'manager' && !!currentUser?.is_admin) || currentUser?.role === 'warehouse';
+  return (currentUser?.role === 'manager' && !!currentUser?.is_admin) || currentUser?.role === 'warehouse'
+    || (currentUser?.role === 'manager' && !!currentUser?.purchase_access);   // users.purchase_access — галочка «Заполнение закупа» у сотрудника
 }
 
 function opToday() { return new Date().toLocaleDateString('sv-SE'); } // YYYY-MM-DD, локальная дата
