@@ -2354,7 +2354,7 @@ const BX_ST = {
   defect:   { ru: 'Брак',      cn: '次品',   cls: 'bx-bad' },
   short:    { ru: 'Недостача', cn: '短缺',   cls: 'bx-warn' },
 };
-let _bx = { order: null, items: [], boxes: [], lots: [], el: null, sel: new Set() };
+let _bx = { order: null, items: [], boxes: [], lots: [], plan: [], el: null, sel: new Set() };
 let _bxs = { cur: null, list: [], ship: '', cam: null, camTimer: null, form: null, files: [], busy: false };
 
 // Персонал коробок: админ, склад, менеджер с совмещением склада (Юра — в любом режиме)
@@ -2395,7 +2395,7 @@ async function bxReload() {
   if (!el || !_bx.order) return;
   const oid = _bx.order.id;
   const [bRes, lRes] = await Promise.all([
-    sb.from('boxes').select('*, box_lots(*)').eq('order_id', oid).order('box_no', { ascending: true }),
+    sb.from('boxes').select('*, box_lots(*), box_defects(*)').eq('order_id', oid).order('box_no', { ascending: true }),
     opFetchLots(oid)]);
   if (bRes.error) {
     el.innerHTML = `<div class="card bx-card" style="border-left:4px solid var(--gold);font-size:12px">📦 <b>Коробки и QR</b> — ${bxMissing(bRes.error) ? BX_SQL_HINT : '❌ ' + escHtml(bRes.error.message)}</div>`;
@@ -2404,6 +2404,11 @@ async function bxReload() {
   if (!(_op.sups || []).length) await opLoadSups();
   _bx.boxes = (bRes.data || []).map(b => ({ ...b, status: b.status || 'packed', box_lots: (b.box_lots || []).sort((x, y) => x.id - y.id) }));
   _bx.lots = (lRes.lots || []).filter(l => !(OP_STATUS[l.status] || {}).rej);
+  _bx.plan = await bxPlanRows(_bx.order);
+  if (_bx.boxes.length && await bxAutoSync(_bx.boxes, _bx.lots, _bx.plan)) {
+    const r2 = await sb.from('boxes').select('*, box_lots(*), box_defects(*)').eq('order_id', oid).order('box_no', { ascending: true });
+    if (!r2.error) _bx.boxes = (r2.data || []).map(b => ({ ...b, status: b.status || 'packed', box_lots: (b.box_lots || []).sort((x, y) => x.id - y.id) }));
+  }
   bxRender();
 }
 
@@ -2427,15 +2432,18 @@ function bxRender() {
   if (!el) return;
   const plan = bxPlanCount(), boxes = _bx.boxes;
   const noSup = boxes.filter(b => !b.box_lots.length || b.box_lots.some(l => !l.supplier_id)).length;
+  const fromPlan = boxes.filter(b => b.box_lots.length && b.box_lots.every(l => l.supplier_id && !l.lot_id)).length;
+  const lotPrice = id => { const l = _bx.lots.find(x => String(x.id) === String(id)); return l && l.price_per_bunch != null && l.price_per_bunch !== ''; };
+  const noPrice = boxes.filter(b => b.box_lots.some(l => l.supplier_id) && !b.box_lots.some(l => l.lot_id && lotPrice(l.lot_id))).length;
   const accepted = boxes.filter(b => b.status !== 'packed').length;
   const mismatch = boxes.filter(b => b.box_lots.length > 1 && b.box_lots.reduce((s, l) => s + bxNum(l.bunches), 0) !== bxNum(b.bunches)).length;
   const head = `<div class="bx-head"><div><b style="font-size:14px">📦 Коробки и QR / 箱码</b>
-      <div style="font-size:11px;color:var(--mid)">Каждая коробка получает номер и QR. Поставщик берётся из журнала закупа; при приёмке брак попадает к этому поставщику.</div></div></div>`;
+      <div style="font-size:11px;color:var(--mid)">Каждая коробка получает номер и QR. Поставщик берётся из журнала закупа, а пока его нет — из закупа по машине. Цены можно внести позже: коробки, даже уже в пути, привяжутся к журналу сами. / 没有价格也可以生成箱码，录入采购后自动更新</div></div></div>`;
   if (!boxes.length) {
     el.innerHTML = `<div class="card bx-card">${head}
       ${plan ? `<p style="font-size:13px;margin:10px 0">По заказу <b>${plan}</b> коробок. Коробки ещё не созданы.</p>
       <button class="btn btn-primary" onclick="bxCreate()">📦 Создать коробки и QR / 生成箱码</button>
-      <span style="font-size:11px;color:var(--mid);margin-left:8px">${_bx.lots.length ? 'Поставщики подставятся из журнала закупа' : 'Журнал закупа по заказу пуст — поставщика можно будет выбрать вручную'}</span>`
+      <span style="font-size:11px;color:var(--mid);margin-left:8px">${_bx.lots.length ? 'Поставщики подставятся из журнала закупа' : (_bx.plan || []).length ? 'Журнал закупа пуст — поставщики подставятся из закупа по машине, цены дотянутся позже' : 'Закупа пока нет — поставщики подставятся сами, когда его внесут'}</span>`
       : '<p style="font-size:12px;color:var(--mid)">В заказе нет позиций с количеством коробок / 订单中没有箱数</p>'}</div>`;
     return;
   }
@@ -2451,7 +2459,8 @@ function bxRender() {
       <td style="font-weight:700">${b.bunches ?? '—'}</td>
       <td class="L" style="min-width:240px">${lines.map((l, li) => `<div class="bx-line">${bxLineSelect(b, li, l)}${multi ? `<input class="inp bx-q" type="number" min="0" value="${bxNum(l.bunches)}" onchange="bxSetQty(${b.id},${li},this.value)" ${b.status !== 'packed' ? 'disabled' : ''} title="банчей от этого поставщика"><button class="btn btn-secondary btn-sm" onclick="bxDelLine(${b.id},${li})" title="Убрать" ${b.status !== 'packed' ? 'disabled' : ''}>×</button>` : ''}</div>`).join('')}
         ${b.status === 'packed' && b.box_lots.length ? `<button class="bx-link" onclick="bxAddLine(${b.id})">+ ещё поставщик / 加供应商</button>` : ''}
-        ${multi && sum !== bxNum(b.bunches) ? `<div style="font-size:10px;color:#b45309">Сумма ${sum} из ${b.bunches} банч.</div>` : ''}</td>
+        ${multi && sum !== bxNum(b.bunches) ? `<div style="font-size:10px;color:#b45309">Сумма ${sum} из ${b.bunches} банч.</div>` : ''}
+        ${b.box_lots.some(l => l.supplier_id && !l.lot_id) && bxPlanForBox(_bx.plan || [], b).some(r => b.box_lots.some(l => String(l.supplier_id) === String(r.supplier_id))) ? '<div style="font-size:10px;color:var(--mid)">🚚 из закупа по машине · 按车采购</div>' : ''}</td>
       <td>${bxBadge(b.status)}${b.accepted_site ? `<div style="font-size:10px;color:var(--mid)">${escHtml(b.accepted_site)}</div>` : ''}</td>
       <td><button class="btn btn-secondary btn-sm" onclick="bxPrint([${b.id}])">🏷</button></td></tr>`;
   }).join('');
@@ -2459,6 +2468,8 @@ function bxRender() {
     <div class="bx-stats">
       <span>Коробок: <b>${boxes.length}</b>${plan && plan !== boxes.length ? ` <span style="color:#b45309">(по заказу ${plan})</span>` : ''}</span>
       <span>Без поставщика: <b style="color:${noSup ? '#b45309' : 'inherit'}">${noSup}</b></span>
+      ${fromPlan ? `<span title="Поставщик взят из закупа по машине; когда партию внесут в журнал, коробка привяжется к ней сама">🚚 Из закупа по машине: <b>${fromPlan}</b></span>` : ''}
+      ${noPrice ? `<span class="wh-money" title="Цена появится автоматически, когда её внесут в журнал закупа">Цена ещё не внесена: <b>${noPrice}</b></span>` : ''}
       <span>Принято: <b>${accepted}</b></span>
       ${mismatch ? `<span style="color:#b45309">Проверьте количество: ${mismatch}</span>` : ''}
     </div>
@@ -2474,9 +2485,9 @@ function bxRender() {
 function bxToggle(id, on) { if (on) _bx.sel.add(id); else _bx.sel.delete(id); bxRender(); }
 
 // Распределение коробок по партиям журнала: один поставщик — всем; несколько — по очереди закупки
-function bxAllocate(boxes) {
+function bxAllocate(boxes, lots) {
   const byKey = {};
-  _bx.lots.forEach(l => { (byKey[l.item_key] = byKey[l.item_key] || []).push(l); });
+  (lots || _bx.lots).forEach(l => { (byKey[l.item_key] = byKey[l.item_key] || []).push(l); });
   Object.values(byKey).forEach(ls => ls.sort((a, b) => String(a.purchase_date || '').localeCompare(String(b.purchase_date || '')) || (a.id > b.id ? 1 : -1)));
   const out = {}, groups = {};
   boxes.forEach(b => { (groups[b.item_key] = groups[b.item_key] || []).push(b); });
@@ -2501,6 +2512,99 @@ function bxAllocate(boxes) {
     });
   });
   return out;
+}
+
+// ═════ Автопривязка поставщиков и цен к коробкам ═════
+// Источники по порядку: журнал закупа заказа (order_purchases; цена может быть ещё пустой) →
+// закуп по машине (purchases: поставщик по позиции). Пока журнала нет, коробке ставится поставщик
+// из закупа по машине. Когда в журнал вносят партию, коробка — даже уже в пути — сама привязывается
+// к ней, и цена подтягивается в отчёт о браке, как только её заполнят.
+function bxNameKey(v) { return String(v || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+function bxSupId(v) { return v == null || v === '' ? null : (isNaN(+v) ? v : +v); }
+async function bxPlanRows(order) {
+  let sid = order.shipment_id ?? order.shipment?.id;
+  if (sid == null) { const { data } = await sb.from('orders').select('shipment_id').eq('id', order.id).maybeSingle(); sid = data?.shipment_id; }
+  if (sid == null) return [];
+  const { data, error } = await sb.from('purchases').select('item_ru, item_cn, supplier_id, buy_price, qty_bunches').eq('shipment_id', sid);
+  return error ? [] : (data || []).filter(r => r.supplier_id);
+}
+function bxPlanForBox(plan, b) {
+  const ru = bxNameKey(b.item_ru), cn = bxNameKey(b.item_cn);
+  let rows = plan.filter(r => bxNameKey(r.item_ru) === ru);
+  if (!rows.length && cn) rows = plan.filter(r => bxNameKey(r.item_cn) === cn);
+  return rows;
+}
+// Коробки позиции делятся между поставщиками закупа по машине пропорционально их банчам
+function bxAllocatePlan(boxes, plan) {
+  const out = {}, groups = {};
+  boxes.forEach(b => { (groups[b.item_key] = groups[b.item_key] || []).push(b); });
+  Object.values(groups).forEach(bs => {
+    const rows = bxPlanForBox(plan, bs[0]);
+    if (!rows.length) return;
+    const bySup = {};
+    rows.forEach(r => { bySup[r.supplier_id] = (bySup[r.supplier_id] || 0) + Math.max(bxNum(r.qty_bunches), 0); });
+    const sups = Object.entries(bySup), tot = sups.reduce((a, [, q]) => a + q, 0);
+    bs.sort((a, b) => a.box_no - b.box_no);
+    bs.forEach((b, k) => {
+      let pick = sups[0][0];
+      if (sups.length > 1 && tot > 0) { const pos = (k + 0.5) / bs.length * tot; let acc = 0; for (const [sp, q] of sups) { acc += q; if (pos <= acc) { pick = sp; break; } } }
+      out[b.id] = [{ lot_id: null, supplier_id: bxSupId(pick), bunches: b.bunches }];
+    });
+  });
+  return out;
+}
+// Сверяет коробки с журналом и закупом по машине; возвращает число изменённых коробок
+async function bxAutoSync(boxes, lots, plan) {
+  const lotsBy = {};
+  lots.forEach(l => { (lotsBy[l.item_key] = lotsBy[l.item_key] || []).push(l); });
+  const changes = {}, needLots = [], needPlan = [];
+  boxes.forEach(b => {
+    const lines = b.box_lots || [], il = lotsBy[b.item_key] || [];
+    if (!lines.some(l => l.supplier_id)) {               // поставщика нет совсем
+      if (il.length) needLots.push(b); else if (plan.length) needPlan.push(b);
+      return;
+    }
+    const planSup = new Set(bxPlanForBox(plan, b).map(r => String(r.supplier_id)));
+    let touched = false, realloc = false;
+    const nl = lines.map(l => {
+      if (l.lot_id || !l.supplier_id) return { ...l };
+      const m = il.find(x => String(x.supplier_id) === String(l.supplier_id));
+      if (m) { touched = true; return { ...l, lot_id: m.id }; }   // тот же поставщик появился в журнале → партия и цена
+      // поставщик был из закупа по машине, а в журнале купили у другого — пока коробка в пути, переназначаем
+      if (il.length && (b.status || 'packed') === 'packed' && planSup.has(String(l.supplier_id))) realloc = true;
+      return { ...l };
+    });
+    if (realloc) needLots.push(b); else if (touched) changes[b.id] = nl;
+  });
+  if (needLots.length) Object.assign(changes, bxAllocate(needLots, lots));
+  if (needPlan.length) Object.assign(changes, bxAllocatePlan(needPlan, plan));
+  const ids = Object.keys(changes);
+  if (ids.length && await bxWriteLots(changes)) return 0;
+  // брак, записанный без поставщика или партии, тоже дозаполняем
+  for (const b of boxes) {
+    const lines = changes[b.id] || b.box_lots || [];
+    for (const d of (b.box_defects || [])) {
+      let upd = null;
+      const sups = [...new Set(lines.filter(l => l.supplier_id).map(l => String(l.supplier_id)))];
+      if (!d.supplier_id && sups.length === 1) { const l = lines.find(x => x.supplier_id); upd = { supplier_id: l.supplier_id, lot_id: l.lot_id || null }; }
+      else if (d.supplier_id && !d.lot_id) { const l = lines.find(x => String(x.supplier_id) === String(d.supplier_id) && x.lot_id); if (l) upd = { lot_id: l.lot_id }; }
+      if (upd) { try { await sb.from('box_defects').update(upd).eq('id', d.id); } catch (e) {} }
+    }
+  }
+  return ids.length;
+}
+// Синхронизация коробок заказов без открытия экрана (после записи в журнал или закупа по машине)
+async function bxSyncOrders(orderIds) {
+  let n = 0;
+  for (const oid of [...new Set(orderIds)].filter(Boolean)) {
+    try {
+      const [bRes, lRes] = await Promise.all([sb.from('boxes').select('*, box_lots(*), box_defects(*)').eq('order_id', oid), opFetchLots(oid)]);
+      if (bRes.error || !(bRes.data || []).length) continue;
+      const lots = (lRes.lots || []).filter(l => !(OP_STATUS[l.status] || {}).rej);
+      n += await bxAutoSync(bRes.data, lots, await bxPlanRows({ id: oid }));
+    } catch (e) {}
+  }
+  return n;
 }
 
 async function bxWriteLots(map) {
@@ -2536,7 +2640,11 @@ async function bxCreate() {
     if (error) { toast('❌ ' + (bxMissing(error) ? BX_SQL_HINT : /duplicate|unique/i.test(error.message) ? 'Коробки с такими номерами уже есть — обновите страницу' : error.message)); await bxReload(); return; }
     made.push(...(data || []));
   }
-  const err = await bxWriteLots(bxAllocate(made));
+  const shipPlan = await bxPlanRows(o);
+  const alloc = bxAllocate(made);
+  const rest = made.filter(b => !alloc[b.id]);
+  if (rest.length && shipPlan.length) Object.assign(alloc, bxAllocatePlan(rest, shipPlan));
+  const err = await bxWriteLots(alloc);
   if (err) toast('⚠️ Коробки созданы, но поставщики не привязаны: ' + err.message);
   else toast(`✅ Создано коробок: ${made.length}`);
   logActivity?.('create', 'boxes', o.id, o.order_number, `QR-коробки: ${made.length}`);
@@ -2929,17 +3037,36 @@ async function bxQualityRender(el) {
   if (!el) return;
   el.innerHTML = '<div class="empty">Загрузка… / 加载中…</div>';
   const since = new Date(Date.now() - _bxq.days * 864e5).toISOString();
-  const bRes = await sb.from('boxes').select('id, code, order_id, item_ru, item_cn, bunches, status, accepted_at, accepted_site, created_at, order:orders(order_number, shipment:shipments(ship_number, ship_date)), box_lots(*), box_defects(*)')
+  const bRes = await sb.from('boxes').select('id, code, order_id, item_key, item_ru, item_cn, bunches, status, accepted_at, accepted_site, created_at, order:orders(order_number, shipment_id, shipment:shipments(ship_number, ship_date)), box_lots(*), box_defects(*)')
     .gte('created_at', since).order('created_at', { ascending: false }).limit(5000);
   if (bRes.error) { el.innerHTML = `<div class="card">${bxMissing(bRes.error) ? BX_SQL_HINT : '❌ ' + escHtml(bRes.error.message)}</div>`; return; }
   if (!(_op.sups || []).length) await opLoadSups();
   const boxes = bRes.data || [];
-  const lotIds = [...new Set(boxes.flatMap(b => [...(b.box_lots || []), ...(b.box_defects || [])].map(l => l.lot_id)).filter(Boolean))];
-  const price = {};
-  for (let i = 0; i < lotIds.length; i += 300) {
-    const { data } = await sb.from('order_purchases').select('id, price_per_bunch').in('id', lotIds.slice(i, i + 300));
-    (data || []).forEach(l => { price[String(l.id)] = bxNum(l.price_per_bunch); });
+  // Цены читаются «живыми»: внесли цену в журнал или в закуп по машине позже — отчёт сразу её покажет
+  const hasP = v => v != null && v !== '';
+  const orderIds = [...new Set(boxes.map(b => b.order_id).filter(Boolean))];
+  const lotById = {}, lotByKey = {};
+  for (let i = 0; i < orderIds.length; i += 200) {
+    const { data } = await sb.from('order_purchases').select('id, order_id, item_key, supplier_id, price_per_bunch, status').in('order_id', orderIds.slice(i, i + 200));
+    (data || []).forEach(l => {
+      lotById[String(l.id)] = l;
+      if (hasP(l.price_per_bunch) && !(OP_STATUS[l.status] || {}).rej) { const k = l.order_id + '|' + l.item_key + '|' + l.supplier_id; if (!(k in lotByKey)) lotByKey[k] = bxNum(l.price_per_bunch); }
+    });
   }
+  const shipIds = [...new Set(boxes.map(b => b.order?.shipment_id).filter(v => v != null))];
+  const planP = {};
+  for (let i = 0; i < shipIds.length; i += 200) {
+    const { data } = await sb.from('purchases').select('shipment_id, item_ru, supplier_id, buy_price').in('shipment_id', shipIds.slice(i, i + 200));
+    (data || []).forEach(r => { if (hasP(r.buy_price)) { const k = r.shipment_id + '|' + bxNameKey(r.item_ru) + '|' + r.supplier_id; if (!(k in planP)) planP[k] = bxNum(r.buy_price); } });
+  }
+  const priceOf = (b, supId, lotId) => {
+    const l = lotId != null ? lotById[String(lotId)] : null;
+    if (l && hasP(l.price_per_bunch)) return bxNum(l.price_per_bunch);
+    const k = b.order_id + '|' + b.item_key + '|' + supId;
+    if (k in lotByKey) return lotByKey[k];
+    const pk = b.order?.shipment_id + '|' + bxNameKey(b.item_ru) + '|' + supId;
+    return pk in planP ? planP[pk] : null;
+  };
   const ships = [...new Map(boxes.filter(b => b.order?.shipment?.ship_number).map(b => [b.order.shipment.ship_number, b.order.shipment.ship_date])).entries()]
     .sort((a, b) => String(b[1] || '').localeCompare(String(a[1] || '')));
   const sel = boxes.filter(b => !_bxq.ship || b.order?.shipment?.ship_number === _bxq.ship);
@@ -2950,7 +3077,8 @@ async function bxQualityRender(el) {
     (b.box_lots || []).forEach(l => { S(String(l.supplier_id || '')).rec += bxNum(l.bunches ?? b.bunches); });
     if (!(b.box_lots || []).length) S('').rec += bxNum(b.bunches);
     (b.box_defects || []).forEach(d => {
-      const lotPrice = d.lot_id ? price[String(d.lot_id)] : (b.box_lots || []).find(l => String(l.supplier_id) === String(d.supplier_id) && l.lot_id) ? price[String((b.box_lots || []).find(l => String(l.supplier_id) === String(d.supplier_id)).lot_id)] : null;
+      const line = (b.box_lots || []).find(l => String(l.supplier_id) === String(d.supplier_id));
+      const lotPrice = priceOf(b, d.supplier_id, d.lot_id || line?.lot_id);
       const s = S(String(d.supplier_id || ''));
       if (d.kind === 'short') s.short += bxNum(d.qty); else s.def += bxNum(d.qty);
       s.sum += bxNum(d.qty) * (lotPrice || 0);
@@ -2967,7 +3095,7 @@ async function bxQualityRender(el) {
       <label>Период<select id="bxq-days">${[30, 90, 180, 365].map(d => `<option value="${d}" ${_bxq.days === d ? 'selected' : ''}>${d} дней</option>`).join('')}</select></label>
       <label>Отгрузка<select id="bxq-ship"><option value="">Все отгрузки</option>${ships.map(([n, d]) => `<option value="${escHtml(n)}" ${_bxq.ship === n ? 'selected' : ''}>${escHtml(n)}${d ? ' · ' + escHtml(d) : ''}</option>`).join('')}</select></label>
       <button class="btn" id="bxq-x">Excel</button></div>
-      <p class="hint">Данные из приёмки по QR в Москве и у Диантуса. Поставщик и цена берутся из привязки коробки к журналу закупа.</p></div>
+      <p class="hint">Данные из приёмки по QR в Москве и у Диантуса. Поставщик и цена — из журнала закупа, а пока его нет — из закупа по машине; цены, внесённые позже, подтягиваются сами.</p></div>
     <div class="kpis">
       <div class="kpi"><div class="v">${sel.length}</div><div class="l">коробок с QR</div></div>
       <div class="kpi"><div class="v" style="color:var(--good)">${ok}</div><div class="l">принято без замечаний</div></div>
@@ -17075,7 +17203,9 @@ async function savePurchase() {
   logActivity('purchase_save', 'shipment', _purchShipment.id, _purchShipment.ship_number,
     'Закуп сохранён: ' + rows.length + ' поз.');
   toast('✅ Закуп сохранён / 采购已保存');
-  openPurchase(_purchShipment.id);
+  const shpId = _purchShipment.id;
+  openPurchase(shpId);
+  sb.from('orders').select('id').eq('shipment_id', shpId).then(({ data }) => { if (data?.length) bxSyncOrders(data.map(o => o.id)); });
 }
 
 // Excel «Заказ поставщикам» — формат компании: группировка по поставщику
@@ -17370,6 +17500,10 @@ async function opReload() {
   if (error) { toast('❌ ' + error.message); return; }
   _op.lots = lots;
   if (_op.mode === 'manager') opRenderManager(); else opRenderClient();
+  if (_op.mode === 'manager') {
+    if (_bx.order && String(_bx.order.id) === String(_op.order.id) && document.getElementById(_bx.el)) bxReload();
+    else bxSyncOrders([_op.order.id]);
+  }
 }
 
 function opFilterBtn(f, label, n) {
