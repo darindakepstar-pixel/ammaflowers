@@ -24243,5 +24243,359 @@ async function notifyGz(title, body) {
   } catch (e) {}
 })();
 </script>
+<!-- ═══════════ АММА · СКЛАД МСК (вставить целиком перед </body>) · Дария Кромберг ═══════════
+     Нужна миграция sql_moscow_stock.sql. Работает с любой версией системы: сам добавляет
+     вкладку «Склад МСК» и кнопку «На остаток» в карточку коробки на приёмке. -->
+<style>
+.msk-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:2px solid var(--border,#e5e7eb);margin-bottom:14px}
+.msk-alert{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#fff7e6;border:1px solid #f5d38a;color:#7a5200;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:13px}
+.msk-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.msk-chip{border:1px solid var(--border,#e5e7eb);background:#fff;border-radius:999px;padding:5px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;color:inherit}
+.msk-chip.on{background:#1F4030;border-color:#1F4030;color:#fff}
+.msk-chip b{font-weight:700;margin-left:4px}
+.msk-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.msk-tbl th{text-align:left;font-size:11.5px;font-weight:700;color:var(--mid,#6b7280);padding:8px;border-bottom:1px solid var(--border,#e5e7eb);white-space:nowrap}
+.msk-tbl td{padding:8px;border-bottom:1px solid var(--border,#eee);vertical-align:middle}
+.msk-tbl th.num{text-align:right}
+.msk-tbl td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.msk-tbl tr:hover td{background:#fafaf8}
+.msk-wrapt{overflow-x:auto}
+.msk-age{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:700;background:#eef4f0;color:#2F6B4F;white-space:nowrap}
+.msk-age.w{background:#fff3d6;color:#8a5a00}.msk-age.r{background:#fde2e1;color:#b42318}
+.msk-act{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.msk-act .inp{padding:5px 8px;font-size:12.5px;min-height:0;height:32px}
+.msk-act .btn{padding:5px 10px;font-size:12.5px;min-height:0;height:32px}
+.msk-q{width:72px}
+.msk-sub{font-size:11.5px;color:var(--mid,#6b7280)}
+.msk-empty{padding:28px;text-align:center;color:var(--mid,#6b7280);font-size:14px}
+.msk-box{margin-top:12px;padding:12px;border:1px dashed #9FC2AA;border-radius:12px;background:#f3f8f5;display:flex;flex-direction:column;gap:8px}
+.msk-box .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.msk-ok{color:#2F6B4F;font-weight:700}
+.msk-err{color:#b42318}
+.msk-kind{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:#f1f1ef;white-space:nowrap}
+.msk-kind.receive,.msk-kind.adjust_plus,.msk-kind.grow_in{background:#e4efe8;color:#1F4030}
+.msk-kind.sale{background:#e8eefc;color:#1d3f8f}
+.msk-kind.writeoff,.msk-kind.adjust_minus{background:#fde2e1;color:#b42318}
+</style>
+<script>
+(function () {
+  'use strict';
+  const M = { role: null, point: null, locs: [], stock: [], tab: 'dist', loc: '', q: '', count: null, auto: true, done: new Set() };
+  try { M.auto = localStorage.getItem('msk-auto') !== '0'; } catch (e) {}
+  const esc = s => (typeof escHtml === 'function' ? escHtml(s) : String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
+  const say = m => (typeof toast === 'function' ? toast(m) : console.log(m));
+  const num = v => { const n = Number(v); return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ''); };
+  const UNIT = { stem: 'ст.', bunch: 'банч.', pot: 'горш.', box: 'кор.', pcs: 'шт', kg: 'кг' };
+  const KIND = { receive: 'Приход', grow_in: 'Своё', transfer: 'Перемещение', sale: 'Продажа', assembly: 'В букет', writeoff: 'Списание', adjust_plus: 'Излишек', adjust_minus: 'Недостача', return: 'Возврат' };
+  const REASONS = [['Завял', '枯萎'], ['Сломан', '折断'], ['Гниль, плесень', '腐烂'], ['Вредители', '虫害'], ['Пересорт', '错货'], ['Подмёрз', '冻伤'], ['Истёк срок', '过期'], ['Другое', '其他']];
+  const err = e => (e && (e.message || e.error_description || e.hint)) || String(e);
+
+  // ── роль и точка текущего пользователя ──
+  async function whoami() {
+    if (typeof sb === 'undefined' || typeof currentUser === 'undefined' || !currentUser) return null;
+    const { data: role, error } = await sb.rpc('ms_role');
+    if (error) { if (!/ms_role/.test(error.message)) console.warn('msk', error); return null; }
+    M.role = role; M.point = currentUser.point_id || null;
+    return role;
+  }
+  const canSee = () => M.role && (['admin', 'office'].includes(M.role) || M.point);
+
+  // ── вкладка в меню и страница ──
+  function ensureNav() {
+    const nav = document.getElementById('nav-tabs');
+    if (!nav || !canSee() || nav.querySelector('[data-msk-tab]')) return;
+    const html = `<div class="nav-tab" data-msk-tab onclick="showPage('msk',this)">🏬 Склад МСК / 莫斯科仓库</div>`;
+    const notif = document.getElementById('tab-notif');
+    notif ? notif.insertAdjacentHTML('beforebegin', html) : nav.insertAdjacentHTML('beforeend', html);
+  }
+  function ensurePage() {
+    if (document.getElementById('page-msk')) return;
+    const ref = document.getElementById('page-warehouse') || document.querySelector('.page');
+    if (!ref) return;
+    ref.insertAdjacentHTML('afterend', `<div class="page" id="page-msk"><div class="page-inner">
+      <div class="page-title">Склад МСК / 莫斯科仓库</div>
+      <div class="page-sub">Остатки считаются по журналу движений: приход, перемещение, продажа, списание. / 库存按出入库记录自动计算</div>
+      <div class="msk-tabs">
+        <button class="wh-tab" data-mt="dist">📦 Разнос поставки / 分配</button>
+        <button class="wh-tab" data-mt="stock">🗂 Остатки / 库存</button>
+        <button class="wh-tab" data-mt="inv">🧮 Инвентаризация / 盘点</button>
+        <button class="wh-tab" data-mt="log">📜 Журнал / 记录</button>
+      </div>
+      <div id="msk-body"><div class="loading"><div class="spinner"></div></div></div>
+    </div></div>`);
+    document.querySelectorAll('#page-msk [data-mt]').forEach(b => b.onclick = () => { M.tab = b.dataset.mt; render(); });
+  }
+  const _show = window.showPage;
+  if (typeof _show === 'function') {
+    window.showPage = function (name, tabEl) {
+      if (name === 'msk') ensurePage();
+      const r = _show.apply(this, arguments);
+      if (name === 'msk') render();
+      return r;
+    };
+  }
+
+  // ── данные ──
+  async function loadLocs() {
+    const { data, error } = await sb.from('locations').select('*').eq('active', true).order('sort');
+    if (error) throw error;
+    M.locs = data || [];
+  }
+  async function loadStock() {
+    const { data, error } = await sb.from('v_stock').select('*').order('received_at', { ascending: true });
+    if (error) throw error;
+    M.stock = data || [];
+  }
+  const locName = id => (M.locs.find(l => String(l.id) === String(id)) || {}).name || '—';
+  const ageBadge = d => `<span class="msk-age ${d >= 8 ? 'r' : d >= 5 ? 'w' : ''}">${d} дн.</span>`;
+  const destOptions = (exclude, kinds) => M.locs.filter(l => String(l.id) !== String(exclude) && (!kinds || kinds.includes(l.kind)))
+    .map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+  function defaultDest(row) {
+    // горшечные — в карантин теплицы, срезка — в холодильник срезки
+    const pick = k => (M.locs.find(l => l.kind === k) || {}).id;
+    return row.unit === 'pot' ? (pick('quarantine') || pick('greenhouse')) : pick('cold');
+  }
+
+  async function render() {
+    const body = document.getElementById('msk-body');
+    if (!body) return;
+    document.querySelectorAll('#page-msk [data-mt]').forEach(b => b.classList.toggle('active', b.dataset.mt === M.tab));
+    if (!M.role) await whoami();
+    if (!canSee()) { body.innerHTML = `<div class="msk-empty">Нет доступа к складу Москвы. Админ назначает точку и роль в users. / 无权限</div>`; return; }
+    body.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
+    try {
+      await loadLocs();
+      if (M.tab === 'dist') { await loadStock(); body.innerHTML = renderDist(); }
+      if (M.tab === 'stock') { await loadStock(); body.innerHTML = renderStock(); }
+      if (M.tab === 'inv') body.innerHTML = await renderInv();
+      if (M.tab === 'log') body.innerHTML = await renderLog();
+      bind(body);
+    } catch (e) {
+      body.innerHTML = `<div class="msk-empty msk-err">Ошибка: ${esc(err(e))}${/v_stock|locations|does not exist/.test(err(e)) ? '<br>Похоже, не выполнена миграция sql_moscow_stock.sql' : ''}</div>`;
+    }
+  }
+
+  // ── 1. Разнос: всё, что лежит в зоне приёмки ──
+  function renderDist() {
+    const rcv = M.locs.filter(l => l.kind === 'receiving').map(l => String(l.id));
+    const rows = M.stock.filter(s => rcv.includes(String(s.loc_id)));
+    const head = `<div class="page-sub" style="margin-bottom:10px">Товар в зоне приёмки после скана QR. Выберите, куда переложить: холодильник, теплица, зал малого опта, магазин. Под заказ крупного опта — «Резерв». / 收货区的货物——选择去向</div>`;
+    if (!rows.length) return head + `<div class="msk-empty">В зоне приёмки пусто. Коробки появляются здесь после «На остаток» на экране приёмки QR. / 收货区为空</div>`;
+    return head + `<div class="msk-wrapt"><table class="msk-tbl"><thead><tr><th>Позиция / 品名</th><th>Коробка</th><th class="num">Свободно</th><th>Возраст</th><th>Куда / 去向</th></tr></thead><tbody>${rows.map(r => `
+      <tr data-row="${r.lot_id}:${r.loc_id}">
+        <td><b>${esc(r.item_ru)}</b>${r.item_cn ? `<div class="msk-sub">${esc(r.item_cn)}</div>` : ''}</td>
+        <td class="msk-sub">${r.box_id ? '#' + esc(r.box_id) : '—'}</td>
+        <td class="num"><b>${num(r.available)}</b> ${UNIT[r.unit] || ''}${Number(r.reserved) ? `<div class="msk-sub">резерв ${num(r.reserved)}</div>` : ''}</td>
+        <td>${ageBadge(r.age_days)}</td>
+        <td><div class="msk-act">
+          <input class="inp msk-q" type="number" min="0.01" step="any" value="${num(r.available)}" data-f="qty" aria-label="Количество">
+          <select class="inp" data-f="to" aria-label="Куда">${destOptions(r.loc_id).replace(`value="${defaultDest(r)}"`, `value="${defaultDest(r)}" selected`)}</select>
+          <button class="btn btn-primary" data-do="move">→ Переложить</button>
+          <button class="btn btn-secondary" data-do="reserve-open">Резерв</button>
+        </div><div data-slot></div></td>
+      </tr>`).join('')}</tbody></table></div>`;
+  }
+
+  // ── 2. Остатки по местам ──
+  function renderStock() {
+    const alerts = M.stock.filter(s => ['stem', 'bunch', 'box'].includes(s.unit) && s.source !== 'grown' && s.age_days >= 5);
+    const byLoc = {}; M.stock.forEach(s => byLoc[s.loc_id] = (byLoc[s.loc_id] || 0) + 1);
+    const q = M.q.trim().toLowerCase();
+    const rows = M.stock.filter(s => (!M.loc || String(s.loc_id) === M.loc) && (!q || (s.item_ru + ' ' + (s.item_cn || '')).toLowerCase().includes(q)));
+    return `${alerts.length ? `<div class="msk-alert">⏰ <b>${alerts.length}</b> партий срезки старше 5 дней — продать в первую очередь или проверить. / ${alerts.length} 批切花超过5天 <button class="msk-chip" data-do="only-old">Показать</button></div>` : ''}
+      <div class="msk-bar">
+        <button class="msk-chip ${!M.loc ? 'on' : ''}" data-loc="">Все места<b>${M.stock.length}</b></button>
+        ${M.locs.filter(l => byLoc[l.id]).map(l => `<button class="msk-chip ${M.loc === String(l.id) ? 'on' : ''}" data-loc="${l.id}">${esc(l.name)}<b>${byLoc[l.id]}</b></button>`).join('')}
+        <input class="inp" id="msk-search" placeholder="Поиск / 搜索" value="${esc(M.q)}" style="max-width:220px;margin-left:auto">
+      </div>
+      ${rows.length ? `<div class="msk-wrapt"><table class="msk-tbl"><thead><tr><th>Позиция / 品名</th><th>Место / 位置</th><th class="num">Остаток</th><th class="num">Резерв</th><th class="num">Свободно</th><th>Возраст</th><th>Действие</th></tr></thead><tbody>${rows.map(r => `
+        <tr data-row="${r.lot_id}:${r.loc_id}" ${M.onlyOld && !(r.age_days >= 5 && r.source !== 'grown') ? 'hidden' : ''}>
+          <td><b>${esc(r.item_ru)}</b><div class="msk-sub">${r.source === 'grown' ? 'своё' : r.box_id ? 'коробка #' + esc(r.box_id) : 'партия ' + esc(r.lot_id)}${r.status !== 'ready' ? ' · ' + ({ quarantine: 'карантин', growing: 'доращивание' }[r.status] || r.status) : ''}</div></td>
+          <td>${esc(r.loc_name)}</td>
+          <td class="num">${num(r.qty)} ${UNIT[r.unit] || ''}</td>
+          <td class="num">${Number(r.reserved) ? num(r.reserved) : '—'}</td>
+          <td class="num"><b>${num(r.available)}</b></td>
+          <td>${ageBadge(r.age_days)}</td>
+          <td><div class="msk-act">
+            <button class="btn btn-secondary" data-do="move-open">Переложить</button>
+            <button class="btn btn-secondary" style="color:#b42318" data-do="wo-open">Списать</button>
+          </div><div data-slot></div></td>
+        </tr>`).join('')}</tbody></table></div>` : `<div class="msk-empty">Ничего не найдено / 无记录</div>`}`;
+  }
+
+  // ── 3. Инвентаризация ──
+  async function renderInv() {
+    const { data: open, error } = await sb.from('inventory_counts').select('*').eq('status', 'open').order('started_at');
+    if (error) throw error;
+    if (M.count && !(open || []).some(c => c.id === M.count)) M.count = null;
+    if (!M.count && (open || []).length === 1) M.count = open[0].id;
+    let html = `<div class="msk-bar"><select class="inp" id="msk-inv-loc" style="max-width:280px">${M.locs.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select>
+      <button class="btn btn-primary" data-do="inv-open">Начать пересчёт / 开始盘点</button>
+      ${(open || []).map(c => `<button class="msk-chip ${c.id === M.count ? 'on' : ''}" data-count="${c.id}">Идёт: ${esc(locName(c.loc_id))}</button>`).join('')}</div>`;
+    if (!M.count) return html + `<div class="msk-empty">Выберите место и начните пересчёт. Система подставит, сколько должно быть, — впишите, сколько есть на самом деле. / 选择位置开始盘点</div>`;
+    const { data: lines, error: e2 } = await sb.from('inventory_lines').select('*, lot:stock_lots(item_ru,item_cn,unit,box_id)').eq('count_id', M.count).order('id');
+    if (e2) throw e2;
+    return html + `<div class="msk-wrapt"><table class="msk-tbl"><thead><tr><th>Позиция</th><th class="num">По системе</th><th class="num">Посчитано / 实数</th><th class="num">Разница</th></tr></thead><tbody>${(lines || []).map(l => `
+      <tr><td><b>${esc(l.lot?.item_ru || '')}</b><div class="msk-sub">${l.lot?.box_id ? 'коробка #' + esc(l.lot.box_id) : 'партия ' + esc(l.lot_id)}</div></td>
+        <td class="num">${num(l.expected)} ${UNIT[l.lot?.unit] || ''}</td>
+        <td class="num"><input class="inp msk-q" type="number" min="0" step="any" data-line="${l.id}" value="${l.counted ?? ''}" placeholder="—" aria-label="Посчитано"></td>
+        <td class="num">${l.counted == null ? '—' : (l.diff > 0 ? '+' : '') + num(l.diff)}</td></tr>`).join('') || `<tr><td colspan="4" class="msk-empty">В этом месте по системе пусто</td></tr>`}</tbody></table></div>
+      <div class="msk-bar" style="margin-top:12px"><span class="msk-sub">Пустые строки не меняются. Расхождения запишутся в журнал как излишек или недостача.</span>
+      <button class="btn btn-primary" data-do="inv-close" style="margin-left:auto">Закрыть пересчёт / 完成盘点</button></div>`;
+  }
+
+  // ── 4. Журнал ──
+  async function renderLog() {
+    const { data, error } = await sb.from('stock_moves').select('*, lot:stock_lots(item_ru,unit)').order('created_at', { ascending: false }).limit(150);
+    if (error) throw error;
+    const users = {};
+    (typeof allClients !== 'undefined' ? allClients : []).forEach(u => users[u.id] = u.company_name || u.login);
+    if (typeof currentUser !== 'undefined' && currentUser) users[currentUser.id] = currentUser.company_name || currentUser.login;
+    if (!(data || []).length) return `<div class="msk-empty">Движений пока нет / 暂无记录</div>`;
+    return `<div class="msk-wrapt"><table class="msk-tbl"><thead><tr><th>Когда</th><th>Что</th><th>Позиция</th><th class="num">Кол-во</th><th>Откуда → куда</th><th>Причина</th><th>Кто</th></tr></thead><tbody>${data.map(m => `
+      <tr><td class="msk-sub" style="white-space:nowrap">${new Date(m.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+        <td><span class="msk-kind ${m.kind}">${KIND[m.kind] || m.kind}</span></td>
+        <td>${esc(m.lot?.item_ru || '')}</td>
+        <td class="num">${num(m.qty)} ${UNIT[m.lot?.unit] || ''}</td>
+        <td>${m.from_loc ? esc(locName(m.from_loc)) : '<span class="msk-sub">извне</span>'} → ${m.to_loc ? esc(locName(m.to_loc)) : '<span class="msk-sub">' + (m.kind === 'sale' ? 'продано' : 'ушло') + '</span>'}</td>
+        <td class="msk-sub">${esc(m.reason || '')}</td>
+        <td class="msk-sub">${esc(users[m.user_id] || '')}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+
+  // ── действия ──
+  function rowOf(el) { const tr = el.closest('[data-row]'); if (!tr) return null; const [lot, loc] = tr.dataset.row.split(':'); return { tr, lot: Number(lot), loc: Number(loc), data: M.stock.find(s => String(s.lot_id) === lot && String(s.loc_id) === loc) }; }
+  async function move(lot, qty, from, to, kind, reason) {
+    const { error } = await sb.rpc('stock_move', { p_lot: lot, p_qty: qty, p_from: from, p_to: to, p_kind: kind, p_reason: reason || null });
+    if (error) throw error;
+  }
+  function bind(body) {
+    body.querySelectorAll('[data-loc]').forEach(b => b.onclick = () => { M.loc = b.dataset.loc; M.onlyOld = false; render(); });
+    const s = body.querySelector('#msk-search');
+    if (s) s.oninput = () => { M.q = s.value; const pos = s.selectionStart; body.innerHTML = renderStock(); bind(body); const n = body.querySelector('#msk-search'); n.focus(); n.setSelectionRange(pos, pos); };
+    body.querySelectorAll('[data-count]').forEach(b => b.onclick = () => { M.count = Number(b.dataset.count); render(); });
+    body.querySelectorAll('[data-line]').forEach(inp => inp.onchange = async () => {
+      const v = inp.value === '' ? null : Number(inp.value);
+      const { error } = await sb.from('inventory_lines').update({ counted: v }).eq('id', inp.dataset.line);
+      if (error) say('❌ ' + err(error)); else render();
+    });
+    body.onclick = async e => {
+      const b = e.target.closest('[data-do]'); if (!b) return;
+      const act = b.dataset.do, r = rowOf(b);
+      try {
+        if (act === 'only-old') { M.onlyOld = true; M.loc = ''; body.innerHTML = renderStock(); bind(body); return; }
+        if (act === 'move') {
+          const qty = Number(r.tr.querySelector('[data-f="qty"]').value), to = Number(r.tr.querySelector('[data-f="to"]').value);
+          b.disabled = true; await move(r.lot, qty, r.loc, to, 'transfer');
+          say(`✅ ${num(qty)} → ${locName(to)}`); render(); return;
+        }
+        if (act === 'move-open') {
+          r.tr.querySelector('[data-slot]').innerHTML = `<div class="msk-act" style="margin-top:6px"><input class="inp msk-q" type="number" min="0.01" step="any" value="${num(r.data.available)}" data-f="qty" aria-label="Количество"><select class="inp" data-f="to" aria-label="Куда">${destOptions(r.loc)}</select><button class="btn btn-primary" data-do="move">OK</button></div>`; return;
+        }
+        if (act === 'wo-open') {
+          r.tr.querySelector('[data-slot]').innerHTML = `<div class="msk-act" style="margin-top:6px"><input class="inp msk-q" type="number" min="0.01" step="any" value="1" data-f="qty" aria-label="Сколько списать"><select class="inp" data-f="reason" aria-label="Причина">${REASONS.map(x => `<option>${x[0]} / ${x[1]}</option>`).join('')}</select><input class="inp" data-f="note" placeholder="Комментарий" style="width:140px"><button class="btn btn-primary" style="background:#b42318;border-color:#b42318" data-do="wo">Списать</button></div>`; return;
+        }
+        if (act === 'wo') {
+          const qty = Number(r.tr.querySelector('[data-f="qty"]').value);
+          const reason = r.tr.querySelector('[data-f="reason"]').value + (r.tr.querySelector('[data-f="note"]').value.trim() ? ' · ' + r.tr.querySelector('[data-f="note"]').value.trim() : '');
+          b.disabled = true; await move(r.lot, qty, r.loc, null, 'writeoff', reason);
+          say(`🗑 Списано: ${num(qty)}`); render(); return;
+        }
+        if (act === 'reserve-open') {
+          r.tr.querySelector('[data-slot]').innerHTML = `<div class="msk-act" style="margin-top:6px"><input class="inp msk-q" type="number" min="0.01" step="any" value="${num(r.data.available)}" data-f="rqty" aria-label="Сколько"><input class="inp" data-f="ref" placeholder="№ заказа или клиент" style="width:170px"><select class="inp" data-f="ch" aria-label="Канал"><option value="wholesale">Крупный опт</option><option value="small_wholesale">Малый опт</option><option value="shop">Магазин</option></select><button class="btn btn-primary" data-do="reserve">Зарезервировать</button></div>`; return;
+        }
+        if (act === 'reserve') {
+          const qty = Number(r.tr.querySelector('[data-f="rqty"]').value), ref = r.tr.querySelector('[data-f="ref"]').value.trim();
+          b.disabled = true;
+          const { error } = await sb.rpc('stock_reserve', { p_lot: r.lot, p_loc: r.loc, p_qty: qty, p_channel: r.tr.querySelector('[data-f="ch"]').value, p_order_id: null, p_order_ref: ref || null, p_hours: 72 });
+          if (error) throw error;
+          say(`🔒 Зарезервировано ${num(qty)} на 3 дня`); render(); return;
+        }
+        if (act === 'inv-open') {
+          const loc = Number(body.querySelector('#msk-inv-loc').value);
+          const { data, error } = await sb.rpc('inventory_open', { p_loc: loc, p_note: null });
+          if (error) throw error; M.count = data; render(); return;
+        }
+        if (act === 'inv-close') {
+          if (!confirm('Закрыть пересчёт и записать расхождения? / 确认完成盘点？')) return;
+          const { data, error } = await sb.rpc('inventory_close', { p_count: M.count });
+          if (error) throw error; M.count = null; say(`✅ Пересчёт закрыт, исправлено строк: ${data.adjusted_lines}`); render(); return;
+        }
+      } catch (ex) { b.disabled = false; say('❌ ' + err(ex)); }
+    };
+  }
+
+  // ── кнопка «На остаток» в карточке коробки на приёмке ──
+  async function receiveBox(code, loc, silent) {
+    const { data, error } = await sb.rpc('stock_receive_box', { p_code: code, p_loc: loc, p_distribution: null });
+    if (error) throw error;
+    M.done.add(code);
+    const n = (data.lots || []).reduce((a, l) => a + Number(l.qty), 0);
+    if (!silent || n) say(n ? `🏬 На остатке: ${num(n)} банч. → ${locName(loc)}` : 'Коробка уже на остатке / 已入库');
+    return data;
+  }
+  function boxPanel() {
+    const el = document.getElementById('bxs-card'), b = typeof _bxs !== 'undefined' && _bxs.cur;
+    if (!el || !b || !canSee() || _bxs.form) return;
+    if (!['accepted', 'defect', 'short'].includes(b.status)) return;
+    if (b.accepted_site && !/моск|msk|moscow/i.test(b.accepted_site) && !['admin', 'office'].includes(M.role)) return;
+    const rcv = M.locs.filter(l => ['receiving', 'cold', 'quarantine'].includes(l.kind));
+    if (!rcv.length) return;
+    const done = M.done.has(b.code);
+    el.insertAdjacentHTML('beforeend', `<div class="msk-box">
+      <b>🏬 Склад Москвы / 莫斯科入库</b>
+      ${done ? `<div class="msk-ok">✓ Коробка на остатке. Разнесите её во вкладке «Склад МСК». / 已入库</div>` : `
+      <div class="row"><select class="inp" id="msk-rcv-loc" style="max-width:240px">${rcv.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select>
+      <button class="btn btn-primary" id="msk-rcv-btn">Поставить на остаток / 入库</button></div>
+      <div class="msk-sub">Брак и недостача, отмеченные выше, вычтутся сами.</div>`}
+      ${M.point ? `<label class="msk-sub" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="msk-auto" ${M.auto ? 'checked' : ''}> Ставить на остаток сразу после приёмки</label>` : ''}
+    </div>`);
+    const btn = document.getElementById('msk-rcv-btn');
+    if (btn) btn.onclick = async () => {
+      btn.disabled = true;
+      try { await receiveBox(b.code, Number(document.getElementById('msk-rcv-loc').value)); bxRenderCard(); }
+      catch (ex) { btn.disabled = false; say('❌ ' + err(ex)); }
+    };
+    const au = document.getElementById('msk-auto');
+    if (au) au.onchange = () => { M.auto = au.checked; try { localStorage.setItem('msk-auto', M.auto ? '1' : '0'); } catch (e) {} };
+  }
+  let _prevStatus = {};
+  if (typeof window.bxRenderCard === 'function') {
+    const _card = window.bxRenderCard;
+    window.bxRenderCard = function () {
+      const r = _card.apply(this, arguments);
+      const b = typeof _bxs !== 'undefined' && _bxs.cur;
+      const was = b ? _prevStatus[b.code] : undefined;
+      if (b) _prevStatus[b.code] = b.status;
+      if (b && canSee()) {
+        // только что приняли эту коробку → сразу на остаток (для сотрудников точки)
+        if (M.auto && M.point && was === 'packed' && ['accepted', 'defect', 'short'].includes(b.status) && !M.done.has(b.code)) {
+          const loc = (M.locs.find(l => l.kind === 'receiving') || {}).id;
+          if (loc) receiveBox(b.code, loc, true).then(() => window.bxRenderCard()).catch(ex => say('❌ ' + err(ex)));
+        }
+        boxPanel();
+      }
+      return r;
+    };
+  }
+
+  // ── запуск после входа ──
+  async function boot() {
+    if (typeof currentUser === 'undefined' || !currentUser || !document.getElementById('nav-tabs')) return false;
+    if (M.role === null && !(await whoami())) return true;
+    if (!canSee()) return true;
+    try { if (!M.locs.length) await loadLocs(); } catch (e) {}
+    ensurePage(); ensureNav();
+    return true;
+  }
+  let tries = 0;
+  const t = setInterval(async () => { if ((await boot()) || ++tries > 120) clearInterval(t); }, 1000);
+  const nav = () => document.getElementById('nav-tabs');
+  const watch = () => { const n = nav(); if (!n) return setTimeout(watch, 1000); new MutationObserver(() => { if (canSee()) ensureNav(); }).observe(n, { childList: true }); };
+  watch();
+  window.AmmaMsk = { render, reload: () => { M.role = null; return boot(); } };
+})();
+</script>
+<!-- ═══════════ /АММА · СКЛАД МСК ═══════════ -->
+
 </body>
 </html>
