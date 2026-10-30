@@ -1844,7 +1844,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <option value="paid">Оплачен / 已付款</option>
           <option value="cancelled">Отменён / 已取消</option>
         </select>
-        <button class="btn btn-primary" onclick="showNewOrderModal()">+ Новый заказ / Excel · 新订单</button>
+        <button class="btn btn-primary" id="btn-new-order" onclick="showNewOrderModal()">+ Новый заказ / Excel · 新订单</button>
       </div>
       <div id="orders-list"><div class="loading"><div class="spinner"></div>Загрузка...</div></div>
     </div>
@@ -1885,6 +1885,17 @@ document.addEventListener('DOMContentLoaded', function(){
     <div class="page-inner">
       <div class="page-title">Инвойсы / 发票 / Invoices</div>
       <div class="page-sub">История счетов / 开票历史 / Invoice history</div>
+      <div class="ctrl-bar" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <input class="inp" id="inv-q" placeholder="🔍 № инвойса, заказ, клиент / 搜索发票号、订单、客户" style="min-width:240px;flex:1" oninput="clearTimeout(window._invT);window._invT=setTimeout(renderInvoiceList,200)">
+        <select class="inp" id="inv-client-f" onchange="renderInvoiceList()"><option value="">Все клиенты / 所有客户</option></select>
+        <select class="inp" id="inv-status-f" onchange="renderInvoiceList()">
+          <option value="">Все / 全部</option>
+          <option value="unpaid">💸 Не оплачены / 未付款</option>
+          <option value="paid">💰 Оплачены / 已付款</option>
+          <option value="draft">Черновики / 草稿</option>
+        </select>
+      </div>
+      <div id="inv-sum" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
       <div id="invoices-list"><div class="loading"><div class="spinner"></div></div></div>
     </div>
   </div>
@@ -4607,6 +4618,7 @@ async function initApp() {
       document.querySelector('#nav-tabs .nav-tab[onclick*="\'crm\'"]')?.remove();
     }
     if (isFinMgr()) {   // Лю: своё короткое меню, китайский первым
+      document.getElementById('btn-new-order')?.remove();
       document.getElementById('top-role').textContent = '🧾 财务 / Финансы';
       tabs.innerHTML = `
         <div class="nav-tab active" onclick="showPage('shipments',this)">🚚 车次 / Отгрузки</div>
@@ -10743,8 +10755,11 @@ async function saveInvoice() {
     savedInvId = data?.id;
     currentInvoiceId = savedInvId;
   }
-  // Update order status to invoiced
-  await sb.from('orders').update({status:'invoiced', updated_at: new Date().toISOString()}).eq('id', orderId);
+  // Статус заказа → «Счёт», но только если он ещё не дальше (оплаченный/отправленный не откатываем)
+  if (!['invoiced', 'paid', 'sent'].includes(window._invOrder?.status)) {
+    await sb.from('orders').update({status:'invoiced', updated_at: new Date().toISOString()}).eq('id', orderId);
+    if (window._invOrder) window._invOrder.status = 'invoiced';
+  }
   logActivity('invoice_save', 'invoice', savedInvId, invNum,
     `Итого ¥${grand.toFixed(2)}${adj ? ` (корректировка ${adj>0?'+':''}¥${adj})` : ''}`);
   toast('✅ Инвойс сохранён: ' + invNum);
@@ -10893,24 +10908,73 @@ async function loadInvoices() {
   await ensureScope();
   const { data } = await scopeQ(sb.from('invoices').select(`
     *, client:users!invoices_client_id_fkey(company_name,login),
-    order:orders(order_number)
+    order:orders(order_number, title, invoice_ref, status)
   `).order('created_at', {ascending:false}));
 
-  const list = document.getElementById('invoices-list');
-  if (!data?.length) {
-    list.innerHTML = `<div class="empty-state"><div class="icon">🧾</div><p>Инвойсов пока нет</p></div>`;
-    return;
+  window._invList = data || [];
+  const cf = document.getElementById('inv-client-f');
+  if (cf) {
+    const cur = cf.value;
+    const cls = [...new Map(window._invList.map(i => [String(i.client_id), i.client?.company_name || i.client?.login || '—'])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    cf.innerHTML = '<option value="">Все клиенты / 所有客户</option>' + cls.map(([id, n]) => `<option value="${id}" ${id === cur ? 'selected' : ''}>${escHtml(n)}</option>`).join('');
   }
-  list.innerHTML = data.map(inv => `
-    <div class="order-card" onclick="openInvoice('${inv.order_id}')">
-      <div class="order-num">${inv.invoice_number}</div>
+  renderInvoiceList();
+}
+// Оплачен ли инвойс: сам инвойс или его заказ отмечены «Оплачен»/«Отправлен»
+function invIsPaid(inv) { return inv.status === 'paid' || ['paid', 'sent'].includes(inv.order?.status); }
+function renderInvoiceList() {
+  const list = document.getElementById('invoices-list');
+  if (!list) return;
+  const all = window._invList || [];
+  if (!all.length) { list.innerHTML = `<div class="empty-state"><div class="icon">🧾</div><p>Инвойсов пока нет / 暂无发票</p></div>`; document.getElementById('inv-sum').innerHTML = ''; return; }
+  const q = (document.getElementById('inv-q')?.value || '').trim().toLowerCase();
+  const cf = document.getElementById('inv-client-f')?.value || '';
+  const sf = document.getElementById('inv-status-f')?.value || '';
+  const rows = all.filter(inv => {
+    if (cf && String(inv.client_id) !== cf) return false;
+    if (sf === 'paid' && !invIsPaid(inv)) return false;
+    if (sf === 'unpaid' && (invIsPaid(inv) || inv.status === 'draft')) return false;
+    if (sf === 'draft' && inv.status !== 'draft') return false;
+    if (q && ![inv.invoice_number, inv.order?.order_number, inv.order?.title, inv.order?.invoice_ref, inv.client?.company_name, inv.client?.login].join(' ').toLowerCase().includes(q)) return false;
+    return true;
+  });
+  const cur = inv => inv.currency && inv.currency !== 'CNY' ? inv.currency + ' ' : '¥ ';
+  const money = inv => cur(inv) + (+inv.total || 0).toFixed(2);
+  const sumBy = arr => { const m = {}; arr.forEach(i => { const c = cur(i); m[c] = (m[c] || 0) + (+i.total || 0); }); return Object.entries(m).map(([c, v]) => c + v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })).join(' + ') || '—'; };
+  const unpaid = rows.filter(i => !invIsPaid(i) && i.status !== 'draft');
+  document.getElementById('inv-sum').innerHTML = [
+    ['🧾 Инвойсов / 发票', rows.length], ['Σ Сумма / 合计', sumBy(rows)],
+    ['💸 Ждём оплату / 待付款', unpaid.length + ' · ' + sumBy(unpaid)], ['💰 Оплачено / 已付款', rows.filter(invIsPaid).length]
+  ].map(([l, v]) => `<div class="card" style="padding:10px 14px;margin:0;min-width:150px"><div style="font-size:11px;color:var(--mid)">${l}</div><div style="font-weight:700;font-size:15px">${v}</div></div>`).join('');
+  const canPay = currentUser?.role === 'manager' && !isScopedMgr();
+  list.innerHTML = rows.length ? rows.map(inv => {
+    const paid = invIsPaid(inv);
+    return `<div class="order-card" onclick="openInvoice('${inv.order_id}')">
+      <div class="order-num">${escHtml(inv.invoice_number || '—')}</div>
       <div>
-        <div class="order-client">${inv.client?.company_name||inv.client?.login||'—'}</div>
-        <div class="order-dates">Заказ: ${inv.order?.order_number||'—'}</div>
+        <div class="order-client">${escHtml(inv.client?.company_name || inv.client?.login || '—')}</div>
+        <div class="order-dates">订单 / Заказ: ${escHtml(inv.order?.order_number || '—')}${inv.order?.title ? ' · ' + escHtml(inv.order.title) : ''} · ${String(inv.created_at || '').slice(0, 10)}</div>
       </div>
-      <span class="badge badge-${inv.status}">${statusLabel(inv.status)}</span>
-      <div class="order-sum">¥ ${inv.total?.toFixed(2)||'0.00'}</div>
-    </div>`).join('');
+      <span class="badge badge-${paid ? 'paid' : inv.status}">${statusLabel(paid ? 'paid' : inv.status)}</span>
+      <div class="order-sum">${money(inv)}</div>
+      ${canPay && inv.status !== 'draft' ? `<button class="btn btn-sm ${paid ? 'btn-secondary' : 'btn-primary'}" style="white-space:nowrap" onclick="event.stopPropagation();invTogglePaid('${inv.id}')">${paid ? '↩ 取消付款 / Снять оплату' : '💰 已付款 / Оплачен'}</button>` : ''}
+    </div>`; }).join('') : `<div class="empty-state"><p>По фильтру ничего нет / 无结果</p></div>`;
+}
+async function invTogglePaid(invId) {
+  const inv = (window._invList || []).find(i => String(i.id) === String(invId));
+  if (!inv) return;
+  const toPaid = !invIsPaid(inv);
+  if (!confirm(toPaid ? `Отметить ${inv.invoice_number} оплаченным? / 确认已付款？` : `Снять отметку оплаты с ${inv.invoice_number}? / 取消付款？`)) return;
+  const now = new Date().toISOString();
+  const { error } = await sb.from('invoices').update({ status: toPaid ? 'paid' : 'sent', updated_at: now }).eq('id', inv.id);
+  if (error) { toast('❌ ' + error.message); return; }
+  // заказ: «Оплачен» ↔ «Счёт»; уже отправленный заказ не трогаем
+  if (inv.order_id && inv.order?.status !== 'sent') {
+    await sb.from('orders').update({ status: toPaid ? 'paid' : 'invoiced', updated_at: now }).eq('id', inv.order_id);
+  }
+  logActivity(toPaid ? 'invoice_paid' : 'invoice_unpaid', 'invoice', inv.id, inv.invoice_number, `${inv.client?.company_name || ''} · ${(+inv.total || 0).toFixed(2)}`);
+  toast(toPaid ? '💰 已付款 / Отмечено как оплаченный' : '↩ Отметка оплаты снята');
+  loadInvoices();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -16341,9 +16405,9 @@ async function loadShipments() {
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   // Кнопка создания — только менеджеру
   const btn = document.getElementById('btn-new-shipment');
-  if (btn) btn.style.display = (currentUser?.role === 'manager' && !isScopedMgr()) ? 'inline-flex' : 'none';
+  if (btn) btn.style.display = (currentUser?.role === 'manager' && !isScopedMgr() && !isFinMgr()) ? 'inline-flex' : 'none';
   const gpsBtn = document.getElementById('btn-gps-report');
-  if (gpsBtn) gpsBtn.style.display = (currentUser?.role === 'manager') ? 'inline-flex' : 'none';
+  if (gpsBtn) gpsBtn.style.display = (currentUser?.role === 'manager' && !isFinMgr()) ? 'inline-flex' : 'none';
 
   const [shpRes] = await Promise.all([
     sb.from('shipments').select('*').order('created_at', {ascending:false}),
@@ -16532,7 +16596,8 @@ function shpTruckSVG(u, loads) {
 
 function shipmentDetailHTML(u) {
   const isMgrLocal = currentUser?.role === 'manager';
-  const canData = ['manager', 'warehouse'].includes(currentUser?.role);
+  const shpOps = isMgrLocal && !isFinMgr();   // финансы видят машину и документы, но состав и статус не меняют
+  const canData = ['manager', 'warehouse'].includes(currentUser?.role) && !isFinMgr();
   const lead = u.lead;
   const st = SHP_STATUS[lead.status] || SHP_STATUS.forming;
   // заказы → цвет по клиенту (общий для обоих холодильников), кубатура
@@ -16571,10 +16636,10 @@ function shipmentDetailHTML(u) {
         ${isMgrLocal ? `<button class="shp-x" style="font-size:11px" title="Название и № инвойса / 名称和发票号"
           onclick="orderMetaModal('${r.o.id}','${escHtml(r.o.order_number)}',${escHtml(JSON.stringify(r.o.title || ''))},${escHtml(JSON.stringify(r.o.invoice_ref || ''))},loadShipments)">✏️</button>` : ''}
         <div class="shp-ord-v">${r.boxes} кор<br><span>${r.est ? '≈' : ''}${fmtM3(r.m3)} м³</span></div>
-        ${isMgrLocal && x.p.status === 'forming' ? `<button class="shp-x" title="Открепить / 移除" onclick="detachOrderFromShipment('${r.o.id}', ${x.p.id})">×</button>` : ''}
+        ${shpOps && x.p.status === 'forming' ? `<button class="shp-x" title="Открепить / 移除" onclick="detachOrderFromShipment('${r.o.id}', ${x.p.id})">×</button>` : ''}
       </div>`).join('') || `<div class="shp-empty">Заказов пока нет</div>`;
-    const btns = `${isMgrLocal && x.p.status === 'forming' ? `<button class="btn btn-primary btn-sm" onclick="showAttachOrdersModal(${x.p.id})">+ Заказы</button>` : ''}
-      ${(isMgrLocal && (!isScopedMgr() || currentUser?.purchase_access)) || currentUser?.role === 'warehouse' ? `<button class="btn btn-gold btn-sm" title="Закуп под этот ${u.trip ? 'холодильник' : 'рейс'}" onclick="openPurchase(${x.p.id})">🛒</button>` : ''}
+    const btns = `${shpOps && x.p.status === 'forming' ? `<button class="btn btn-primary btn-sm" onclick="showAttachOrdersModal(${x.p.id})">+ Заказы</button>` : ''}
+      ${(shpOps && (!isScopedMgr() || currentUser?.purchase_access)) || currentUser?.role === 'warehouse' ? `<button class="btn btn-gold btn-sm" title="Закуп под этот ${u.trip ? 'холодильник' : 'рейс'}" onclick="openPurchase(${x.p.id})">🛒</button>` : ''}
       ${x.p._docCount ? `<button class="btn btn-secondary btn-sm" title="Акты приёмки" onclick="showReceivingDocsModal(${x.p.id})">📄 ${x.p._docCount}</button>` : ''}`;
     return `<div class="shp-part"><div class="shp-side-h"><span>${u.trip ? `<i class="shp-dot" style="background:${SHP_PART_LINE[x.i]}"></i>${escHtml(x.label)}` : 'Заказы в машине'}</span><span class="shp-part-b">${btns}</span></div>${rows}</div>`;
   };
@@ -16583,7 +16648,7 @@ function shipmentDetailHTML(u) {
     ${canDocs() ? `<button class="btn btn-secondary btn-sm" onclick="docsForShipments([${u.parts.map(x => x.id).join(',')}])">📁 单据 / Документы</button>
       <button class="btn btn-secondary btn-sm" onclick="customsForShipments([${u.parts.map(x => x.id).join(',')}])">🛃 报关 / Таможня</button>` : ''}
     ${canData && lead.status === 'forming' ? `<button class="btn btn-secondary btn-sm" onclick="shpDataModal('${u.key}', 'stage')">📍 Отметить выезд</button>` : ''}
-    ${isMgrLocal ? `
+    ${shpOps ? `
       <select class="inp" style="width:auto;padding:6px 10px;font-size:12px" onchange="setUnitStatus('${u.key}', this.value)">
         ${Object.entries(SHP_STATUS).map(([k, v]) => `<option value="${k}" ${lead.status === k ? 'selected' : ''}>${v.icon} ${v.ru}</option>`).join('')}
       </select>
@@ -23610,7 +23675,7 @@ function exportPricePDF() {
       { s: '#customs-wrap', t: '导出 Excel / Выгрузка', x: '点 <b>“📥 导出 Excel”</b>：下载 CONTRACT、INVOICE、PACKING LIST、报关要素四个表，格式和你原来的一样（INVOICE 引用 CONTRACT 的公式）。文件会<b>自动保存到这辆车的“单据”</b>里。<br><b>“🧾 → 订单”</b>：把合同号写入这些订单的发票号。' + R('Выгрузка 4 листов в её формате, копия в «Документы»; кнопка проставляет № в заказы.') },
       { s: nav('docs'), run: P('docs'), t: '📁 单据存档 / Документы', x: '所有车次的文件都存在这里。<b>上传：</b>选车次、选类型（报关/证书/检疫/发票/运输单据/照片/其他）、可写备注，然后“选择文件”（可多选，PDF、Excel、Word、图片都可以）。' + R('Архив: выбрать машину и тип, примечание, загрузить файлы (можно несколько).') },
       { s: '#docs-wrap .ctrl-bar', t: '查找和查看 / Поиск', x: '可以按车次、类型筛选，也可以搜索名称或备注。👁 查看、⬇ 下载、✏️ 修改名称/类型/车次。<b>只有授权的人</b>（Даша、你、Антон、Наташа）能看到这些文件；删除只能由 Даша 操作，文件会一直保存。' + R('Фильтры и поиск; открыть/скачать/изменить. Видят только допущенные; удаляет только Даша.') },
-      { s: nav('invoices'), run: P('invoices'), t: '🧾 发票 / Инвойсы', x: '给客户的发票列表（俄文）：金额、状态、付款情况。打开一张可以查看和下载。' + R('Инвойсы клиентам: суммы, статусы, оплаты.') },
+      { s: nav('invoices'), run: P('invoices'), t: '🧾 发票 / Инвойсы', x: '所有发票：可以按发票号、订单、客户搜索，筛选<b>“未付款”</b>。上面显示合计和待付款金额。客户付款后点 <b>“💰 已付款”</b>，发票和订单都变成“已付款”；点错了可以“取消付款”。点发票本身可以打开、修改、导出 Excel 或打印。' + R('Поиск, фильтр «не оплачены», итоги; «💰 Оплачен» отмечает оплату инвойса и заказа.') },
       { s: nav('waybills'), t: '📦 出货单 / Накладные', x: '按实际装箱生成的出货单。Даша 根据你的表格做出货单，以后这些数据会直接从系统来。' + R('Товарные накладные по факту.') },
       { s: nav('orders'), run: P('orders'), t: '📋 订单 / Заказы', x: '所有订单。上面的搜索框可以按<b>订单号、名称、发票号</b>查找。每个订单的 <b>🧾 ✏️</b> 可以填写名称和发票号。' + R('Все заказы; поиск по №, названию и № инвойса; 🧾✏️ — название и № инвойса.') },
       { s: '#tab-notif', t: '🔔 通知 / Уведомления', x: '系统通知在这里。可以绑定 Telegram 机器人 <b>@Amma_Flowers_bot</b>，手机上也能收到。' + R('Уведомления и подключение Telegram-бота.') },
