@@ -215,6 +215,22 @@ btn,button{font-family:var(--font-b);cursor:pointer}
 /* ═══ TABLE ═══ */
 .tbl-wrap{overflow-x:auto;border-radius:var(--r);box-shadow:var(--shadow)}
 body.no-money .wh-money{display:none!important}
+.card.whp-card{padding:0;border-left:4px solid var(--sage-d);margin-bottom:8px;overflow:hidden}
+.whp-head{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%;padding:10px 14px;cursor:pointer}
+.whp-head:hover{background:var(--sage-l)}.whp-head:focus-visible{outline:2px solid var(--sage-d);outline-offset:-2px}
+.whp-caret{width:12px;color:var(--mid)}.whp-num{font-family:var(--font-h);font-size:15px;font-weight:700;color:var(--sage-d)}
+.whp-cl{font-size:12px;color:var(--mid)}.whp-meta{font-size:11px;color:var(--mid)}
+.whp-chip{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.whp-body{padding:0 14px}.whp-card.open .whp-body{padding:4px 14px 12px;border-top:1px solid var(--border)}
+.whp-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.whp-tbl{min-width:820px;font-size:12px}.whp-tbl td{padding:5px 6px;vertical-align:middle}
+.whp-in{width:66px;text-align:center;padding:3px 4px;font-size:12px;font-weight:700}
+.whp-sub{font-size:10px;color:var(--mid)}.whp-tot{font-size:11px;font-weight:700;white-space:nowrap;line-height:1.25}
+.whp-ic{background:var(--sage-l);border:1px solid var(--border);border-radius:6px;padding:3px 7px;cursor:pointer;font-size:12px;flex-shrink:0}
+.whp-miss td{background:#fef2f2}.whp-miss td:first-child b{text-decoration:line-through;color:#b91c1c}
+.whp-foot{position:sticky;bottom:0;z-index:2;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 0 4px;background:var(--paper,#fff);border-top:1px solid var(--border);margin-top:8px}
+.wh-det>summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--sage-d);padding:4px 0;list-style:none}
+.wh-det>summary::-webkit-details-marker{display:none}.wh-det>summary::before{content:'▸ '}.wh-det[open]>summary::before{content:'▾ '}
 body.no-money #cur-select-wrap{display:none!important}
 /* Таблица позиций заказа: своя прокрутка — горизонтальная полоса всегда на экране,
    шапка и итог прилипают, № и название остаются слева при прокрутке вбок */
@@ -2069,7 +2085,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <div class="page-title">Склад / 仓库 / Warehouse</div>
       <!-- Sub-tabs -->
       <div style="display:flex;gap:6px;margin-bottom:16px;border-bottom:2px solid var(--border);padding-bottom:0;flex-wrap:wrap">
-        <button class="wh-tab active" id="whtab-pending" onclick="switchWhTab('pending',this)">📋 Входящие <span class="cnt" id="cnt-wh-pending" style="display:none">0</span></button>
+        <button class="wh-tab active" id="whtab-pending" onclick="switchWhTab('pending',this)">📋 Пакинг / 包装核对 <span class="cnt" id="cnt-wh-pending" style="display:none">0</span></button>
         <button class="wh-tab" id="whtab-assembly"   onclick="switchWhTab('assembly',this)">🏭 Сборка / 备货</button>
         <button class="wh-tab"        id="whtab-receiving"  onclick="switchWhTab('receiving',this)">📥 Приёмка / 收货</button>
         <button class="wh-tab"        id="whtab-labels"     onclick="switchWhTab('labels',this)">🏷 Этикетки / 标签</button>
@@ -2082,7 +2098,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <!-- ── PENDING / ВХОДЯЩИЕ ── -->
       <div id="whpanel-pending">
         <div class="page-sub" style="margin-bottom:10px">
-          Заказы на рассмотрении — уточните пакинг до подтверждения / 待审核订单——确认前核对包装规格
+          Все заказы, которые ещё не собраны: черновики, на проверке и подтверждённые в формирующихся машинах. Проверьте коробки, банчи и стебли, отметьте ❌ чего нет — менеджер подтвердит. / 所有未备货订单：核对箱数、扎数、枝数，缺货点❌，经理确认
         </div>
         <div id="wh-pending-list"><div class="loading"><div class="spinner"></div></div></div>
       </div>
@@ -13672,187 +13688,229 @@ function switchWhTab(name, btn) {
   if (name === 'boxes')     bxWhOrders();
 }
 
-// ── PENDING ORDERS — заказы ожидающие подтверждения ──
+// ── ПРОВЕРКА ПАКИНГА — все заказы, которые ещё не собраны и не уехали ──
+// Склад видит черновики, заказы на проверке и уже подтверждённые заказы формирующихся машин.
+// Может поправить коробки, банчи в коробке, стебли/граммы в банче, отметить «нет в наличии»
+// и оставить заметку. Всё уходит менеджеру на подтверждение (как и раньше).
+const WHP_STATUSES = ['draft', 'pending_review', 'needs_revision', 'confirmed', 'invoiced', 'paid'];
+const WHP_ST_LBL = {
+  draft:          ['📝 Черновик', '草稿', '#f3f4f6', '#374151'],
+  pending_review: ['📨 На проверке', '待审核', '#eff6ff', '#1d4ed8'],
+  needs_revision: ['↩ На доработке', '待修改', '#fef2f2', '#b91c1c'],
+  confirmed:      ['✅ Подтверждён', '已确认', '#ecfdf5', '#166534'],
+  invoiced:       ['🧾 Счёт', '已开票', '#fefce8', '#854d0e'],
+  paid:           ['💰 Оплачен', '已付款', '#ecfdf5', '#166534'],
+};
+let _whp = { orders: [], open: null, q: '', ship: '', filter: 'todo', only: {} };
+
+function whpPendingItems(o) {
+  return (o.order_items || []).filter(it => (it.wh_fact_boxes != null || it.wh_fact_bpb != null || it.wh_fact_spb != null) && !it.wh_confirmed_at);
+}
+// Состояние проверки: new — не проверен, changed — менеджер менял после проверки, wait — изменения склада ждут менеджера, ok — проверен
+function whpState(o) {
+  if (whpPendingItems(o).length) return 'wait';
+  if (!o.wh_pack_saved_at) return 'new';
+  const saved = Date.parse(o.wh_pack_saved_at), upd = Date.parse(o.updated_at || 0);
+  return upd && upd - saved > 60000 ? 'changed' : 'ok';
+}
+const WHP_STATE = {
+  new:     ['🆕 Не проверен', '未核对', '#fff7ed', '#c2410c'],
+  changed: ['🔄 Изменён после проверки', '已修改', '#fff7ed', '#c2410c'],
+  wait:    ['⏳ Ждёт менеджера', '待经理确认', '#fef9c3', '#854d0e'],
+  ok:      ['✅ Проверен', '已核对', '#ecfdf5', '#166534'],
+};
+function whpChip(a) { return `<span class="whp-chip" style="background:${a[2]};color:${a[3]}">${a[0]} / ${a[1]}</span>`; }
+
 async function loadWhPending() {
   const wrap = document.getElementById('wh-pending-list');
   if (!wrap) return;
   wrap.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
-
-  const { data: orders, error } = await sb.from('orders')
-    .select(`*, client:users!orders_client_id_fkey(company_name,login),
+  const { data, error } = await sb.from('orders')
+    .select(`*, client:users!orders_client_id_fkey(company_name,login), shipment:shipments(id, ship_number, ship_date, status),
       order_items(*, flower:flowers(ru,cn,photo_url,stems,boxes_per_box,pack))`)
-    .in('status', ['pending_review', 'needs_revision'])
-    .order('created_at', { ascending: false });
-
-  // Update badge
+    .in('status', WHP_STATUSES)
+    .order('date_ship', { ascending: true, nullsFirst: false }).order('created_at', { ascending: false }).limit(250);
+  if (error) { wrap.innerHTML = `<div class="empty-state"><p>❌ ${escHtml(error.message)}</p></div>`; return; }
+  _whp.orders = (data || []).filter(o => !o.wh_assembled && (!o.shipment || !o.shipment.status || o.shipment.status === 'forming'));
+  const todo = _whp.orders.filter(o => ['new', 'changed'].includes(whpState(o))).length;
   const badge = document.getElementById('cnt-wh-pending');
-  const count = (orders||[]).length;
-  if (badge) { badge.textContent = count; badge.style.display = count ? '' : 'none'; }
-
-  if (error || !count) {
-    wrap.innerHTML = `<div class="empty-state"><div class="icon">✅</div>
-      <p>Нет новых заказов на проверку / 暂无待审核订单</p></div>`;
-    return;
-  }
-
-  window._whPendItems = {};
-  wrap.innerHTML = orders.map(order => {
-    const client = order.client?.company_name || order.client?.login || '—';
-    const items  = order.order_items || [];
-
-    const rows = items.map((item, idx) => {
-      const f    = item.flower || {};
-      const snap = item.flower_snapshot || {};
-      const ru   = f.ru  || snap.ru  || '—';
-      const cn   = f.cn  || snap.cn  || '';
-      const thumb = f.photo_url || THUMBS[f.en] || '';
-      const imgH = thumb
-        ? `<img src="${thumb}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0">`
-        : `<div style="width:32px;height:32px;background:var(--sage-l);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">🌸</div>`;
-      const bpb  = parseInt(item.bunches_per_box) || parseInt(f.boxes_per_box || snap.boxes_per_box) || '';
-      const spb  = parseInt(snap.stems || f.stems) || '';
-      const pack = snap.pack || f.pack || '';
-
-      // Get saved wh_pack_note for this item
-      let savedNotes = {};
-      try { savedNotes = JSON.parse(order.wh_pack_notes || '{}'); } catch{}
-      const savedNote = savedNotes[item.id] || '';
-
-      const curBpb = (item.wh_fact_bpb != null && !item.wh_confirmed_at) ? item.wh_fact_bpb : bpb;
-      const curSpb = (item.wh_fact_spb != null && !item.wh_confirmed_at) ? item.wh_fact_spb : spb;
-      const qty = parseInt(item.qty_boxes) || 1;
-      const wgt = isWeightItem(item.flower_snapshot || {}) || itemWeightBased(item);
-      const snapMix = (item.flower_snapshot?.mix && item.flower_snapshot.mix.length)
-        ? `<div style="font-size:10px;color:var(--sage-d);margin:2px 0">🧺 ${item.flower_snapshot.mix.map(c=>escHtml(c.ru)+(c.cn?' <b>'+escHtml(c.cn)+'</b>':'')+' ×'+c.bunches).join(' · ')}</div>`
-        : '';
-      window._whPendItems = window._whPendItems || {};
-      window._whPendItems[item.id] = item;
-      return `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
-        ${imgH}
-        <div style="flex:1;min-width:0">
-          <div style="font-size:12px;font-weight:700">${ru} <span style="font-size:10px;color:var(--mid)">${cn}</span></div>
-          ${snapMix}
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:3px;align-items:center">
-            <span style="font-size:10px;background:var(--sage-l);color:var(--sage-d);padding:1px 6px;border-radius:4px">📦 ${qty} кор.</span>
-            <label style="font-size:10px;color:var(--mid);display:flex;align-items:center;gap:3px">банч/кор 扎/箱
-              <input type="number" min="0" class="inp wh-pend-bpb" data-order="${order.id}" data-item="${item.id}" data-orig="${bpb||0}" data-qty="${qty}"
-                value="${curBpb||''}" placeholder="${bpb||'—'}"
-                oninput="whPendRecalc('${order.id}','${item.id}')"
-                style="width:52px;text-align:center;padding:2px 4px;font-size:11px;font-weight:700${curBpb&&bpb&&curBpb!=bpb?';background:#fff7ed;border-color:#f59e0b':''}">
-            </label>
-            <label style="font-size:10px;color:var(--mid);display:flex;align-items:center;gap:3px">${wgt?'г/банч 克/扎':'ст/банч 枝/扎'}
-              <input type="number" min="0" class="inp wh-pend-spb" data-order="${order.id}" data-item="${item.id}" data-orig="${spb||0}" data-qty="${qty}" data-wb="${wgt?1:0}"
-                value="${curSpb||''}" placeholder="${spb||'—'}"
-                oninput="whPendRecalc('${order.id}','${item.id}')"
-                style="width:52px;text-align:center;padding:2px 4px;font-size:11px;font-weight:700${curSpb&&spb&&curSpb!=spb?';background:#fff7ed;border-color:#f59e0b':''}">
-            </label>
-            <span id="wh-pend-tot-${item.id}" style="font-size:10px;font-weight:700;color:${(curBpb&&bpb&&curBpb!=bpb)||(curSpb&&spb&&curSpb!=spb)?'#d97706':'var(--sage-d)'}">
-              = ${curBpb?qty*curBpb:'—'} банч · ${(curBpb&&curSpb)?fmtStems(qty*curBpb*curSpb,wgt):'—'}${wgt?'':' ст'}
-            </span>
-            ${pack?`<span style="font-size:10px;background:#f0f9ff;color:#0369a1;padding:1px 6px;border-radius:4px">${pack}</span>`:''}
-          </div>
-        </div>
-        <div style="flex:1;min-width:140px">
-          <div style="font-size:10px;color:var(--mid);margin-bottom:2px">Заметка по пакингу / 包装备注</div>
-          <div style="display:flex;gap:4px">
-            <input type="text" class="inp" id="wh-pack-${order.id}-${item.id}"
-              value="${(savedNote).replace(/"/g,'&quot;')}"
-              placeholder="Пакинг, замена, уточнение... / 包装说明..."
-              style="flex:1;font-size:11px;padding:4px 7px">
-            <button onclick="translatePackNote(this)" title="Перевести / 翻译"
-              style="background:var(--sage-l);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;flex-shrink:0">🌐</button>
-          </div>
-        </div>
-      </div>`;
-    }).join('');
-
-    // Read general warehouse note
-    let savedNotes = {};
-    try { savedNotes = JSON.parse(order.wh_pack_notes || '{}'); } catch{}
-    const generalNote = savedNotes['_general'] || '';
-
-    return `<div class="card" style="border-left:4px solid #3b82f6;margin-bottom:14px" id="wh-pending-${order.id}">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-        <div>
-          <span style="font-family:var(--font-h);font-size:16px;font-weight:700;color:var(--sage-d)">${order.order_number}</span>
-          <span class="badge" style="background:#eff6ff;color:#1d4ed8;margin-left:8px">📋 На проверке</span>
-          <div style="font-size:11px;color:var(--mid);margin-top:2px">👤 ${client} · ${order.date_order||''} ${order.date_ship?'→ 🚚 '+order.date_ship:''}</div>
-        </div>
-        <button class="btn btn-primary btn-sm" onclick="saveWhPackingNotes('${order.id}')">
-          💾 Сохранить заметки / 保存备注
-        </button>
-      </div>
-
-      <!-- Items list with packing notes -->
-      <div style="margin-bottom:10px">${rows}</div>
-      <div id="wh-ordstems-${order.id}" style="font-size:12px;font-weight:700;color:var(--sage-d);padding:6px 10px;background:var(--sage-l);border-radius:6px;margin-bottom:8px">
-        🌸 Всего по заказу: <span class="ws-b">…</span> банчей · <span class="ws-s">…</span>
-      </div>
-
-      <!-- General note -->
-      <div style="padding-top:8px;border-top:1px solid var(--border)">
-        <div style="font-size:10px;color:var(--mid);margin-bottom:4px;font-weight:700">
-          Общая заметка склада по заказу / 仓库总体备注
-        </div>
-        <div style="display:flex;gap:8px">
-          <input type="text" class="inp" id="wh-pack-${order.id}-_general"
-            value="${generalNote.replace(/"/g,'&quot;')}"
-            placeholder="Общие вопросы по заказу / 订单总体问题..."
-            style="flex:1;font-size:12px">
-          <button onclick="translatePackNote(this)" title="Перевести / 翻译"
-            style="background:var(--sage-l);border:1px solid var(--border);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px;flex-shrink:0">🌐</button>
-        </div>
-      </div>
-
-      ${order.wh_pack_saved_at ? `<div style="font-size:10px;color:var(--sage-d);margin-top:6px">
-        ✅ Заметки сохранены ${new Date(order.wh_pack_saved_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
-      </div>` : ''}
-    </div>`;
-  }).join('');
-  orders.forEach(o => whPendOrderTotal(o.id));
+  if (badge) { badge.textContent = todo; badge.style.display = todo ? '' : 'none'; }
+  whpRender();
 }
 
-// ── Живой пересчёт банчей/стеблей во вкладке «Входящие» ──
+function whpRender() {
+  const wrap = document.getElementById('wh-pending-list');
+  if (!wrap) return;
+  const all = _whp.orders;
+  const cnt = st => all.filter(o => st === 'todo' ? ['new', 'changed'].includes(whpState(o)) : st === 'all' ? true : whpState(o) === st).length;
+  const ships = [...new Map(all.filter(o => o.shipment).map(o => [String(o.shipment.id), o.shipment])).values()]
+    .sort((a, b) => String(a.ship_date || '').localeCompare(String(b.ship_date || '')));
+  const q = _whp.q.trim().toLowerCase();
+  const list = all.filter(o => {
+    const st = whpState(o);
+    if (_whp.filter === 'todo' && !['new', 'changed'].includes(st)) return false;
+    if (!['todo', 'all'].includes(_whp.filter) && st !== _whp.filter) return false;
+    if (_whp.ship === 'none' && o.shipment) return false;
+    if (_whp.ship && _whp.ship !== 'none' && String(o.shipment?.id) !== _whp.ship) return false;
+    if (q) {
+      const hay = [o.order_number, o.title, o.client?.company_name, o.client?.login,
+        ...(o.order_items || []).map(it => (it.flower?.ru || it.flower_snapshot?.ru || '') + ' ' + (it.flower?.cn || it.flower_snapshot?.cn || ''))].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  const fbtn = (k, l) => `<button class="btn btn-sm ${_whp.filter === k ? 'btn-primary' : 'btn-secondary'}" onclick="_whp.filter='${k}';whpRender()">${l} (${cnt(k)})</button>`;
+  const bar = `<div class="ctrl-bar" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <input class="inp" id="whp-q" placeholder="🔍 Заказ, клиент, позиция / 搜索" value="${escHtml(_whp.q)}" style="min-width:220px;flex:1"
+        oninput="_whp.q=this.value;clearTimeout(window._whpT);window._whpT=setTimeout(()=>{whpRender();const i=document.getElementById('whp-q');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)">
+      <select class="inp" style="min-width:190px" onchange="_whp.ship=this.value;whpRender()">
+        <option value="">Все машины / 所有车次</option>
+        ${ships.map(s => `<option value="${s.id}" ${_whp.ship === String(s.id) ? 'selected' : ''}>🚚 ${escHtml(s.ship_number)} · ${escHtml(s.ship_date || '')}</option>`).join('')}
+        <option value="none" ${_whp.ship === 'none' ? 'selected' : ''}>Без машины / 未挂车</option></select>
+      <button class="btn btn-secondary btn-sm" onclick="loadWhPending()">🔄</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+      ${fbtn('todo', '🆕 Проверить / 待核对')}${fbtn('wait', '⏳ Ждут менеджера')}${fbtn('ok', '✅ Проверены')}${fbtn('all', 'Все / 全部')}</div>`;
+  if (!list.length) {
+    wrap.innerHTML = bar + `<div class="empty-state"><div class="icon">✅</div><p>${all.length ? 'По этому фильтру заказов нет / 无' : 'Нет заказов для проверки / 暂无待核对订单'}</p></div>`;
+    return;
+  }
+  wrap.innerHTML = bar + list.map(o => {
+    const items = o.order_items || [];
+    const boxes = items.reduce((s, it) => s + (parseFloat(it.qty_boxes) || 0), 0);
+    const client = o.client?.company_name || o.client?.login || '—';
+    const isOpen = String(_whp.open) === String(o.id);
+    const st = whpState(o);
+    let notesN = 0; try { notesN = Object.values(JSON.parse(o.wh_pack_notes || '{}')).filter(Boolean).length; } catch (e) {}
+    return `<div class="card whp-card ${isOpen ? 'open' : ''}" id="wh-pending-${o.id}" style="border-left-color:${WHP_STATE[st][3]}">
+      <button type="button" class="whp-head" onclick="whpToggle('${o.id}')" aria-expanded="${isOpen}">
+        <span class="whp-caret">${isOpen ? '▾' : '▸'}</span>
+        <span class="whp-num">${escHtml(o.order_number || '')}</span>
+        <span class="whp-cl">👤 ${escHtml(client)}${o.title ? ` · <i>${escHtml(o.title)}</i>` : ''}</span>
+        ${whpChip(WHP_ST_LBL[o.status] || [o.status, '', '#f3f4f6', '#374151'])}
+        ${o.shipment ? `<span class="whp-chip" style="background:#fef9e7;color:#8a6d1a">🚚 ${escHtml(o.shipment.ship_number)} · ${escHtml(o.shipment.ship_date || '')}</span>`
+          : o.date_ship ? `<span class="whp-chip" style="background:#f3f4f6;color:#374151">🚚 ${escHtml(o.date_ship)}</span>` : ''}
+        <span class="whp-meta">${items.length} поз. · ${boxes} кор.${notesN ? ` · 📝 ${notesN}` : ''}</span>
+        <span style="flex:1"></span>
+        ${whpChip(WHP_STATE[st])}
+      </button>
+      <div class="whp-body">${isOpen ? whpBody(o) : ''}</div>
+    </div>`;
+  }).join('');
+  const op = list.find(o => String(o.id) === String(_whp.open));
+  if (op) (op.order_items || []).forEach(it => whPendRecalc(op.id, it.id));
+}
+
+function whpToggle(id) {
+  _whp.open = String(_whp.open) === String(id) ? null : id;
+  whpRender();
+  if (_whp.open) document.getElementById('wh-pending-' + id)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+function whpBody(order) {
+  const items = order.order_items || [];
+  let saved = {}; try { saved = JSON.parse(order.wh_pack_notes || '{}'); } catch (e) {}
+  window._whPendItems = window._whPendItems || {};
+  const only = !!_whp.only[order.id];
+  const rows = items.map(item => {
+    window._whPendItems[item.id] = item;
+    const f = item.flower || {}, snap = item.flower_snapshot || {};
+    const ru = f.ru || snap.ru || '—', cn = f.cn || snap.cn || '';
+    const bpb = parseInt(item.bunches_per_box) || parseInt(f.boxes_per_box || snap.boxes_per_box) || '';
+    const spb = parseInt(snap.stems || f.stems) || '';
+    const qty = parseFloat(item.qty_boxes) || 0;
+    const pend = (item.wh_fact_boxes != null || item.wh_fact_bpb != null || item.wh_fact_spb != null) && !item.wh_confirmed_at;
+    const curBox = pend && item.wh_fact_boxes != null ? item.wh_fact_boxes : qty;
+    const curBpb = pend && item.wh_fact_bpb != null ? item.wh_fact_bpb : bpb;
+    const curSpb = pend && item.wh_fact_spb != null ? item.wh_fact_spb : spb;
+    const wgt = isWeightItem(snap) || itemWeightBased(item);
+    const note = saved[item.id] || '';
+    const mix = snap.mix?.length ? `<div class="whp-sub">🧺 ${snap.mix.map(c => escHtml(c.ru) + (c.cn ? ' ' + escHtml(c.cn) : '') + ' ×' + c.bunches).join(' · ')}</div>` : '';
+    const sub = item.sub_client || item.subclient || snap.sub_client || '';
+    const changed = pend || note;
+    const pack = snap.pack || f.pack || '';
+    return `<tr class="whp-tr ${parseFloat(curBox) === 0 ? 'whp-miss' : ''}" data-s="${escHtml((ru + ' ' + cn).toLowerCase())}" data-ch="${changed ? 1 : 0}" ${only && !changed ? 'style="display:none"' : ''}>
+      <td class="L"><b>${escHtml(ru)}</b> <span class="whp-sub" style="display:inline">${escHtml(cn)}</span>${mix}
+        ${pack || sub ? `<div class="whp-sub">${pack ? '📦 ' + escHtml(pack) : ''}${sub ? ' · 👤 ' + escHtml(sub) : ''}</div>` : ''}</td>
+      <td style="color:var(--mid)">${qty}</td>
+      <td><input type="number" min="0" step="1" class="inp whp-in wh-pend-box" data-order="${order.id}" data-item="${item.id}" data-orig="${qty}" value="${curBox}" oninput="whPendRecalc('${order.id}','${item.id}')"></td>
+      <td><input type="number" min="0" class="inp whp-in wh-pend-bpb" data-order="${order.id}" data-item="${item.id}" data-orig="${bpb || 0}" data-qty="${qty}" value="${curBpb || ''}" placeholder="${bpb || '—'}" oninput="whPendRecalc('${order.id}','${item.id}')"></td>
+      <td><input type="number" min="0" class="inp whp-in wh-pend-spb" data-order="${order.id}" data-item="${item.id}" data-orig="${spb || 0}" data-qty="${qty}" data-wb="${wgt ? 1 : 0}" value="${curSpb || ''}" placeholder="${spb || '—'}" oninput="whPendRecalc('${order.id}','${item.id}')"></td>
+      <td id="wh-pend-tot-${item.id}" class="whp-tot"></td>
+      <td class="L"><div style="display:flex;gap:4px;min-width:170px">
+        <input type="text" class="inp" id="wh-pack-${order.id}-${item.id}" value="${escHtml(note)}" placeholder="Заметка / 备注" style="flex:1;font-size:11px;padding:4px 6px">
+        <button type="button" onclick="translatePackNote(this)" title="Перевести / 翻译" class="whp-ic">🌐</button></div></td>
+      <td><button type="button" class="whp-ic" title="Нет в наличии / 缺货" onclick="whpMissing('${order.id}','${item.id}')">❌</button></td>
+    </tr>`;
+  }).join('');
+  return `<div class="whp-tools">
+      <input class="inp" placeholder="🔍 Позиция в заказе / 搜索品名" style="flex:1;min-width:160px"
+        oninput="const q=this.value.toLowerCase();document.querySelectorAll('#wh-pending-${order.id} .whp-tr').forEach(tr=>tr.style.display=(tr.dataset.s.includes(q)&&(!_whp.only['${order.id}']||tr.dataset.ch==='1'))?'':'none')">
+      <label style="font-size:12px;display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${only ? 'checked' : ''}
+        onchange="_whp.only['${order.id}']=this.checked;document.querySelectorAll('#wh-pending-${order.id} .whp-tr').forEach(tr=>tr.style.display=(!this.checked||tr.dataset.ch==='1')?'':'none')"> Только изменённые / 只看修改</label>
+    </div>
+    ${order.client_comment ? `<div style="font-size:11px;margin:0 0 8px;color:#92400e">💬 Клиент: ${escHtml(order.client_comment)}</div>` : ''}
+    <div class="tbl-wrap"><table class="whp-tbl"><thead><tr>
+      <th class="L">Позиция / 品名</th><th>Кор.<br>订</th><th>Кор. факт<br>实际箱</th><th>Банч/кор<br>扎/箱</th><th>Ст(г)/банч<br>枝(克)/扎</th><th>Итого<br>合计</th><th class="L">Заметка / 包装备注</th><th></th>
+    </tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="whp-foot">
+      <div id="wh-ordstems-${order.id}" style="font-size:12px;font-weight:700;color:var(--sage-d)">🌸 Всего: <span class="ws-x">…</span> кор. · <span class="ws-b">…</span> банч. · <span class="ws-s">…</span></div>
+      <input type="text" class="inp" id="wh-pack-${order.id}-_general" value="${escHtml(saved._general || '')}" placeholder="Общая заметка по заказу / 订单总体备注" style="flex:1;min-width:200px;font-size:12px">
+      <button type="button" onclick="translatePackNote(this)" class="whp-ic" title="Перевести / 翻译">🌐</button>
+      <button class="btn btn-primary btn-sm" onclick="saveWhPackingNotes('${order.id}')">✅ Пакинг проверен · сохранить / 保存</button>
+    </div>
+    ${order.wh_pack_saved_at ? `<div style="font-size:10px;color:var(--sage-d);margin-top:6px">Последняя проверка: ${new Date(order.wh_pack_saved_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>` : ''}`;
+}
+
+function whpMissing(orderId, itemId) {
+  const b = document.querySelector(`.wh-pend-box[data-item="${itemId}"]`);
+  if (!b) return;
+  b.value = parseFloat(b.value) === 0 ? b.dataset.orig : 0;
+  const n = document.getElementById(`wh-pack-${orderId}-${itemId}`);
+  if (n && parseFloat(b.value) === 0 && !n.value.trim()) n.value = 'Нет в наличии / 缺货';
+  if (n && parseFloat(b.value) !== 0 && n.value.trim() === 'Нет в наличии / 缺货') n.value = '';
+  whPendRecalc(orderId, itemId);
+}
+
+// ── Живой пересчёт во вкладке «Пакинг» ──
 function whPendRecalc(orderId, itemId) {
-  // Подсветка изменённых полей + итог по позиции
+  const boxInp = document.querySelector(`.wh-pend-box[data-item="${itemId}"]`);
   const bpbInp = document.querySelector(`.wh-pend-bpb[data-item="${itemId}"]`);
   const spbInp = document.querySelector(`.wh-pend-spb[data-item="${itemId}"]`);
   if (!bpbInp || !spbInp) return;
-  const qty  = parseInt(bpbInp.dataset.qty) || 1;
-  const bpb  = parseInt(bpbInp.value) || 0;
-  const spb  = parseInt(spbInp.value) || 0;
+  const qty = boxInp && boxInp.value !== '' ? parseFloat(boxInp.value) || 0 : (parseFloat(bpbInp.dataset.qty) || 0);
+  const bpb = parseInt(bpbInp.value) || 0, spb = parseInt(spbInp.value) || 0;
+  const mark = (inp, ch) => { if (!inp) return; inp.style.background = ch ? '#fff7ed' : ''; inp.style.borderColor = ch ? '#f59e0b' : ''; };
+  const xChanged = boxInp && boxInp.value !== '' && parseFloat(boxInp.value) !== parseFloat(boxInp.dataset.orig);
   const bChanged = bpb && parseInt(bpbInp.dataset.orig) && bpb !== parseInt(bpbInp.dataset.orig);
   const sChanged = spb && parseInt(spbInp.dataset.orig) && spb !== parseInt(spbInp.dataset.orig);
-  bpbInp.style.background  = bChanged ? '#fff7ed' : '';
-  bpbInp.style.borderColor = bChanged ? '#f59e0b' : '';
-  spbInp.style.background  = sChanged ? '#fff7ed' : '';
-  spbInp.style.borderColor = sChanged ? '#f59e0b' : '';
+  mark(boxInp, xChanged); mark(bpbInp, bChanged); mark(spbInp, sChanged);
+  boxInp?.closest('tr')?.classList.toggle('whp-miss', boxInp.value !== '' && parseFloat(boxInp.value) === 0);
   const tot = document.getElementById('wh-pend-tot-' + itemId);
   if (tot) {
     const wb = spbInp.dataset.wb === '1';
-    tot.innerHTML = `= ${bpb ? qty*bpb : '—'} банч · ${(bpb&&spb) ? fmtStems(qty*bpb*spb, wb) : '—'}${wb?'':' ст'}`;
-    tot.style.color = (bChanged || sChanged) ? '#d97706' : 'var(--sage-d)';
+    tot.innerHTML = `${bpb ? qty * bpb : '—'} банч<br><span style="font-weight:400">${(bpb && spb) ? fmtStems(qty * bpb * spb, wb) + (wb ? '' : ' ст') : '—'}</span>`;
+    tot.style.color = (xChanged || bChanged || sChanged) ? '#d97706' : 'var(--sage-d)';
   }
   whPendOrderTotal(orderId);
 }
 
-// Итог банчей/стеблей по всему заказу
+// Итог по заказу
 function whPendOrderTotal(orderId) {
-  let tb = 0, ts = 0, tg = 0; // банчи, стебли, граммы
+  let tx = 0, tb = 0, ts = 0, tg = 0;
   document.querySelectorAll(`.wh-pend-bpb[data-order="${orderId}"]`).forEach(bi => {
-    const si  = document.querySelector(`.wh-pend-spb[data-item="${bi.dataset.item}"]`);
-    const qty = parseInt(bi.dataset.qty) || 1;
-    const b   = parseInt(bi.value) || 0;
-    const sp  = parseInt(si?.value) || 0;
-    tb += qty * b;
-    if (si?.dataset.wb === '1') tg += qty * b * sp;
-    else ts += qty * b * sp;
+    const si = document.querySelector(`.wh-pend-spb[data-item="${bi.dataset.item}"]`);
+    const xi = document.querySelector(`.wh-pend-box[data-item="${bi.dataset.item}"]`);
+    const qty = xi && xi.value !== '' ? parseFloat(xi.value) || 0 : (parseFloat(bi.dataset.qty) || 0);
+    const b = parseInt(bi.value) || 0, sp = parseInt(si?.value) || 0;
+    tx += qty; tb += qty * b;
+    if (si?.dataset.wb === '1') tg += qty * b * sp; else ts += qty * b * sp;
   });
   const box = document.getElementById('wh-ordstems-' + orderId);
   if (box) {
+    const x = box.querySelector('.ws-x'); if (x) x.textContent = tx;
     box.querySelector('.ws-b').textContent = tb || '—';
-    box.querySelector('.ws-s').textContent =
-      (ts ? ts + ' ст' : '') + (ts && tg ? ' + ' : '') + (tg ? fmtStems(tg, true) + ' зелени' : '') || '—';
+    box.querySelector('.ws-s').textContent = (ts ? ts + ' ст' : '') + (ts && tg ? ' + ' : '') + (tg ? fmtStems(tg, true) + ' зелени' : '') || '—';
   }
 }
 
@@ -13884,40 +13942,48 @@ async function saveWhPackingNotes(orderId) {
     if (val) notes[key] = val;
   });
 
-  // ── Collect bunches/stems edits per item (склад корректирует пакинг до подтверждения) ──
-  const packEdits = {}; // itemId -> {bpb, spb, origBpb, origSpb}
+  // ── Правки пакинга по позициям: коробки факт, банчи в коробке, стебли/граммы в банче ──
+  const packEdits = {}; // itemId -> {box, bpb, spb, orig…}
+  const num = v => v === '' || v == null ? null : parseFloat(v);
   document.querySelectorAll(`.wh-pend-bpb[data-order="${orderId}"]`).forEach(inp => {
-    const itemId = inp.dataset.item;
-    packEdits[itemId] = packEdits[itemId] || {};
-    packEdits[itemId].bpb = parseInt(inp.value) || 0;
-    packEdits[itemId].origBpb = parseInt(inp.dataset.orig) || 0;
+    const id = inp.dataset.item, e = packEdits[id] = packEdits[id] || {};
+    e.bpb = parseInt(inp.value) || 0; e.origBpb = parseInt(inp.dataset.orig) || 0;
   });
   document.querySelectorAll(`.wh-pend-spb[data-order="${orderId}"]`).forEach(inp => {
-    const itemId = inp.dataset.item;
-    packEdits[itemId] = packEdits[itemId] || {};
-    packEdits[itemId].spb = parseInt(inp.value) || 0;
-    packEdits[itemId].origSpb = parseInt(inp.dataset.orig) || 0;
+    const id = inp.dataset.item, e = packEdits[id] = packEdits[id] || {};
+    e.spb = parseInt(inp.value) || 0; e.origSpb = parseInt(inp.dataset.orig) || 0;
+  });
+  document.querySelectorAll(`.wh-pend-box[data-order="${orderId}"]`).forEach(inp => {
+    const id = inp.dataset.item, e = packEdits[id] = packEdits[id] || {};
+    e.box = num(inp.value); e.origBox = num(inp.dataset.orig);
   });
 
   const changedItems = [];
   for (const [itemId, e] of Object.entries(packEdits)) {
-    const bpbChanged = e.bpb && e.bpb !== e.origBpb;
-    const spbChanged = e.spb && e.spb !== e.origSpb;
-    if (!bpbChanged && !spbChanged) continue;
+    const boxChanged = e.box != null && e.box !== e.origBox;
+    const bpbChanged = !!e.bpb && e.bpb !== e.origBpb;
+    const spbChanged = !!e.spb && e.spb !== e.origSpb;
+    const srcItem = (window._whPendItems || {})[itemId];
+    const wasPending = srcItem && (srcItem.wh_fact_boxes != null || srcItem.wh_fact_bpb != null || srcItem.wh_fact_spb != null) && !srcItem.wh_confirmed_at;
+    if (!boxChanged && !bpbChanged && !spbChanged) {
+      // склад вернул как было — снимаем свою прошлую правку
+      if (wasPending) await sb.from('order_items').update({ wh_fact_boxes: null, wh_fact_bpb: null, wh_fact_spb: null, wh_note: notes[itemId] || null }).eq('id', itemId);
+      continue;
+    }
     const upd = {
+      wh_fact_boxes:   boxChanged ? e.box : null,
       wh_fact_bpb:     bpbChanged ? e.bpb : null,
       wh_fact_spb:     spbChanged ? e.spb : null,
       wh_note:         notes[itemId] || null,
       wh_confirmed_at: null, // требуется подтверждение менеджера
     };
     // Сохраняем оригинальный пакинг в snapshot (для подсветки «было → стало»)
-    const srcItem = (window._whPendItems || {})[itemId];
     const snap = srcItem?.flower_snapshot || {};
     if (!snap.wh_orig) {
-      upd.flower_snapshot = { ...snap, wh_orig: { bpb: e.origBpb || null, spb: e.origSpb || null } };
+      upd.flower_snapshot = { ...snap, wh_orig: { boxes: e.origBox, bpb: e.origBpb || null, spb: e.origSpb || null } };
     }
     const { error: itErr } = await sb.from('order_items').update(upd).eq('id', itemId);
-    if (!itErr) changedItems.push(e);
+    if (!itErr) changedItems.push(e); else toast('❌ ' + itErr.message);
   }
 
   const { error } = await sb.from('orders').update({
@@ -13946,7 +14012,7 @@ async function saveWhPackingNotes(orderId) {
       for (const m of (mgrs||[])) {
         await sendNotification(m.id,
           `⚠️ Склад изменил пакинг: заказ ${order?.order_number}`,
-          `${changedItems.length} позиций — изменены банчи/стебли, требуется подтверждение / 包装已修改，需确认`, '⚠️');
+          `${changedItems.length} позиций — изменены коробки/банчи/стебли${changedItems.some(e => e.box === 0) ? ', есть «нет в наличии»' : ''}, требуется подтверждение / 包装已修改，需确认`, '⚠️');
       }
     } else if (hasNotes) {
       for (const m of (mgrs||[])) {
@@ -13959,7 +14025,8 @@ async function saveWhPackingNotes(orderId) {
 
   toast(changedItems.length
     ? `✅ Сохранено. Изменён пакинг: ${changedItems.length} поз. — менеджер уведомлён / 已保存，待经理确认`
-    : '✅ Заметки сохранены, менеджер уведомлён / 备注已保存');
+    : '✅ Пакинг проверен / 已核对');
+  _whp.open = null;
   loadWhPending();
 }
 
@@ -14112,6 +14179,8 @@ async function loadWarehouseOrders() {
       </div>
       <div style="font-size:12px;padding:6px 10px;background:var(--sage-l);border-radius:6px;margin-bottom:8px">${totals} · ${items.length} поз.</div>
       ${order.client_comment ? `<div style="font-size:11px;margin-bottom:8px;color:#92400e">💬 Клиент: ${escHtml(order.client_comment)}</div>` : ''}
+      <details class="wh-det" ${filtered.length <= 1 || _whAsmOpen.has(String(order.id)) ? 'open' : ''} ontoggle="whAsmToggle('${order.id}',this.open)">
+      <summary>Позиции заказа (${items.length}) / 明细</summary>
       <div class="tbl-wrap">
         <table style="min-width:760px">
           <thead><tr>
@@ -14123,9 +14192,12 @@ async function loadWarehouseOrders() {
           <tbody>${rows}</tbody>
         </table>
       </div>
+      </details>
     </div>`;
   }).join('');
 }
+const _whAsmOpen = new Set();
+function whAsmToggle(id, open) { if (open) _whAsmOpen.add(String(id)); else _whAsmOpen.delete(String(id)); }
 
 async function toggleAssembled(orderId, isAssembled) {
   const newVal = !isAssembled;
@@ -16502,7 +16574,7 @@ function shipmentDetailHTML(u) {
         ${isMgrLocal && x.p.status === 'forming' ? `<button class="shp-x" title="Открепить / 移除" onclick="detachOrderFromShipment('${r.o.id}', ${x.p.id})">×</button>` : ''}
       </div>`).join('') || `<div class="shp-empty">Заказов пока нет</div>`;
     const btns = `${isMgrLocal && x.p.status === 'forming' ? `<button class="btn btn-primary btn-sm" onclick="showAttachOrdersModal(${x.p.id})">+ Заказы</button>` : ''}
-      ${isMgrLocal && (!isScopedMgr() || currentUser?.purchase_access) ? `<button class="btn btn-gold btn-sm" title="Закуп под этот ${u.trip ? 'холодильник' : 'рейс'}" onclick="openPurchase(${x.p.id})">🛒</button>` : ''}
+      ${(isMgrLocal && (!isScopedMgr() || currentUser?.purchase_access)) || currentUser?.role === 'warehouse' ? `<button class="btn btn-gold btn-sm" title="Закуп под этот ${u.trip ? 'холодильник' : 'рейс'}" onclick="openPurchase(${x.p.id})">🛒</button>` : ''}
       ${x.p._docCount ? `<button class="btn btn-secondary btn-sm" title="Акты приёмки" onclick="showReceivingDocsModal(${x.p.id})">📄 ${x.p._docCount}</button>` : ''}`;
     return `<div class="shp-part"><div class="shp-side-h"><span>${u.trip ? `<i class="shp-dot" style="background:${SHP_PART_LINE[x.i]}"></i>${escHtml(x.label)}` : 'Заказы в машине'}</span><span class="shp-part-b">${btns}</span></div>${rows}</div>`;
   };
@@ -17080,12 +17152,21 @@ async function lastSupplierMap() {
   return map;
 }
 
+// Со склада: открыть закуп машины на странице отгрузок
+function whOpenPurchase(shipmentId) {
+  const t = document.querySelector(`#nav-tabs .nav-tab[onclick*="'shipments'"]`);
+  if (t) t.click(); else if (typeof showPage === 'function') showPage('shipments');
+  setTimeout(() => openPurchase(shipmentId), 400);
+}
+
 async function openPurchase(shipmentId) {
   const wrap = document.getElementById('shipments-list');
   if (!wrap) return;
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   await loadSuppliers();
-  const shp = shipmentsData.find(x => x.id === shipmentId);
+  let shp = (typeof shipmentsData !== 'undefined' ? shipmentsData : []).find(x => x.id === shipmentId);
+  if (!shp) { const { data } = await sb.from('shipments').select('*').eq('id', shipmentId).single(); shp = data; }
+  if (!shp) { wrap.innerHTML = '❌ Машина не найдена'; return; }
   _purchShipment = shp;
 
   // Сохранённый закуп есть? Иначе собираем из заказов машины.
@@ -17152,7 +17233,7 @@ function renderPurchase(isSaved) {
           ${supplierOpts(r.supplier_id)}
         </select>
       </td>
-      <td><input class="inp" type="number" min="0" step="0.1" value="${r.buy_price ?? ''}" placeholder="¥" style="width:64px;padding:3px 5px;font-size:12px;text-align:center"
+      <td class="wh-money"><input class="inp" type="number" min="0" step="0.1" value="${r.buy_price ?? ''}" placeholder="¥" style="width:64px;padding:3px 5px;font-size:12px;text-align:center"
         oninput="purchUpd(${i},'buy_price',this.value);purchFooter()"></td>
       <td><input class="inp" value="${escHtml(r.delivery_time||'')}" placeholder="18:00" style="width:70px;padding:3px 5px;font-size:11px;text-align:center"
         oninput="purchUpd(${i},'delivery_time',this.value)"></td>
@@ -17167,6 +17248,7 @@ function renderPurchase(isSaved) {
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
       <button class="btn btn-secondary btn-sm" onclick="loadShipments()">← Отгрузки / 返回</button>
       <b style="font-size:15px">🛒 Закуп: ${shp.ship_number}</b>
+      ${currentUser?.role === 'warehouse' || currentUser?._baseRole === 'manager' && currentUser?.role === 'warehouse' ? '<span class="whp-chip" style="background:#fef9c3;color:#854d0e">Склад заполняет, если менеджер не успел / 仓库可代填</span>' : ''}
       <span style="font-size:12px;color:var(--mid)">📅 ${shp.ship_date||'—'} · ${shp.truck_name||''}</span>
       <span style="flex:1"></span>
       <button class="btn btn-secondary btn-sm" onclick="showSuppliersModal()">👥 Поставщики / 供应商</button>
@@ -17183,7 +17265,7 @@ function renderPurchase(isSaved) {
           <th>中文名</th>
           <th>Банчей<br>扎数</th>
           <th>Поставщик / 供应商</th>
-          <th>Закуп ¥/банч<br>采购价</th>
+          <th class="wh-money">Закуп ¥/банч<br>采购价</th>
           <th>Доставка<br>送达</th>
           <th>Счёт-ф.<br>发票</th>
           <th>Примечание / 备注</th>
@@ -17194,7 +17276,7 @@ function renderPurchase(isSaved) {
           <td colspan="3" style="text-align:right;padding:8px;font-weight:700">ИТОГО / 合计 (${_purchRows.length} поз.):</td>
           <td id="purch-tot-bn" style="font-weight:700;color:var(--sage-d)"></td>
           <td></td>
-          <td id="purch-tot-sum" style="font-weight:700;color:var(--sage-d);white-space:nowrap"></td>
+          <td id="purch-tot-sum" class="wh-money" style="font-weight:700;color:var(--sage-d);white-space:nowrap"></td>
           <td colspan="4"></td>
         </tr></tfoot>
       </table>
@@ -17943,31 +18025,39 @@ function opRenderClient() {
 }
 
 // ── СКЛАД: список заказов клиентов с журналом закупа ──
+let _opWh = { q: '', all: false };
 async function opLoadWhOrders() {
   const box = document.getElementById('wh-purch-orders');
   if (!box) return;
   if (!opStaffAccess()) { box.innerHTML = ''; return; }
   box.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-  const { data: cls, error: ce } = await sb.from('users').select('id, company_name, login').eq('purchase_tracking', true);
-  if (ce) { box.innerHTML = `<div style="font-size:12px;color:var(--mid)">${OP_SQL_HINT}</div>`; return; }
-  if (!cls?.length) { box.innerHTML = '<div style="font-size:12px;color:var(--mid)">Нет клиентов с включённым журналом закупа / 暂无客户</div>'; return; }
-  const { data: orders } = await sb.from('orders')
-    .select('id, order_number, status, date_order, date_ship, client_id, shipment:shipments(ship_number, ship_date)')
-    .in('client_id', cls.map(c => c.id)).neq('status', 'cancelled')
-    .order('created_at', { ascending: false }).limit(40);
+  const { data: orders, error } = await sb.from('orders')
+    .select('id, order_number, title, status, date_order, date_ship, client_id, client:users!orders_client_id_fkey(company_name, login, purchase_tracking), shipment:shipments(ship_number, ship_date, status)')
+    .in('status', ['draft', 'pending_review', 'needs_revision', 'confirmed', 'invoiced', 'paid', 'sent'])
+    .order('created_at', { ascending: false }).limit(150);
+  if (error) { box.innerHTML = '❌ ' + escHtml(error.message); return; }
   const ids = (orders || []).map(o => o.id);
-  const { data: lots } = ids.length ? await sb.from('order_purchases').select('order_id, status').in('order_id', ids) : { data: [] };
+  const { data: lots, error: le } = ids.length ? await sb.from('order_purchases').select('order_id, status').in('order_id', ids) : { data: [] };
+  if (le && opIsMissingTable(le)) { box.innerHTML = `<div style="font-size:12px;color:var(--mid)">${OP_SQL_HINT}</div>`; return; }
   const cnt = {};
   (lots || []).forEach(l => { const c = cnt[l.order_id] = cnt[l.order_id] || { n: 0, rej: 0 }; c.n++; if (OP_STATUS[l.status]?.rej) c.rej++; });
-  if (!orders?.length) { box.innerHTML = '<div style="font-size:12px;color:var(--mid)">Заказов пока нет / 暂无订单</div>'; return; }
-  box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">${orders.map(o => {
-    const cl = cls.find(c => String(c.id) === String(o.client_id));
-    const c = cnt[o.id] || { n: 0, rej: 0 };
-    return `<button class="btn btn-secondary wh-purch-ord" data-id="${o.id}" style="text-align:left;padding:8px 12px;line-height:1.35" onclick="opWhOpen('${o.id}')">
-      <b>${escHtml(o.order_number)}</b> · ${escHtml(cl?.company_name || cl?.login || '')}
-      <div style="font-size:10px;color:var(--mid);font-weight:400">${statusLabel(o.status).split('/')[0].trim()}${o.date_ship ? ' · 🚚 ' + opFmtDate(o.date_ship) : ''}${o.shipment?.ship_number ? ' · ' + escHtml(o.shipment.ship_number) : ''}</div>
-      <div style="font-size:10px;font-weight:400">${c.n ? `🛒 партий: ${c.n}` : '<span style="color:var(--light)">закуп не начат</span>'}</div>
-    </button>`; }).join('')}</div>`;
+  const q = _opWh.q.trim().toLowerCase();
+  // по умолчанию — заказы, которые ещё собираются (машина формируется или её нет)
+  const list = (orders || []).filter(o => (_opWh.all || !o.shipment || o.shipment.status === 'forming') &&
+    (!q || [o.order_number, o.title, o.client?.company_name, o.client?.login, o.shipment?.ship_number].join(' ').toLowerCase().includes(q)));
+  box.innerHTML = `<div class="ctrl-bar" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <input class="inp" id="opwh-q" placeholder="🔍 Заказ, клиент, машина / 搜索" value="${escHtml(_opWh.q)}" style="min-width:220px;flex:1"
+        oninput="_opWh.q=this.value;clearTimeout(window._opwhT);window._opwhT=setTimeout(()=>opLoadWhOrders().then(()=>{const i=document.getElementById('opwh-q');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}}),300)">
+      <label style="font-size:12px;display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${_opWh.all ? 'checked' : ''} onchange="_opWh.all=this.checked;opLoadWhOrders()"> Показать уехавшие / 显示已发车</label>
+    </div>
+    <div style="font-size:11px;color:var(--mid);margin-bottom:8px">Если Ли или менеджер не внесли закуп, склад может внести его сам: поставщик, банчи, отказы и замены. 🔍 — клиенты, которым журнал виден. / 采购未填写时仓库可代填</div>
+    ${list.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap">${list.map(o => {
+      const c = cnt[o.id] || { n: 0, rej: 0 };
+      return `<button class="btn btn-secondary wh-purch-ord" data-id="${o.id}" style="text-align:left;padding:8px 12px;line-height:1.35" onclick="opWhOpen('${o.id}')">
+        <b>${escHtml(o.order_number)}</b> · ${escHtml(o.client?.company_name || o.client?.login || '')}${o.client?.purchase_tracking ? ' 🔍' : ''}
+        <div style="font-size:10px;color:var(--mid);font-weight:400">${statusLabel(o.status).split('/')[0].trim()}${o.shipment?.ship_number ? ' · 🚚 ' + escHtml(o.shipment.ship_number) : o.date_ship ? ' · 🚚 ' + opFmtDate(o.date_ship) : ''}</div>
+        <div style="font-size:10px;font-weight:400">${c.n ? `🛒 партий: ${c.n}${c.rej ? ' · отказов ' + c.rej : ''}` : '<span style="color:#b45309">закуп не внесён / 未填写</span>'}</div>
+      </button>`; }).join('')}</div>` : '<div style="font-size:12px;color:var(--mid)">Заказов нет / 暂无订单</div>'}`;
 }
 
 async function opWhOpen(orderId) {
@@ -21434,7 +21524,8 @@ async function loadSupplierDeliveries() {
       .eq('shipment_id', shpId).order('id'),
   ]);
   if (!purch?.length) {
-    wrap.innerHTML = '<div style="padding:12px;color:var(--light);font-size:12px">Закуп по этой машине ещё не заполнен менеджером / 该车次采购单尚未填写</div>';
+    wrap.innerHTML = `<div style="padding:12px;font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="color:var(--mid)">Закуп по этой машине ещё не заполнен / 该车次采购单尚未填写</span>
+      <button class="btn btn-gold btn-sm" onclick="whOpenPurchase(${shpId})">🛒 Заполнить закуп по машине / 填写采购</button></div>`;
     renderReceivingDocs(shpId);
     return;
   }
@@ -21447,6 +21538,7 @@ async function loadSupplierDeliveries() {
     groups[k].rows.push(r);
   });
   _supDeliv = { shipment: shp, groups: Object.values(groups) };
+  const editBtn = `<div style="margin-bottom:8px"><button class="btn btn-secondary btn-sm" onclick="whOpenPurchase(${shpId})">✏️ Изменить закуп по машине / 修改采购</button></div>`;
 
   wrap.innerHTML = _supDeliv.groups.map((g, gi) => {
     const times = [...new Set(g.rows.map(r => r.delivery_time).filter(Boolean))].join(', ');
@@ -21481,6 +21573,7 @@ async function loadSupplierDeliveries() {
       </table></div>
     </div>`;
   }).join('');
+  wrap.insertAdjacentHTML('afterbegin', editBtn);
   renderReceivingDocs(shpId);
 }
 
@@ -23484,18 +23577,19 @@ function exportPricePDF() {
     warehouse: [
       { t: '你好！我是 Ammik 🌷', x: '我来详细介绍<b>仓库账号</b>的所有功能，大约 3 分钟。每一步都会告诉你在哪里点、要注意什么。最后可以给 Даша 写意见和问题。' + R('Подробная экскурсия по складу (~3 мин). В конце — форма отзыва для Даши.') },
       { s: nav('warehouse'), run: P('warehouse'), t: '备货 / Сборка', x: '左边菜单第一个是<b>仓库主页</b>。圆圈里的数字 = 还没备完的订单数。里面有几个标签页：待审核、备货、收货、标签、投诉、统计、采购。' + R('Главный раздел склада: вкладки Входящие, Сборка, Приёмка, Этикетки, Претензии, Сводка, Закуп.') },
-      { s: '#whtab-pending', run: WT('pending'), t: '① 待审核订单 / Входящие', x: '客户的新订单在经理确认<b>之前</b>先到这里。请核对每一个品种：<br>• <b>扎/箱</b>（每箱扎数）<br>• <b>枝/扎 或 克/扎</b>（每扎枝数或重量）<br>和实际不一样就直接改数字，改过的格子会变<b>橙色</b>。' + R('Новые заказы до подтверждения: сверьте банчи в коробе и стебли/граммы в банче; изменённое подсвечивается оранжевым.') },
-      { s: '#wh-pending-list .card', t: '包装备注 / Заметки', x: '每个品种右边可以写<b>包装备注</b>（缺货、替换、规格问题）。下面还有<b>订单总体备注</b>。🌐 按钮可以把备注翻译成俄语。写完一定点 <b>“💾 保存备注”</b>，经理会收到通知并确认修改。' + R('Заметки по позициям и общая; 🌐 переводит на русский; обязательно «Сохранить заметки» — менеджер получит уведомление.') },
+      { s: '#whtab-pending', run: WT('pending'), t: '① 包装核对 / Пакинг', x: '这里是<b>所有还没备货的订单</b>：草稿、待审核，还有已确认、车还在组车的订单。默认只显示<b>“待核对”</b>的。上面可以搜索订单、客户或品名，按车次筛选。每个订单是一行，<b>点一下展开</b>，再点收起。' + R('Все несобранные заказы: черновики, на проверке и подтверждённые в формирующихся машинах. По умолчанию — «Проверить». Поиск, фильтр по машине; заказ раскрывается по клику.') },
+      { s: '#wh-pending-list', t: '核对每一行 / Проверка позиций', x: '展开后每个品种一行：<b>实际箱数、扎/箱、枝(克)/扎</b>。和实际不一样就改，改过的格子变<b>橙色</b>。<br>没有货就点 <b>❌</b>（箱数变 0，自动写“缺货”）。右边可以写备注，🌐 翻译成俄语。订单很长时用上面的搜索或勾选“只看修改”。' + R('Факт коробок, банчи, стебли; ❌ — нет в наличии; заметка и перевод; поиск и «только изменённые» для длинных заказов.') },
+      { s: '#wh-pending-list', t: '保存 / Сохранить', x: '最后点下面的 <b>“✅ 包装已核对·保存”</b>。有修改的话经理会收到通知并确认，确认后订单自动更新。订单状态变成<b>“✅ 已核对”</b>；如果经理之后又改了订单，会变成<b>“🔄 已修改”</b>，需要再核对一次。' + R('«Пакинг проверен» — менеджер получит изменения на подтверждение. Если менеджер потом изменит заказ — статус «Изменён после проверки».') },
       { s: '#whtab-assembly', run: WT('assembly'), t: '② 备货 / Сборка', x: '已确认的订单都在这里。上面可以按<b>出货日期</b>和<b>车次</b>筛选。已经出发的车默认<b>隐藏</b>，需要看就勾选“显示已出发的车”。' + R('Подтверждённые заказы. Фильтр по дате и машине; уехавшие машины скрыты (галочка — показать).') },
       { s: '#warehouse-list .card', t: '订单卡片 / Карточка заказа', x: '每个订单顶部有汇总：<b>箱数、m³、总扎数、总枝数/公斤</b>。表格里每行：箱数、箱规、扎/箱、枝(克)/扎、总扎数、总数量。<br>如果有<b>子客户</b>，品种会按子客户分组，方便分开装箱和贴标签。' + R('Итоги заказа: коробки, м³, банчи, шт/кг. Строки: коробки, размер, банчи, стебли/граммы. Субклиенты — группами.') },
       { s: '#warehouse-list .card', t: '⚠️ 黄色备注 / Жёлтые пометки', x: '品名下面<b>黄色的📝</b>是装箱要求，比如“用无纺布包装”、“只用软包装，不用纸箱”、“必须放红玫瑰”。<b>一定要看！</b>灰绿色的是一般说明。' + R('Жёлтые 📝 — требования к упаковке (нетканка, мягкая упаковка и т.п.). Обязательно читать.') },
       { s: '#warehouse-list .card .btn-sm', t: '备货完成 / Собрано', x: '订单全部装好后点 <b>“✅ 备货完成”</b>，经理马上收到通知。点错了可以“↩ 取消”。旁边 <b>“🏷 打印标签”</b> 直接打印这个订单的箱标。' + R('«Собрано!» — менеджер получит уведомление; «Этикетки» — печать этикеток заказа.') },
-      { s: '#whtab-receiving', run: WT('receiving'), t: '③ 收货 / Приёмка', x: '<b>上半部分：供应商到货。</b>选择车次，就能看到每个供应商送什么、多少扎、几点送到。可以打印<b>验收单</b>（📄）、导出 Excel、上传验收照片或单据（📤）。' + R('Верх: кто из поставщиков что везёт; печать формы приёмки, загрузка актов/фото.') },
+      { s: '#whtab-receiving', run: WT('receiving'), t: '③ 收货 / Приёмка', x: '<b>上半部分：供应商到货。</b>选择车次，就能看到每个供应商送什么、多少扎、几点送到。可以打印<b>验收单</b>、导出 Excel、上传验收照片或单据（📤）。<b>按车采购还没填的话，点“🛒 填写采购”自己填</b>（仓库看不到价格）。' + R('Верх: кто из поставщиков что везёт; печать формы приёмки, загрузка актов/фото.') },
       { s: '#whtab-receiving', t: '按订单收货 / Приёмка по заказу', x: '<b>下半部分：按订单录入实际到货。</b>选择订单，在“实际”一栏填写真实的<b>箱数、扎/箱、枝/扎（克）</b>。品种被替换就勾选<b>“换货”</b>并写替换成什么。点<b>“保存并通知经理”</b>——经理确认后，出货单和发票会自动更新。' + R('Низ: факт по заказу — коробки, банчи, стебли; «Замена» с указанием на что. После подтверждения менеджером накладная и инвойс обновятся.') },
       { s: '#whtab-labels', run: WT('labels'), t: '④ 标签 / Этикетки', x: '选择一个或几个订单，生成箱标表格，然后打印。每箱一张，标签上有品名、温度、卖方、进口商等信息。' + R('Этикетки по одному или нескольким заказам — по одной на коробку.') },
       { s: '#whtab-claims', run: WT('claims'), t: '⑤ 投诉 / Претензии', x: '客户收到货后的投诉（有照片）。系统会区分<b>仓库责任</b>（质量、破损、数量）和<b>供应商责任</b>。请看看照片，下次装箱时注意。' + R('Претензии клиентов с фото: ответственность склада или поставщика.') },
       { s: '#whtab-stats', run: WT('stats'), t: '⑥ 统计 / Сводка', x: '选择时间段，可以看到备货完成率、收货、缺货和投诉数量。' + R('Сводка за период: собрано, принято, недостачи, претензии.') },
-      { s: '#whtab-purchase', run: WT('purchase'), t: '⑦ 采购记录 / Закуп', x: '透明采购的客户（Диантус）的订单：每次采购的<b>日期、供应商、价格、拒收（价格/质量）和替换</b>。打开订单就能添加或修改记录，也可以从 Excel 导入采购表。' + R('Журнал закупа по заказам Диантуса: даты, поставщики, цены, отказы, замены; можно загрузить из Excel.') },
+      { s: '#whtab-purchase', run: WT('purchase'), t: '⑦ 采购记录 / Закуп', x: '所有订单的<b>采购记录</b>：日期、供应商、扎数、拒收和替换。<b>如果 Ли 或经理还没填，仓库可以自己填。</b>没有填的订单显示橙色“未填写”。也可以从 Excel 导入采购表。' + R('Журнал закупа по всем заказам: если Ли или менеджер не внесли — склад вносит сам.') },
       { s: nav('shipments'), run: P('shipments'), t: '🚚 车次 / Отгрузки', x: '所有车次：每辆车装了哪些订单、多少箱、多少 m³、还剩多少空间。装好出发时点 <b>“📍 标记出发”</b>——这辆车上的客户会<b>马上</b>在 Telegram 机器人里收到消息。' + R('Машины и загрузка. «Отметить выезд» — клиенты машины сразу получают сообщение в боте.') },
       { s: '#mode-switch', t: '切换模式 / Режим', x: '你的账号同时有<b>仓库</b>和<b>经理</b>两种模式。点右上角这个按钮切换，页面会重新加载。系统会记住你上次用的模式。' + R('Переключатель «Склад ⇄ Менеджер» (если у аккаунта два режима).') },
       { s: nav('chat'), t: '💬 聊天 / Чат', x: '和办公室、经理沟通的聊天。有关订单的问题最好写在这里，大家都能看到，不会丢。' + R('Чат с офисом и менеджерами.') },
