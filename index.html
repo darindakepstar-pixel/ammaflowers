@@ -1923,13 +1923,17 @@ document.addEventListener('DOMContentLoaded', function(){
   <div class="page" id="page-labels">
     <div class="page-inner">
       <div class="page-title">Транспортные этикетки / 运输标签 / Shipping Labels</div>
-      <div class="page-sub">Таблица для этикеток по заказу(ам) — выберите один или несколько / 按订单生成标签表格</div>
+      <div class="page-sub">Выберите машину или заказы → 🛃 этикетки 80×130 на каждый короб, сразу на печать / 选择车次或订单 → 每箱一张报关标签，直接打印</div>
       <div class="ctrl-bar" style="flex-wrap:wrap;gap:10px">
+        <select class="inp" id="lbl-ship-filter" onchange="loadLabelOrders()" style="min-width:200px">
+          <option value="">🚚 Все машины / 所有车次</option>
+        </select>
         <select class="inp" id="lbl-client-filter" onchange="loadLabelOrders()" style="min-width:170px">
           <option value="">Все клиенты / 所有客户</option>
         </select>
         <button class="btn btn-secondary" onclick="toggleAllLabelOrders()" style="font-size:12px">☑️ Все / 全选</button>
-        <button class="btn btn-primary" onclick="buildLabelsFromSelected()" style="font-size:12px">👁 Показать / 显示</button>
+        <button class="btn btn-primary" onclick="CLB.build()" style="font-size:12px">🛃 Этикетки 80×130 / 生成标签</button>
+        <button class="btn btn-secondary" onclick="buildLabelsFromSelected()" style="font-size:12px">📋 Таблица / 表格</button>
         <button class="btn btn-primary" onclick="exportLabelsExcel()" id="btn-export-labels" style="display:none;background:var(--sage-d)">
           📊 Скачать Excel / 下载Excel
         </button>
@@ -1939,6 +1943,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <div style="font-size:11px;color:var(--mid);margin-bottom:6px">Выберите заказы для таблицы этикеток / 请选择订单:</div>
         <div id="lbl-orders-checkboxes"></div>
       </div>
+      <div id="clb-wrap" style="margin-top:12px"></div>
       <div id="labels-order-info" style="display:none;margin:12px 0 8px;background:var(--sage-l);border-radius:8px;padding:10px 16px;font-size:13px;color:var(--sage-d)"></div>
       <div id="labels-table-wrap" style="overflow-x:auto;margin-top:8px"></div>
     </div>
@@ -2167,10 +2172,10 @@ document.addEventListener('DOMContentLoaded', function(){
           </label>
           <!-- Label type selector -->
           <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden">
-            <button class="ltype-btn active" id="ltype-ru"  onclick="setLabelType('ru',this)"  title="Транспортная RU/EN">🇷🇺 RU/EN</button>
-            <button class="ltype-btn"        id="ltype-cn"  onclick="setLabelType('cn',this)"  title="Транспортная CN">🇨🇳 CN</button>
+            <button class="ltype-btn active" id="ltype-cn"  onclick="setLabelType('cn',this)"  title="Транспортная CN">🇨🇳 CN</button>
             <button class="ltype-btn"        id="ltype-box" onclick="setLabelType('box',this)" title="Стикер коробки по клиентам">📦 Коробки</button>
           </div>
+          <button class="btn btn-primary btn-sm" onclick="whCustomsLabels()" title="Транспортные RU/EN/中文 этикетки для таможни, на каждый короб">🛃 Таможня 80×130 / 报关标签</button>
         </div>
 
         <!-- Seller/Buyer settings (collapsible) -->
@@ -9365,6 +9370,7 @@ const CUS = {
             <div style="font-size:12px;color:var(--mid)">${escHtml(p.data?.date || '')} · ${escHtml(p.data?.buyer?.name || '')} · ${(p.data?.rows || []).length} 类 / групп · ${(p.data?.rows || []).reduce((s, r) => s + (+r.cartons || 0), 0)} 件 · <b>USD ${this.total(p).toFixed(2)}</b></div>
             <div style="font-size:11px;color:var(--light)">${escHtml(p.data?.order_numbers?.join(', ') || '')}${p.data?.exported_at ? ' · 📥 ' + new Date(p.data.exported_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}</div></div>
           <button class="btn btn-secondary btn-sm" onclick="CUS.edit(${p.id})">✏️ 打开 / Открыть</button>
+          <button class="btn btn-secondary btn-sm" onclick="CLB.fromPack(${p.id})">🏷 标签 / Этикетки</button>
           <button class="btn btn-gold btn-sm" onclick="CUS.edit(${p.id}).then(()=>CUS.exportXlsx())">📥 导出 Excel</button>
           <button class="btn btn-danger btn-sm" onclick="CUS.del(${p.id})">🗑</button></div>`).join('')
         : `<div class="empty-state"><div class="icon">🛃</div><p>此车次还没有报关文件 / Для этой машины пакетов пока нет</p></div>`}`;
@@ -12790,13 +12796,33 @@ function applyImportedPrices() {
 let _labelsCurrentOrder = null;
 let _labelsAllOrders    = []; // loaded orders list
 
+let _lblShips = [];
 async function loadLabelOrders() {
+  const preset = CLB.preset;
+  const shSel = document.getElementById('lbl-ship-filter');
+  if (shSel && !shSel.dataset.loaded) {
+    try {
+      const { data: shp } = await sb.from('shipments').select('id, ship_number, ship_date, truck_name, status')
+        .order('ship_date', { ascending: false }).limit(60);
+      _lblShips = shp || [];
+      shSel.innerHTML = '<option value="">🚚 Все машины / 所有车次</option>' + _lblShips.map(s =>
+        `<option value="${s.id}">🚚 ${escHtml(s.ship_number || '')}${s.ship_date ? ' · ' + s.ship_date : ''}${s.truck_name ? ' · ' + escHtml(s.truck_name) : ''}</option>`).join('');
+      shSel.dataset.loaded = '1';
+    } catch (e) {}
+  }
+  if (preset) {
+    if (shSel) shSel.value = preset.shipId && [...shSel.options].some(o => o.value === String(preset.shipId)) ? String(preset.shipId) : '';
+    const cfx = document.getElementById('lbl-client-filter'); if (cfx) cfx.value = '';
+  }
+  const sf = shSel?.value;
   const cf = document.getElementById('lbl-client-filter')?.value;
   let q = sb.from('orders').select(`
-    id, order_number, date_order, date_ship, status,
+    id, order_number, date_order, date_ship, status, shipment_id,
     client:users!orders_client_id_fkey(company_name, login)
-  `).in('status', ['confirmed','invoiced','paid','sent'])
-    .order('created_at', {ascending: false});
+  `).order('created_at', {ascending: false});
+  // Выбрана машина — показываем все её заказы; иначе — подтверждённые
+  if (sf) q = q.eq('shipment_id', sf).not('status', 'in', '(new,draft,cancelled,canceled,rejected,pending_review)');
+  else q = q.in('status', ['confirmed','invoiced','paid','sent']);
   if (cf) q = q.eq('client_id', cf);
   await ensureScope(); q = scopeQ(q);
   const { data } = await q;
@@ -12815,29 +12841,38 @@ async function loadLabelOrders() {
     });
   }
 
-  // Render checkboxes
-  const listEl = document.getElementById('lbl-orders-list');
-  const cbWrap = document.getElementById('lbl-orders-checkboxes');
-  if (!_labelsAllOrders.length) {
-    listEl.style.display = 'none';
-    document.getElementById('labels-table-wrap').innerHTML =
-      `<div class="empty-state"><div class="icon">🏷</div><p>Нет подтверждённых заказов / 没有已确认的订单</p></div>`;
-    return;
-  }
-  listEl.style.display = '';
-  cbWrap.innerHTML = _labelsAllOrders.map(o => {
-    const client = o.client?.company_name || o.client?.login || '?';
-    return `<label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;font-size:13px">
-      <input type="checkbox" value="${o.id}" class="lbl-order-cb" style="width:16px;height:16px;cursor:pointer">
-      <span><b>#${o.order_number}</b> · ${client} · <span style="color:var(--mid)">${o.date_order||''}</span></span>
-    </label>`;
-  }).join('');
-
   // Reset
   document.getElementById('labels-order-info').style.display = 'none';
   document.getElementById('labels-table-wrap').innerHTML = '';
   document.getElementById('btn-export-labels').style.display = 'none';
+  const clbWrap = document.getElementById('clb-wrap'); if (clbWrap) clbWrap.innerHTML = '';
   _labelsCurrentOrder = null;
+
+  // Render checkboxes
+  const listEl = document.getElementById('lbl-orders-list');
+  const cbWrap = document.getElementById('lbl-orders-checkboxes');
+  const pre = new Set((preset?.orderIds || []).map(String));
+  if (!_labelsAllOrders.length) {
+    listEl.style.display = 'none';
+    if (!preset) {
+      document.getElementById('labels-table-wrap').innerHTML =
+        `<div class="empty-state"><div class="icon">🏷</div><p>${sf ? 'В этой машине нет заказов / 此车次没有订单' : 'Нет подтверждённых заказов / 没有已确认的订单'}</p></div>`;
+      return;
+    }
+  } else {
+    listEl.style.display = '';
+    const shipName = id => { const s = _lblShips.find(x => String(x.id) === String(id)); return s ? s.ship_number : ''; };
+    cbWrap.innerHTML = _labelsAllOrders.map(o => {
+      const client = o.client?.company_name || o.client?.login || '?';
+      const on = pre.size ? pre.has(String(o.id)) : !!sf;
+      const sn = !sf && o.shipment_id ? shipName(o.shipment_id) : '';
+      return `<label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;font-size:13px">
+        <input type="checkbox" value="${o.id}" class="lbl-order-cb" ${on ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer">
+        <span><b>#${o.order_number}</b> · ${escHtml(client)} · <span style="color:var(--mid)">${o.date_order||''}</span>${sn ? ` · <span style="color:var(--sage-d)">🚚 ${escHtml(sn)}</span>` : ''}</span>
+      </label>`;
+    }).join('');
+  }
+  if (preset) CLB.build(preset);
 }
 
 function toggleAllLabelOrders() {
@@ -12851,6 +12886,7 @@ async function buildLabelsFromSelected() {
   if (!selected.length) { toast('Выберите хотя бы один заказ / 请至少选择一个订单'); return; }
 
   const wrap   = document.getElementById('labels-table-wrap');
+  const clbWrap = document.getElementById('clb-wrap'); if (clbWrap) clbWrap.innerHTML = '';
   const info   = document.getElementById('labels-order-info');
   const btnExp = document.getElementById('btn-export-labels');
 
@@ -14118,7 +14154,7 @@ async function toggleAssembled(orderId, isAssembled) {
 }
 
 // ── LABELS from warehouse ──
-let _currentLabelType = 'ru';
+let _currentLabelType = 'cn';
 let _currentLabelOrder = null;
 
 function setLabelType(type, btn) {
@@ -14446,6 +14482,11 @@ function makeLabelsEditable(printArea) {
   printArea.setAttribute('spellcheck', 'false');
   printArea.style.outline = 'none';
   printArea.style.cursor = 'text';
+}
+
+function whCustomsLabels() {
+  const id = document.getElementById('wh-label-order')?.value;
+  if (id) CLB.fromOrder(id); else CLB.goToPage(null);
 }
 
 function whDoPrint() {
@@ -24114,6 +24155,440 @@ async function notifyGz(title, body) {
 </script>
 
 
+<style>
+/* Таможенные этикетки 80×130: предпросмотр */
+.clb-prev{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start}
+.clb-w{--s:1.25;position:relative;width:calc(80mm * var(--s));height:calc(130mm * var(--s));flex-shrink:0;background:#fff;border-radius:3px;overflow:hidden;box-shadow:0 1px 5px rgba(0,0,0,.18)}
+.clb-w .clb-l{transform:scale(var(--s));transform-origin:top left}
+.clb-edit{position:absolute;right:6px;bottom:6px;z-index:2;border:none;border-radius:6px;background:var(--sage-d,#2A3F24);color:#fff;font-size:12px;padding:5px 9px;cursor:pointer;opacity:0;transition:opacity .15s}
+.clb-w:hover .clb-edit,.clb-edit:focus-visible{opacity:1}
+@media (hover:none){.clb-edit{opacity:.92}}
+@media (max-width:700px){.clb-w{--s:1}.clb-card .field{flex-basis:100%;min-width:0}.clb-card select.inp{min-width:0;width:100%}.clb-card .card-title{min-width:0!important}}
+.clb-card textarea.inp{font-family:inherit}
+</style>
+<script>
+// ══════════════════════════════════════════════════════════
+//  ТАМОЖЕННЫЕ ЭТИКЕТКИ 80×130 / 报关标签
+//  Бывший label_generator.html, встроенный в систему: этикетки строятся прямо из заказов
+//  (одна на каждый короб), без выгрузки Excel. Продавцы/импортёры и параметры машины
+//  (получатель, инвойс, рег. № базы) хранятся в app_settings → key 'labels',
+//  поэтому офис заполняет их один раз, а склад печатает с теми же данными.
+// ══════════════════════════════════════════════════════════
+const CLB_DEFAULTS = {
+  sellers: [
+    { id: 'amma', name: 'AMMA FLOWERS', company: 'KUNMING AMA FLOWERS CO., LTD',
+      address: 'NO. 301-305, BUILDING 11, YUNNAN HONGYUN INTERNATIONAL LOGISTICS PORT, LUO YANG COMMUNITY, LAOSHAN SUBDISTRICT OFFICE, ECONOMIC DEVELOPMENT ZONE, KUNMING DISTRICT, CHINA (YUNNAN) PILOT FREE TRADE ZONE',
+      reg: '8601ZM171' },
+    { id: 'yicheng', name: 'YICHENG', company: 'SUIFENHE YICHENG SUPPLY CHAIN MANAGEMENT CO., LTD',
+      address: 'ROOM 906, KAIXIANG HOTEL, SUIFENHE CITY, MUDANJIANG CITY, HEILONGJIANG PROVINCE，CHINA',
+      reg: '8601ZM171' },
+  ],
+  buyers: [
+    { id: 'sputnik', name: 'SPUTNIK LLC', company: 'ООО «СПУТНИК» / SPUTNIK LLC', inn: '9723173273',
+      address: '115088, Moscow, 1st Mashinostroeniya st., 4, Building 1, Office 4, Yuzhnoportovy municipal district, Internal territory' },
+    { id: 'md', name: 'MD-DELIVERY', company: 'OOO «МД-ДОСТАВКА» / LLC "MD-DELIVERY"', inn: '7720458929',
+      address: 'RF, 105118, Moscow, Perovo municipal district, Entuziastov highway, building 34, room 8N/ 4' },
+    { id: 'master', name: 'MASTER LOGISTIK LLC', company: 'ООО «МАСТЕР ЛОГИСТИК» / MASTER LOGISTIK LLC', inn: '5001169866',
+      address: '143985, Russia, Moscow Region, Balashikha urban district, Sobolikha village, Novoslobodskaya st., 23, bldg. 1' },
+  ],
+  consignee: '阿妈花卉\nMASTER LOGISTIK LLC',
+  reg: '8601ZM239',
+  ship: {},
+};
+const CLB_TEMP = { cut: '+2°C … +5°C', pot: '+15°C … +18°C', other: '+15°C … +25°C' };
+const CLB_SHARED = ['sellerText', 'buyerText', 'consignee', 'invoice', 'shipment', 'reg', 'prodDate'];
+
+const CLB = {
+  cfg: null, orders: [], labels: [], p: {}, shipKey: '', shipId: null, ships: {}, preset: null, _saveT: null,
+
+  esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); },
+  br(s) { return this.esc(s).replace(/\n/g, '<br>'); },
+  canEditParties() { return currentUser?.role === 'manager'; },   // склад выбирает из списка, справочник правит офис
+  today() { return new Date().toLocaleDateString('ru-RU'); },
+
+  // ── справочник и параметры машин ──
+  async loadCfg() {
+    let v = null;
+    try {
+      const { data } = await sb.from('app_settings').select('value').eq('key', 'labels').maybeSingle();
+      v = data?.value || null;
+    } catch (e) {}
+    if (!v) { try { v = JSON.parse(localStorage.getItem('amma-labels-cfg') || 'null'); } catch (e) {} }
+    const d = JSON.parse(JSON.stringify(CLB_DEFAULTS));
+    this.cfg = {
+      sellers: v?.sellers?.length ? v.sellers : d.sellers,
+      buyers: v?.buyers?.length ? v.buyers : d.buyers,
+      consignee: v?.consignee ?? d.consignee,
+      reg: v?.reg ?? d.reg,
+      ship: v?.ship || {},
+    };
+    return this.cfg;
+  },
+  async saveCfg(patch) {
+    // перечитываем свежую версию, чтобы не затереть то, что сохранил коллега
+    let cur = null;
+    try { const { data } = await sb.from('app_settings').select('value').eq('key', 'labels').maybeSingle(); cur = data?.value || null; } catch (e) {}
+    const next = Object.assign({}, cur || this.cfg, patch);
+    if (patch.ship) next.ship = Object.assign({}, cur?.ship || {}, patch.ship);
+    const keys = Object.keys(next.ship || {});
+    if (keys.length > 60) keys.sort((a, b) => (next.ship[a].t || 0) - (next.ship[b].t || 0)).slice(0, keys.length - 60).forEach(k => delete next.ship[k]);
+    this.cfg = Object.assign(this.cfg || {}, next);
+    try { localStorage.setItem('amma-labels-cfg', JSON.stringify(next)); } catch (e) {}
+    const { error } = await sb.from('app_settings').upsert({ key: 'labels', value: next, updated_at: new Date().toISOString() });
+    if (error) { console.warn('labels cfg:', error.message); return false; }
+    return true;
+  },
+  seller() { return this.cfg.sellers.find(s => s.id === this.p.seller) || this.cfg.sellers[0] || {}; },
+  buyer() { return this.cfg.buyers.find(s => s.id === this.p.buyer) || this.cfg.buyers[0] || {}; },
+  matchParty(list, name) {
+    const n = String(name || '').toLowerCase().replace(/[^a-zа-я0-9一-鿿]/g, '');
+    if (!n) return null;
+    return list.find(x => [x.name, x.company].some(v => { const m = String(v || '').toLowerCase().replace(/[^a-zа-я0-9一-鿿]/g, ''); return m && (m.includes(n) || n.includes(m)); })) || null;
+  },
+  shipMark(s) {
+    if (!s) return '';
+    const d = s.ship_date ? new Date(s.ship_date + 'T00:00:00') : null;
+    const cn = d && !isNaN(d) ? `${d.getMonth() + 1}月${d.getDate()}日` : '';
+    return [cn, s.truck_name || '', !cn ? s.ship_number || '' : ''].filter(Boolean).join(' ');
+  },
+
+  // ── сборка этикеток из выбранных заказов ──
+  async build(preset) {
+    preset = preset || this.preset || null; this.preset = null;
+    const ids = preset?.orderIds?.length ? preset.orderIds.map(String) : [...document.querySelectorAll('.lbl-order-cb:checked')].map(c => c.value);
+    if (!ids.length) { toast('Выберите хотя бы один заказ / 请至少选择一个订单'); return; }
+    const wrap = document.getElementById('clb-wrap'); if (!wrap) return;
+    document.getElementById('labels-table-wrap').innerHTML = '';
+    document.getElementById('labels-order-info').style.display = 'none';
+    wrap.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    await this.loadCfg();
+    const { data: orders, error } = await sb.from('orders').select(`id, order_number, title, invoice_ref, date_order, date_ship, shipment_id,
+      client:users!orders_client_id_fkey(company_name, login),
+      order_items(*, flower:flowers(ru,cn,en,catalog,is_weight,cat_ru,stems,boxes_per_box,pack,box_size))`).in('id', ids);
+    if (error || !orders?.length) { wrap.innerHTML = `<div class="empty-state"><p>Ошибка загрузки / 加载错误${error ? ': ' + this.esc(error.message) : ''}</p></div>`; return; }
+    orders.sort((a, b) => String(a.order_number).localeCompare(String(b.order_number), undefined, { numeric: true }));
+    this.orders = orders;
+
+    const inv = {};
+    try {
+      const { data } = await sb.from('invoices').select('order_id,invoice_number').in('order_id', ids);
+      (data || []).forEach(v => { if (v.invoice_number) inv[v.order_id] = v.invoice_number; });
+    } catch (e) {}
+    const shipIds = [...new Set(orders.map(o => o.shipment_id).filter(Boolean))];
+    this.ships = {};
+    if (shipIds.length) {
+      try {
+        const { data } = await sb.from('shipments').select('id, ship_number, ship_date, truck_name').in('id', shipIds);
+        (data || []).forEach(s => { this.ships[s.id] = s; });
+      } catch (e) {}
+    }
+    let pack = null;
+    if (shipIds.length) {
+      try {
+        const { data } = await sb.from('customs_packs').select('id, number, shipment_id, data').in('shipment_id', shipIds);
+        const set = new Set(ids);
+        // пакет подставляем, только если он покрывает все выбранные заказы (иначе у заказов разные инвойсы)
+        pack = (data || []).find(p => { const o = new Set((p.data?.order_ids || []).map(String)); return [...set].every(id => o.has(id)); }) || null;
+      } catch (e) {}
+    }
+
+    this.shipId = shipIds.length === 1 && orders.every(o => o.shipment_id === shipIds[0]) ? shipIds[0] : null;
+    this.shipKey = this.shipId ? 's' + this.shipId : '';
+    const saved = (this.shipKey && this.cfg.ship[this.shipKey]) || {};
+    const fromPack = preset?.invoice || pack?.number || '';
+    const sMatch = this.matchParty(this.cfg.sellers, preset?.sellerName || pack?.data?.seller?.name);
+    const bMatch = this.matchParty(this.cfg.buyers, preset?.buyerName || pack?.data?.buyer?.name);
+    const one = orders.length === 1 ? orders[0] : null;
+    this.p = {
+      seller: saved.seller || sMatch?.id || this.cfg.sellers[0]?.id,
+      buyer: saved.buyer || bMatch?.id || this.cfg.buyers[0]?.id,
+      consignee: saved.consignee ?? this.cfg.consignee,
+      invoice: preset?.invoice || saved.invoice || fromPack || (one ? (one.invoice_ref || inv[one.id] || '') : ''),
+      shipment: saved.shipment || this.shipMark(this.ships[this.shipId]),
+      reg: saved.reg ?? this.cfg.reg,
+      prodDate: saved.prodDate || this.today(),
+    };
+    this.packNote = pack ? pack.number : '';
+
+    this.labels = [];
+    orders.forEach(o => {
+      let pos = 0;
+      (o.order_items || []).forEach(it => {
+        pos++;
+        const f = it.flower || {}, s = it.flower_snapshot || {};
+        const pick = k => (f[k] !== null && f[k] !== undefined && f[k] !== '') ? f[k] : (s[k] ?? '');
+        const catalog = pick('catalog') || 'cut';
+        const type = catalog === 'potted' ? 'pot' : catalog === 'supplies' ? 'other' : 'cut';
+        const ru = pick('ru'), cn = pick('cn'), en = pick('en');
+        const per = parseInt(it.bunches_per_box) || parseInt(pick('boxes_per_box')) || '';
+        let content, spb = '', bpb = '', wb = false;
+        if (type === 'cut') {
+          content = ru || en || cn || '—';
+          wb = typeof isWeightItem === 'function' ? isWeightItem((s.cat_ru || s.pack) ? s : f) : false;
+          spb = parseInt(pick('stems')) || ''; bpb = per;
+        } else if (type === 'pot') {
+          content = [en, ru, pick('pack'), per ? per + ' шт/кор' : ''].filter(Boolean).join(' / ') || cn || '—';
+        } else {
+          content = [en, ru].filter(Boolean).join(' / ') || cn || '—';
+        }
+        const n = Math.max(1, parseInt(it.qty_boxes) || 1);
+        for (let i = 1; i <= n; i++) {
+          this.labels.push({ key: `${o.id}:${it.id ?? pos}`, type, content, cn: type === 'cut' ? cn : '', color: '', spb, bpb, wb,
+            temp: CLB_TEMP[type], country: 'Китай / China', pos, boxIdx: i, boxCount: n,
+            order: String(o.order_number ?? ''), batch: String(o.order_number ?? ''),
+            invoiceAuto: o.invoice_ref || inv[o.id] || '', ov: {} });
+        }
+      });
+    });
+    this.render();
+  },
+
+  val(ld, k) {
+    if (ld.ov && Object.prototype.hasOwnProperty.call(ld.ov, k)) return ld.ov[k];
+    if (k === 'sellerText') { const s = this.seller(); return [s.company || s.name, s.address].filter(Boolean).join('\n'); }
+    if (k === 'buyerText') { const b = this.buyer(); return [b.company || b.name, 'ИНН / INN ' + (b.inn || '—'), b.address].filter(Boolean).join('\n'); }
+    if (k === 'invoice') return this.p.invoice || ld.invoiceAuto || '';
+    if (k === 'reg') return this.p.reg || this.seller().reg || '—';
+    return this.p[k] ?? '';
+  },
+
+  stemLine(ld) {
+    if (ld.type !== 'cut') return '';
+    const spb = parseFloat(ld.spb), bpb = parseFloat(ld.bpb), tot = spb && bpb ? spb * bpb : 0;
+    const kg = v => (v / 1000).toFixed(2).replace(/\.?0+$/, '');
+    const L = [];
+    if (ld.spb) L.push(ld.wb ? `г/банч: ${ld.spb} г (${kg(spb)} кг)` : `Стеблей в связке: ${ld.spb}`);
+    if (ld.bpb) L.push(ld.wb ? `Банчей в коробе: ${ld.bpb}` : `Связок в коробе: ${ld.bpb}`);
+    if (tot) L.push(ld.wb ? `г/коробе: ${tot} г (${kg(tot)} кг)` : `Стеблей в коробе: ${tot}`);
+    return L.length ? `<div class="clb-stem">${this.esc(L.join(' · '))}</div>` : '';
+  },
+
+  labelHTML(ld) {
+    const v = k => this.val(ld, k);
+    const cons = String(v('consignee') || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
+    return `<div class="clb-l">
+      <div class="clb-hd"><div class="clb-pos">#${this.esc(ld.pos)} · ${ld.boxIdx}/${ld.boxCount}</div>${this.esc(ld.content)}
+        ${ld.cn ? `<div class="clb-cn">${this.esc(ld.cn)}</div>` : ''}
+        ${ld.color ? `<div class="clb-color">🌸 ${this.esc(ld.color)}</div>` : ''}${this.stemLine(ld)}</div>
+      <div class="clb-row"><span class="clb-k">Температурный режим / Temperature:</span><span class="clb-v"> ${this.esc(ld.temp)}</span>
+        ${ld.type === 'cut' ? '<span class="clb-k"> · Влажность / Humidity:</span><span class="clb-v"> 85–95%</span>' : ''}</div>
+      <div class="clb-row"><span class="clb-k">Страна происхождения / Country of origin:</span><span class="clb-v"> ${this.esc(ld.country)}</span></div>
+      <div class="clb-sec"><div class="clb-k">Продавец / Seller / 卖方:</div><div class="clb-addr">${this.br(v('sellerText'))}</div></div>
+      <div class="clb-sec"><div class="clb-k">Импортёр / Importer / 进口商:</div><div class="clb-addr">${this.br(v('buyerText'))}</div></div>
+      ${cons.length ? `<div class="clb-sec"><span class="clb-k">Получатель / Consignee / 收货人:</span><span class="clb-v" style="font-weight:600"> ${cons.map(x => this.esc(x)).join(' · ')}</span></div>` : ''}
+      <div class="clb-sec clb-grid">
+        ${v('invoice') ? `<div><span class="clb-k">Инвойс / Invoice No. / 发票号</span><span class="clb-v">${this.esc(v('invoice'))}</span></div>` : ''}
+        <div><span class="clb-k">Рег. № базы / Base reg. No. / 基地备案号</span><span class="clb-v">${this.esc(v('reg'))}</span></div>
+        <div><span class="clb-k">Дата производства / Production date / 生产日期</span><span class="clb-v">${this.esc(v('prodDate'))}</span></div>
+        <div><span class="clb-k">Партия / Production batch / 批次</span><span class="clb-v">${this.esc(ld.batch)}</span></div>
+        <div><span class="clb-k">Заказ / Order / 订单</span><span class="clb-v">${this.esc(ld.order)}</span></div>
+        ${v('shipment') ? `<div><span class="clb-k">Отгрузка / Shipment / 车次</span><span class="clb-v">${this.esc(v('shipment'))}</span></div>` : ''}
+      </div></div>`;
+  },
+
+  // CSS этикетки — один и тот же для предпросмотра и печати (размеры 1:1 с label_generator.html)
+  labelCSS() {
+    return `.clb-l{position:relative;background:#fff;color:#000;width:80mm;height:130mm;overflow:hidden;padding:4mm 5mm;box-sizing:border-box;
+        font-family:Arial,Helvetica,sans-serif;font-size:7pt;line-height:1.4;text-align:left}
+      .clb-hd{position:relative;background:#fff;color:#000;padding:3mm 4mm;margin:-4mm -5mm 2.4mm;font-weight:bold;font-size:8.5pt;line-height:1.35;border-bottom:.5mm solid #000}
+      .clb-pos{position:absolute;top:1mm;right:2mm;font-size:6pt;font-weight:600;color:#555;white-space:nowrap}
+      .clb-cn{font-size:7pt;font-weight:400;margin-top:.5mm;letter-spacing:.02em}
+      .clb-color{display:inline-block;margin-top:1.5mm;padding:.5mm 3mm;border-radius:2px;font-size:8pt;font-weight:700;background:#f0f0f0;border:1px solid #999}
+      .clb-stem{margin-top:1.5mm;font-size:7.5pt;font-weight:400}
+      .clb-row{margin:.7mm 0}
+      .clb-k{font-weight:700;font-size:6.5pt}
+      .clb-v{font-size:7pt}
+      .clb-sec{margin-top:1.6mm;padding-top:1.6mm;border-top:.3mm solid #ccc}
+      .clb-addr{font-size:6.3pt;line-height:1.3}
+      .clb-grid{display:grid;grid-template-columns:1fr 1fr;column-gap:3mm;row-gap:1mm}
+      .clb-grid .clb-k{display:block;font-size:6pt}
+      .clb-grid .clb-v{display:block;font-size:7pt;font-weight:600}`;
+  },
+
+  // ── интерфейс ──
+  render() {
+    const wrap = document.getElementById('clb-wrap'); if (!wrap) return;
+    const p = this.p, can = this.canEditParties();
+    const opt = (list, cur) => list.map(x => `<option value="${this.esc(x.id)}" ${x.id === cur ? 'selected' : ''}>${this.esc(x.name)}</option>`).join('');
+    const ship = this.ships[this.shipId];
+    const boxes = this.labels.length;
+    const inp = (k, label, ph = '') => `<div class="field"><label>${label}</label><input class="inp" data-clb="${k}" value="${this.esc(p[k])}" placeholder="${this.esc(ph)}"></div>`;
+    wrap.innerHTML = `
+      <div class="card clb-card">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+          <div class="card-title" style="margin:0;flex:1;min-width:220px">🛃 Таможенные этикетки 80×130 / 报关标签</div>
+          <span style="font-size:12px;color:var(--mid)">${ship ? '🚚 ' + this.esc(ship.ship_number) + (ship.ship_date ? ' · ' + this.esc(ship.ship_date) : '') + ' · ' : ''}${this.orders.length} заказ(ов) / 订单</span>
+          ${this.packNote ? `<span class="badge" style="background:var(--sage-l);color:var(--sage-d)" title="Инвойс, продавец и импортёр взяты из таможенного пакета">🛃 ${this.esc(this.packNote)}</span>` : ''}
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Продавец / 卖方</label><div style="display:flex;gap:6px">
+            <select class="inp" data-clb="seller" style="flex:1">${opt(this.cfg.sellers, p.seller)}</select>
+            ${can ? `<button class="btn btn-secondary btn-sm" title="Справочник продавцов" onclick="CLB.partiesModal('sellers')">✏️</button>` : ''}</div></div>
+          <div class="field"><label>Импортёр / 进口商 (买方)</label><div style="display:flex;gap:6px">
+            <select class="inp" data-clb="buyer" style="flex:1">${opt(this.cfg.buyers, p.buyer)}</select>
+            ${can ? `<button class="btn btn-secondary btn-sm" title="Справочник импортёров" onclick="CLB.partiesModal('buyers')">✏️</button>` : ''}</div></div>
+        </div>
+        <div class="field-row">
+          <div class="field" style="flex:2"><label>Получатель / 收货人 — каждая строка отдельно / 每行一个</label>
+            <textarea class="inp" data-clb="consignee" rows="2" style="resize:vertical">${this.esc(p.consignee)}</textarea></div>
+          ${inp('shipment', 'Отгрузка (машина) / 车次', '10月21日 90方')}
+        </div>
+        <div class="field-row">
+          ${inp('invoice', 'Номер инвойса / 发票号', this.orders.length > 1 ? 'пусто = инвойс каждого заказа' : 'AM20260921')}
+          ${inp('reg', 'Рег. № базы / 基地备案号', '8601ZM239')}
+          ${inp('prodDate', 'Дата производства / 生产日期', this.today())}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="CLB.print()">🖨 Печать ${boxes} шт / 打印</button>
+          <span id="clb-saved" style="font-size:11px;color:var(--mid)">${this.shipKey ? '💾 Параметры сохраняются для этой машины — склад увидит те же / 本车次参数自动保存' : 'Заказы из разных машин: параметры не сохраняются / 不同车次，参数不保存'}</span>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--mid);margin:4px 0 10px">Этикетка на каждый короб: <b>${boxes}</b> шт · нажмите ✏️ на этикетке, чтобы исправить / 每箱一张，点 ✏️ 修改</div>
+      <div class="clb-prev" id="clb-prev"></div>`;
+    wrap.querySelectorAll('[data-clb]').forEach(el => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => this.onParam(el)));
+    this.renderPreview();
+  },
+
+  renderPreview() {
+    const box = document.getElementById('clb-prev'); if (!box) return;
+    if (!this.labels.length) { box.innerHTML = '<div class="empty-state"><div class="icon">🏷</div><p>В заказах нет позиций / 订单里没有商品</p></div>'; return; }
+    box.innerHTML = `<style>${this.labelCSS()}</style>` + this.labels.map((ld, i) =>
+      `<div class="clb-w"><button class="clb-edit" onclick="CLB.editModal(${i})">✏️</button>${this.labelHTML(ld)}</div>`).join('');
+  },
+
+  onParam(el) {
+    this.p[el.dataset.clb] = el.value;
+    clearTimeout(this._rT); this._rT = setTimeout(() => this.renderPreview(), 150);
+    if (!this.shipKey) return;
+    clearTimeout(this._saveT);
+    this._saveT = setTimeout(async () => {
+      const ok = await this.saveCfg({ ship: { [this.shipKey]: { ...this.p, t: Date.now() } } });
+      const s = document.getElementById('clb-saved');
+      if (s) s.textContent = ok ? '✅ Сохранено для машины / 已保存' : '⚠️ Не удалось сохранить в базе — сохранено только в этом браузере / 仅保存在本浏览器';
+    }, 900);
+  },
+
+  editModal(i) {
+    const ld = this.labels[i]; if (!ld) return;
+    const f = (k, label, val, full, ta) => `<div class="field" ${full ? 'style="flex-basis:100%"' : ''}><label>${label}</label>${ta
+      ? `<textarea class="inp" id="clbe-${k}" rows="${ta}" style="resize:vertical">${this.esc(val)}</textarea>`
+      : `<input class="inp" id="clbe-${k}" value="${this.esc(val)}">`}</div>`;
+    const same = this.labels.filter(x => x.key === ld.key).length;
+    const cut = ld.type === 'cut';
+    document.getElementById('modal-content').innerHTML = `
+      <div class="modal-title">✏️ Этикетка #${this.esc(ld.pos)} · ${ld.boxIdx}/${ld.boxCount} / 编辑标签</div>
+      <div class="field-row">${f('content', 'Содержимое коробки / 箱子内容', ld.content, true, 2)}</div>
+      ${cut ? `<div class="field-row">${f('cn', 'Китайское название / 中文名称', ld.cn)}${f('color', 'Цвет / 颜色', ld.color)}</div>
+      <div class="field-row">${f('spb', ld.wb ? 'Грамм в банче / 克/扎' : 'Стеблей в связке / 数量/扎', ld.spb)}${f('bpb', 'Связок в коробе / 一箱扎数', ld.bpb)}</div>` : ''}
+      <div class="field-row">${f('temp', 'Температура / 温度', ld.temp)}${f('country', 'Страна / 国家', ld.country)}</div>
+      <div class="field-row">${f('sellerText', 'Продавец / 卖方', this.val(ld, 'sellerText'), false, 3)}${f('buyerText', 'Импортёр / 进口商', this.val(ld, 'buyerText'), false, 3)}</div>
+      <div class="field-row">${f('consignee', 'Получатель / 收货人', this.val(ld, 'consignee'), true, 2)}</div>
+      <div class="field-row">${f('invoice', 'Инвойс / 发票号', this.val(ld, 'invoice'))}${f('shipment', 'Отгрузка / 车次', this.val(ld, 'shipment'))}${f('reg', 'Рег. № базы / 基地备案号', this.val(ld, 'reg'))}</div>
+      <div class="field-row">${f('prodDate', 'Дата производства / 生产日期', this.val(ld, 'prodDate'))}${f('batch', 'Партия / 批次', ld.batch)}${f('order', 'Заказ / 订单', ld.order)}</div>
+      ${same > 1 ? `<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-top:4px"><input type="checkbox" id="clbe-all" checked>
+        Применить ко всем ${same} коробам этой позиции / 应用到该品种全部 ${same} 箱</label>` : ''}
+      <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+        <button class="btn btn-primary" onclick="CLB.saveEdit(${i})">💾 Сохранить / 保存</button></div>`;
+    openModal();
+  },
+
+  saveEdit(i) {
+    const ld = this.labels[i]; if (!ld) return;
+    const g = k => document.getElementById('clbe-' + k)?.value;
+    const own = ['content', 'cn', 'color', 'spb', 'bpb', 'temp', 'country', 'batch', 'order'];
+    const changes = {}, ov = {};
+    own.forEach(k => { const v = g(k); if (v !== undefined && v !== String(ld[k] ?? '')) changes[k] = v; });
+    CLB_SHARED.forEach(k => { const v = g(k); if (v !== undefined && v !== String(this.val(ld, k))) ov[k] = v; });
+    const all = document.getElementById('clbe-all')?.checked;
+    this.labels.forEach(x => {
+      if (x === ld || (all && x.key === ld.key)) { Object.assign(x, changes); x.ov = Object.assign({}, x.ov, ov); }
+    });
+    closeModal();
+    this.renderPreview();
+    toast('✓ Изменения сохранены / 已保存');
+  },
+
+  // ── справочник продавцов / импортёров ──
+  partiesModal(kind) {
+    const list = this.cfg[kind];
+    const isB = kind === 'buyers';
+    const row = (x, i) => `<div class="card clb-party" data-i="${i}" style="padding:12px;margin-bottom:8px">
+      <div class="field-row" style="margin-bottom:6px">
+        <div class="field"><label>Короткое имя / 简称</label><input class="inp" data-k="name" value="${this.esc(x.name)}"></div>
+        <div class="field" style="flex:2"><label>Компания / 公司全称</label><input class="inp" data-k="company" value="${this.esc(x.company)}"></div>
+        <div class="field" style="max-width:150px"><label>${isB ? 'ИНН / INN' : 'Рег. № / 备案号'}</label><input class="inp" data-k="${isB ? 'inn' : 'reg'}" value="${this.esc(isB ? x.inn : x.reg)}"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <div class="field" style="flex:1"><label>Адрес / 地址</label><textarea class="inp" data-k="address" rows="2" style="resize:vertical">${this.esc(x.address)}</textarea></div>
+        <button class="btn btn-danger btn-sm" onclick="this.closest('.clb-party').remove()">🗑</button>
+      </div></div>`;
+    document.getElementById('modal-content').innerHTML = `
+      <div class="modal-title">${isB ? '🏢 Импортёры / 进口商' : '🏭 Продавцы / 卖方'}</div>
+      <div id="clb-parties">${list.map(row).join('')}</div>
+      <button class="btn btn-secondary btn-sm" onclick="CLB.addParty('${kind}')">＋ Добавить / 新增</button>
+      <div class="modal-btns"><button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+        <button class="btn btn-primary" onclick="CLB.saveParties('${kind}')">💾 Сохранить / 保存</button></div>`;
+    document.getElementById('modal-content').classList.add('op-wide');
+    this._partyRow = row;
+    openModal();
+  },
+  addParty(kind) {
+    const box = document.getElementById('clb-parties');
+    box.insertAdjacentHTML('beforeend', this._partyRow({}, box.children.length));
+    box.lastElementChild.querySelector('input')?.focus();
+  },
+  async saveParties(kind) {
+    const old = this.cfg[kind];
+    const list = [...document.querySelectorAll('#clb-parties .clb-party')].map(el => {
+      const o = {}; el.querySelectorAll('[data-k]').forEach(i => { o[i.dataset.k] = i.value.trim(); });
+      const prev = old[+el.dataset.i];
+      o.id = prev?.id || ('p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5));
+      return o;
+    }).filter(o => o.name || o.company);
+    if (!list.length) { toast('Нужна хотя бы одна запись / 至少一条'); return; }
+    const ok = await this.saveCfg({ [kind]: list });
+    this.cfg[kind] = list;
+    closeModal();
+    toast(ok ? '✓ Справочник сохранён / 已保存' : '⚠️ Сохранено только в этом браузере / 仅本浏览器');
+    this.render();
+  },
+
+  // ── печать ──
+  print() {
+    if (!this.labels.length) { toast('Нет этикеток / 没有标签'); return; }
+    const w = window.open('', '_blank', 'width=900,height=760');
+    if (!w) { toast('Разрешите всплывающие окна для печати / 请允许弹出窗口'); return; }
+    const title = this.ships[this.shipId]?.ship_number || this.orders.map(o => o.order_number).join(', ');
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Этикетки ${this.esc(title)}</title><style>
+      @page{size:80mm 130mm;margin:0}
+      html,body{margin:0;padding:0;background:#fff}
+      ${this.labelCSS()}
+      .clb-l{page-break-after:always;break-after:page}
+      .clb-l:last-child{page-break-after:auto;break-after:auto}
+      @media screen{body{background:#e8e8e8;padding:12px;display:flex;flex-wrap:wrap;gap:10px}.clb-l{box-shadow:0 1px 4px rgba(0,0,0,.2)}}
+      </style></head><body>${this.labels.map(ld => this.labelHTML(ld)).join('')}
+      <script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script></body></html>`);
+    w.document.close();
+    try { logActivity('labels_print', 'shipment', this.shipId || null, title, `Таможенные этикетки: ${this.labels.length} шт`); } catch (e) {}
+  },
+
+  // ── входы из других разделов ──
+  goToPage(preset) {
+    this.preset = preset;
+    const tab = [...document.querySelectorAll('#nav-tabs .nav-tab')].find(t => /showPage\('labels'/.test(t.getAttribute('onclick') || ''));
+    showPage('labels', tab || null);
+  },
+  fromPack(id) {
+    const p = (typeof CUS !== 'undefined' ? CUS.packs : []).find(x => x.id === id); if (!p) return;
+    this.goToPage({ orderIds: (p.data?.order_ids || []).map(String), shipId: p.shipment_id, invoice: p.number,
+      sellerName: p.data?.seller?.name, buyerName: p.data?.buyer?.name });
+  },
+  fromOrder(orderId) { this.goToPage({ orderIds: [String(orderId)] }); },
+};
+
+</script>
 <style>
 /* Подпись разработчика + пасхалка с драконом */
 .dk-credit{margin-top:14px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:11px;color:var(--light,#8a918b);letter-spacing:.02em}
