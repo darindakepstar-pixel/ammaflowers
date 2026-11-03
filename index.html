@@ -9013,8 +9013,17 @@ async function mgrExcelSyncFile(input) {
     await impLoadFlowers();
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
     const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: null });
-    const { rows } = impParseAoa(aoa);
-    if (!rows.length) { toast('В файле не нашлось позиций / 未找到商品'); return; }
+    const parsed = impParseAoa(aoa).rows;
+    if (!parsed.length) { toast('В файле не нашлось позиций / 未找到商品'); return; }
+    // Склад иногда пишет одну позицию двумя строками (Гортензия тёмно-синяя 2 + 1 кор.) —
+    // при той же цене и пакинге это одна позиция заказа: коробки складываем.
+    const rows = [], seen = {};
+    parsed.forEach(r => {
+      const k = [impNorm(r.cn) || impNorm(r.ru), impNorm(r.client), r.price, r.bpb, r.stems].join('|');
+      if (seen[k] && r.boxes !== '' && seen[k].boxes !== '') { seen[k].boxes = +(seen[k].boxes + r.boxes).toFixed(2); seen[k]._merged = (seen[k]._merged || 1) + 1; return; }
+      const c = { ...r }; seen[k] = c; rows.push(c);
+    });
+    const costs = impParseCosts(aoa);
     const items = _mgrOrderItems || [];
     const used = new Set();
     const names = it => [it.flower?.ru, it.flower_snapshot?.ru].filter(Boolean).map(impNorm);
@@ -9036,7 +9045,9 @@ async function mgrExcelSyncFile(input) {
       pairs.push({ idx, r, cur, nw, d, on: Object.keys(d).length > 0 });
     });
     const missing = items.map((it, i) => used.has(i) ? null : (it.flower?.ru || it.flower_snapshot?.ru || '—')).filter(Boolean);
-    _mgrSync = { file: file.name, pairs, extra, missing, fields: { boxes: true, bpb: true, stems: true, price: true, size: true, comment: false } };
+    _mgrSync = { file: file.name, pairs, extra, missing, costs, saveCosts: costs.length > 0,
+      merged: rows.filter(r => r._merged).map(r => `${r.ru} (${r._merged} строки → ${r.boxes} кор.)`),
+      fields: { boxes: true, bpb: true, stems: true, price: true, size: true, comment: false } };
     mgrSyncRender();
     openModal();
   } catch (e) {
@@ -9099,6 +9110,16 @@ function mgrSyncRender() {
       <thead><tr><th style="width:26px"></th><th class="L">Позиция</th><th>Коробов</th><th>Банч/кор</th><th>Ст(г)/банч</th><th>¥/банч</th><th>Короб</th><th></th></tr></thead>
       <tbody>${extraHtml}</tbody></table></div>` : ''}
     ${S.missing.length ? `<div style="margin-top:10px;font-size:11px;color:#991b1b">❔ Есть в заказе, но не нашлись в файле (не меняются): ${S.missing.map(escHtml).join(', ')}</div>` : ''}
+    ${S.merged?.length ? `<div style="margin-top:8px;font-size:11px;color:var(--mid)">🔗 В файле одна позиция в нескольких строках — сложено: ${S.merged.map(escHtml).join('; ')}</div>` : ''}
+    ${S.costs?.length ? (() => { const c = whCostsSplit(S.costs); return `
+      <div style="margin-top:10px;padding:8px 10px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;font-size:11px">
+        <b>🧾 Расходы склада в файле: ¥${c.total}</b>
+        <div style="color:var(--mid);margin-top:3px">Упаковка ¥${c.packSum}: ${c.pack.map(x => escHtml(x.label) + ' ¥' + x.amount).join(', ') || '—'}</div>
+        <div style="color:var(--mid)">Сборы ¥${c.feesSum}: ${c.fees.map(x => escHtml(x.label) + ' ¥' + x.amount).join(', ') || '—'}</div>
+        <label style="display:flex;gap:5px;align-items:center;margin-top:5px;cursor:pointer">
+          <input type="checkbox" ${S.saveCosts ? 'checked' : ''} onchange="_mgrSync.saveCosts=this.checked">
+          Запомнить для инвойса этого заказа (в инвойсе появится кнопка «Подставить»)</label>
+      </div>`; })() : ''}
     <div style="margin-top:8px;font-size:10px;color:var(--light)">Значения попадут в таблицу заказа. Проверьте и нажмите 💾 «Сохранить изменения».</div>
     <div class="modal-btns">
       <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
@@ -9153,6 +9174,7 @@ function mgrSyncApply() {
   });
   closeModal();
   const orderId = window._mgrOrderMeta?.id || currentOrderId || '';
+  if (orderId && S.costs?.length && S.saveCosts) whCostsSave(orderId, { file: S.file, at: new Date().toISOString(), costs: S.costs });
   const tbody = document.getElementById('mgr-order-tbody');
   if (tbody) tbody.innerHTML = _mgrOrderItems.map((item, idx) => mgrRowHTML(item, idx, orderId)).join('');
   _mgrOrderItems.forEach((_, i) => mgrRecalcRow(i));
@@ -10485,6 +10507,18 @@ function buildTotalsHTML(flowersTotal, flowersWithMarkup, markup, packing, certs
     ${window._invCur && window._invCur !== 'CNY' ? `<tr><td colspan="2" style="font-size:10px;color:var(--mid);text-align:right">Курс / 汇率: ${escHtml(window._invRateLabel || '')} · база ¥${grand.toFixed(2)}</td></tr>` : ''}`;
 }
 
+function invApplyWhCosts(orderId) {
+  const W = whCostsLoad(orderId); if (!W?.costs?.length) return;
+  const c = whCostsSplit(W.costs), g = id => document.getElementById(id);
+  const curOther = parseFloat(g('inv-other')?.value) || 0;
+  if (curOther && Math.abs(curOther - c.feesSum) > 0.01 && !confirm(`В «Доп. статье» уже ¥${curOther}. Заменить на сборы склада ¥${c.feesSum}?`)) return;
+  if (g('inv-packing')) g('inv-packing').value = c.packSum;
+  if (g('inv-other')) g('inv-other').value = c.feesSum;
+  if (g('inv-other-label')) g('inv-other-label').value = c.fees.map(x => x.label.replace(/\s*\(.*?\)\s*/g, ' ').trim()).join(', ');
+  recalcInvoice();
+  toast(`🧾 Подставлено: упаковка ¥${c.packSum}, сборы ¥${c.feesSum}. Не забудьте сохранить инвойс`);
+}
+
 function recalcInvoice() {
   const items      = window._invItems || [];
   const flowersTotal   = window._invFlowersTotal || 0;
@@ -10610,6 +10644,17 @@ function renderInvoiceBuilder(order, inv, flowersTotal, totalBoxes) {
             </div>
           </div>
 
+          ${(() => { const W = whCostsLoad(order.id); if (!W?.costs?.length) return ''; const c = whCostsSplit(W.costs); return `
+          <div id="inv-whcosts" style="margin-bottom:12px;padding:8px 10px;background:#f0f9ff;border-left:3px solid #3b82f6;border-radius:6px;font-size:11px">
+            <b>🧾 Расходы склада из файла</b> <span style="color:var(--mid)">${escHtml(W.file || '')}</span>
+            <div style="margin-top:3px">Упаковка: <b>¥${c.packSum}</b> <span style="color:var(--mid)">(${c.pack.map(x => escHtml(x.label)).join(', ')})</span></div>
+            <div>Сборы: <b>¥${c.feesSum}</b> <span style="color:var(--mid)">(${c.fees.map(x => escHtml(x.label)).join(', ')})</span></div>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button class="btn btn-primary btn-sm" onclick="invApplyWhCosts('${order.id}')">Подставить / 填入</button>
+              <button class="btn btn-secondary btn-sm" onclick="whCostsSave('${order.id}', null);document.getElementById('inv-whcosts')?.remove()">Скрыть</button>
+            </div>
+            <div style="font-size:10px;color:var(--light);margin-top:4px">Упаковка → поле «Упаковка», сборы → «Доп. статья». Потом можно поправить вручную.</div>
+          </div>`; })()}
           <div class="inv-section" style="padding:0;box-shadow:none">
             <div class="inv-row" style="background:var(--sage-l);border-radius:6px;padding:8px;margin-bottom:6px">
               <div>
@@ -18290,7 +18335,7 @@ function impDetectCols(row) {
     }
     if (/ст.*\/\s*банч|в\s*связке|в\s*банче|枝|克|数量\s*\/\s*扎/.test(t)) { if (col.stems == null) col.stems = j; return; }
     if (/коммент|备注|примеч/.test(t)) { if (col.comment == null) col.comment = j; return; }
-    if (/назван|品名|名称|наимен/.test(t)) { col.names.push(j); return; }
+    if (/назван|品名|名称|наимен|позици/.test(t)) { col.names.push(j); return; }
     if (/коробов|箱数|^кор\b|^кор\.|кол.*кор|件数|^箱$/.test(t)) { if (col.boxes == null) col.boxes = j; return; }
   });
   if (col.price == null && col.priceBox == null) col.price = col.priceAny;
@@ -18299,7 +18344,7 @@ function impDetectCols(row) {
 
 function impParseAoa(aoa) {
   const txt = v => String(v ?? '').toLowerCase();
-  let h = aoa.findIndex(r => r && r.some(c => /назван|品名|наимен/.test(txt(c))) && r.some(c => /кор|箱/.test(txt(c))));
+  let h = aoa.findIndex(r => r && r.some(c => /назван|品名|名称|наимен|позици/.test(txt(c))) && r.some(c => /кор|箱/.test(txt(c))));
   let col;
   if (h >= 0) col = impDetectCols(aoa[h]);
   else { h = -1; col = { names: [0, 1], boxes: 2, size: 3, bpb: 6, stems: 7, price: 8, comment: 12 }; } // выгрузка без заголовков
@@ -18354,6 +18399,40 @@ function impParseAoa(aoa) {
     });
   }
   return { rows, meta, col };
+}
+
+// Расходы под таблицей склада: «项目名称 | 数量 | 金额» → [{label, qty, amount, pack}]
+// pack — упаковка (коробки, поддоны, пенопласт), остальное — сборы (GPS, декларирование, фумигация).
+function impParseCosts(aoa) {
+  const txt = v => String(v ?? '').toLowerCase();
+  const h = aoa.findIndex(r => r && r.some(c => /项目名称|статья\s*расход/.test(txt(c))) && r.some(c => /金额|сумма/.test(txt(c))));
+  if (h < 0) return [];
+  const hr = aoa[h];
+  const cL = hr.findIndex(c => /项目名称|статья/.test(txt(c)));
+  const cQ = hr.findIndex(c => /数量|кол/.test(txt(c)));
+  const cA = hr.findIndex(c => /金额|сумма/.test(txt(c)));
+  const out = [];
+  for (const r of aoa.slice(h + 1)) {
+    if (!r) continue;
+    const label = String(r[cL] ?? '').trim();
+    if (!label) continue;
+    if (/легенда|расч[её]т\s*загрузки/i.test(label)) break;
+    if (/成本|стоимость|накладные\s*расходы|итого|合计/i.test(label)) continue;   // итоговые строки склада
+    const amount = parseFloat(String(r[cA] ?? '').replace(',', '.'));
+    if (isNaN(amount)) continue;
+    const ru = label.replace(/[　-鿿＀-￯]+/g, ' ').replace(/\s+/g, ' ').trim() || label;
+    out.push({ label: ru, qty: cQ >= 0 ? r[cQ] : null, amount,
+      pack: /коробк|короб|纸箱|поддон|托盘|пенопласт|泡沐|泡沫|упаков/i.test(label) });
+  }
+  return out;
+}
+function whCostsKey(orderId) { return 'amma_whcosts_' + orderId; }
+function whCostsLoad(orderId) { try { return JSON.parse(localStorage.getItem(whCostsKey(orderId)) || 'null'); } catch (e) { return null; } }
+function whCostsSave(orderId, v) { try { v ? localStorage.setItem(whCostsKey(orderId), JSON.stringify(v)) : localStorage.removeItem(whCostsKey(orderId)); } catch (e) {} }
+function whCostsSplit(costs) {
+  const pack = costs.filter(c => c.pack), fees = costs.filter(c => !c.pack);
+  const sum = a => +a.reduce((s, c) => s + c.amount, 0).toFixed(2);
+  return { pack, fees, packSum: sum(pack), feesSum: sum(fees), total: sum(costs) };
 }
 
 async function impLoadFile(input) {
