@@ -8505,6 +8505,7 @@ async function openOrder(id) {
   if (!order) return;
   _mgrOrderItems = (order.order_items || []).map(item => ({...item}));
   window._mgrOrderMeta = { id: order.id, number: order.order_number, client_id: order.client_id };
+  window._mgrPendingLotSync = null;
   window._mgrOrigPrices = (order.order_items || []).map(i => ({
     fid: i.flower_id, ru: i.flower?.ru || i.flower_snapshot?.ru || '—',
     price: parseFloat(i.price_per_bunch) || 0 }));
@@ -9045,7 +9046,30 @@ async function mgrExcelSyncFile(input) {
       pairs.push({ idx, r, cur, nw, d, on: Object.keys(d).length > 0 });
     });
     const missing = items.map((it, i) => used.has(i) ? null : (it.flower?.ru || it.flower_snapshot?.ru || '—')).filter(Boolean);
+    // Диантус: инвойс и накладная считаются из принятых партий журнала закупа —
+    // цены партий тоже сверяем с файлом склада, иначе документы не изменятся.
+    let lotChanges = null;
+    const oidSync = window._mgrOrderMeta?.id || currentOrderId;
+    if (oidSync && opStaffAccess() && await opClientTracked({ client_id: window._mgrOrderMeta?.client_id })) {
+      const { lots, error } = await opFetchLots(oidSync);
+      if (!error && lots.length) {
+        lotChanges = [];
+        pairs.forEach(p => {
+          if (p.nw.price == null) return;
+          const it = items[p.idx], key = opItemKey(it), ru = opItemRu(it);
+          const mine = lots.filter(l => l.item_key === key && (l.status === 'received' || l.status === 'awaiting'));
+          // замены другим сортом не трогаем — у них своя цена
+          const same = mine.filter(l => !l.lot_ru || l.lot_ru.trim().toLowerCase() === String(l.item_ru || ru).trim().toLowerCase());
+          const diff = same.filter(l => l.price_per_bunch == null || Math.abs(opNum(l.price_per_bunch) - p.nw.price) > 0.001);
+          if (!diff.length) return;
+          const from = [...new Set(diff.map(l => l.price_per_bunch == null ? '—' : '¥' + opNum(l.price_per_bunch)))];
+          lotChanges.push({ pi: pairs.indexOf(p), key, ru, to: p.nw.price, ids: diff.map(l => l.id), from,
+            bunches: diff.reduce((s, l) => s + opNum(l.qty_bunches), 0), skipped: mine.length - same.length });
+        });
+      }
+    }
     _mgrSync = { file: file.name, pairs, extra, missing, costs, saveCosts: costs.length > 0,
+      lotChanges, syncLots: !!lotChanges?.length,
       merged: rows.filter(r => r._merged).map(r => `${r.ru} (${r._merged} строки → ${r.boxes} кор.)`),
       fields: { boxes: true, bpb: true, stems: true, price: true, size: true, comment: false } };
     mgrSyncRender();
@@ -9110,6 +9134,14 @@ function mgrSyncRender() {
       <thead><tr><th style="width:26px"></th><th class="L">Позиция</th><th>Коробов</th><th>Банч/кор</th><th>Ст(г)/банч</th><th>¥/банч</th><th>Короб</th><th></th></tr></thead>
       <tbody>${extraHtml}</tbody></table></div>` : ''}
     ${S.missing.length ? `<div style="margin-top:10px;font-size:11px;color:#991b1b">❔ Есть в заказе, но не нашлись в файле (не меняются): ${S.missing.map(escHtml).join(', ')}</div>` : ''}
+    ${S.lotChanges?.length ? `
+      <div style="margin-top:10px;padding:8px 10px;background:var(--gold-l);border-radius:6px;font-size:11px">
+        <label style="display:flex;gap:5px;align-items:center;cursor:pointer;font-weight:700">
+          <input type="checkbox" ${S.syncLots ? 'checked' : ''} onchange="_mgrSync.syncLots=this.checked">
+          🛒 Обновить цены и в журнале закупа (${S.lotChanges.length} поз.) — из него строятся инвойс и накладная</label>
+        <div style="color:var(--mid);margin-top:4px">${S.lotChanges.map(c => `${escHtml(c.ru)}: ${c.from.join(', ')} → <b>¥${c.to}</b> <span style="color:var(--light)">(${c.ids.length} парт., ${c.bunches} банч.${c.skipped ? `; замены сорта не меняются: ${c.skipped}` : ''})</span>`).join('<br>')}</div>
+        <div style="font-size:10px;color:var(--light);margin-top:4px">Все партии позиции получат цену из файла склада. Записывается вместе с 💾 «Сохранить изменения».</div>
+      </div>` : ''}
     ${S.merged?.length ? `<div style="margin-top:8px;font-size:11px;color:var(--mid)">🔗 В файле одна позиция в нескольких строках — сложено: ${S.merged.map(escHtml).join('; ')}</div>` : ''}
     ${S.costs?.length ? (() => { const c = whCostsSplit(S.costs); return `
       <div style="margin-top:10px;padding:8px 10px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;font-size:11px">
@@ -9174,13 +9206,15 @@ function mgrSyncApply() {
   });
   closeModal();
   const orderId = window._mgrOrderMeta?.id || currentOrderId || '';
+  const lotCh = (S.syncLots && F.price ? (S.lotChanges || []) : []).filter(c => { const p = S.pairs[c.pi]; return !p.d.price || p.on; });
+  window._mgrPendingLotSync = lotCh.length && orderId ? { orderId: String(orderId), file: S.file, changes: lotCh } : null;
   if (orderId && S.costs?.length && S.saveCosts) whCostsSave(orderId, { file: S.file, at: new Date().toISOString(), costs: S.costs });
   const tbody = document.getElementById('mgr-order-tbody');
   if (tbody) tbody.innerHTML = _mgrOrderItems.map((item, idx) => mgrRowHTML(item, idx, orderId)).join('');
   _mgrOrderItems.forEach((_, i) => mgrRecalcRow(i));
   mgrRecalcFooter();
   S.pairs.forEach(p => { if (p.on && Object.keys(p.d).length) { const row = document.getElementById('mgr-row-' + p.idx); if (row) row.style.background = '#fef3c7'; } });
-  toast(`📥 Обновлено позиций: ${nChanged}${nAdded ? ', добавлено: ' + nAdded : ''}. Проверьте и нажмите 💾 Сохранить / 请保存`);
+  toast(`📥 Обновлено позиций: ${nChanged}${nAdded ? ', добавлено: ' + nAdded : ''}${lotCh.length ? `, цены журнала закупа: ${lotCh.length}` : ''}. Проверьте и нажмите 💾 Сохранить / 请保存`);
   _mgrSync = null;
 }
 
@@ -10193,6 +10227,20 @@ async function mgrSaveOrderItems(orderId) {
 
   const { error: insErr } = await sb.from('order_items').insert(newItems);
   if (insErr) { toast('Ошибка сохранения: ' + insErr.message); return; }
+
+  // Сверка с Excel склада: цены принятых партий журнала закупа (Диантус)
+  const lotSync = window._mgrPendingLotSync;
+  if (lotSync && lotSync.orderId === String(orderId)) {
+    let ok = 0, fail = 0; const now = new Date().toISOString();
+    for (const c of lotSync.changes) {
+      const { error } = await sb.from('order_purchases').update({ price_per_bunch: c.to, updated_at: now }).in('id', c.ids);
+      if (error) { fail++; console.warn('order_purchases', error); } else ok += c.ids.length;
+    }
+    window._mgrPendingLotSync = null;
+    try { await logActivity('order_purchase', 'order', orderId, window._mgrOrderMeta?.number || '',
+      `Цены партий по файлу склада ${lotSync.file}: ` + lotSync.changes.map(c => `${c.ru} ${c.from.join('/')}→¥${c.to}`).join('; ')); } catch (e) {}
+    toast(fail ? `⚠️ Журнал закупа: обновлено партий ${ok}, ошибок ${fail}` : `🛒 Журнал закупа: обновлены цены ${ok} партий`);
+  }
 
   // ── Считаем, что именно поменялось в составе, чтобы показать клиенту ──
   const changeLines = mgrBuildChangeDiff();
