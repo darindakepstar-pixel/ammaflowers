@@ -2285,6 +2285,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden">
             <button class="ltype-btn active" id="ltype-cn"  onclick="setLabelType('cn',this)"  title="Транспортная CN">🇨🇳 CN</button>
             <button class="ltype-btn"        id="ltype-box" onclick="setLabelType('box',this)" title="Стикер коробки по клиентам">📦 Коробки</button>
+            <button class="ltype-btn"        id="ltype-cl"  onclick="setLabelType('cl',this)"  title="Крупное имя субклиента на каждый короб + таблица распределения">👤 Клиенты / 客户</button>
           </div>
           <button class="btn btn-primary btn-sm" onclick="whCustomsLabels()" title="Транспортные RU/EN/中文 этикетки для таможни, на каждый короб">🛃 Таможня 80×130 / 报关标签</button>
         </div>
@@ -8285,7 +8286,10 @@ async function submitOrder(existingOrderId = null) {
   if (emptyN && !confirm(`${emptyN} поз. без количества не попадут в заказ. Отправить? / 无数量的商品不会提交`)) return;
   if (window._submittingOrder) return;
   window._submittingOrder = true;
-  try { await _submitOrderInner(existingOrderId, items); } finally { window._submittingOrder = false; }
+  toast('⏳ Отправляю заказ… / 提交中');
+  try { await _submitOrderInner(existingOrderId, items); }
+  catch (e) { console.error('submitOrder', e); toast('❌ Заказ не отправлен: ' + (e?.message || e) + '. Набранное сохранено, попробуйте ещё раз / 提交失败'); }
+  finally { window._submittingOrder = false; }
 }
 async function _submitOrderInner(existingOrderId, items) {
   const shipDate  = document.getElementById('order-ship-date')?.value  || _ordMeta.ship || null;
@@ -8321,7 +8325,7 @@ async function _submitOrderInner(existingOrderId, items) {
     // (при сбое лучше задвоение, которое видно, чем пустой заказ)
     const oldIds = (await sb.from('order_items').select('id').eq('order_id', existingOrderId)).data?.map(x => x.id) || [];
     const itemRows = cartToItemRows(existingOrderId);
-    const { error: updErr } = await sb.from('order_items').insert(itemRows);
+    const { error: updErr } = await insertOrderItems(itemRows);
     if (updErr) {
       toast('❌ Изменения не сохранились: ' + updErr.message + '. Заказ остался прежним, попробуйте ещё раз / 保存失败，请重试');
       return;
@@ -8358,7 +8362,7 @@ async function _submitOrderInner(existingOrderId, items) {
     if (oErr) { toast('Ошибка: ' + oErr.message); return; }
 
     const itemRows = cartToItemRows(order.id);
-    const { error: itErr } = await sb.from('order_items').insert(itemRows);
+    const { error: itErr } = await insertOrderItems(itemRows);
     if (itErr) {
       // Позиции не записались — убираем пустой заказ, корзину сохраняем
       await sb.from('orders').delete().eq('id', order.id);
@@ -8787,7 +8791,7 @@ function cartDraftSave() {
     try {
       localStorage.setItem(cartDraftKey(), JSON.stringify({
         at: Date.now(), edit: currentEditOrderId || null, meta: _ordMeta, cols: _mx.cols,
-        items: items.map(([k, o]) => ({ k, ...o })),
+        items: items.map(([k, o]) => ({ k, ...o, flower: snapLight(o.flower) })),
       }));
     } catch (e) {}
   }, 400);
@@ -8818,6 +8822,27 @@ function cartDraftBanner() {
   </div>`;
 }
 
+// Снимок позиции без фото: в прайсе фото хранится внутри записи (base64, до сотен КБ),
+// и при сотнях строк заказа (позиция × клиент) запрос становился огромным и не проходил.
+function snapLight(f) {
+  const { photo_url, _ph, ...rest } = f || {};
+  Object.keys(rest).forEach(k => { if (typeof rest[k] === 'string' && rest[k].length > 2000 && /^data:/.test(rest[k])) delete rest[k]; });
+  return rest;
+}
+// Вставка строк заказа частями; при ошибке уже вставленные строки удаляются
+async function insertOrderItems(rows) {
+  const ids = [];
+  for (let i = 0; i < rows.length; i += 150) {
+    const { data, error } = await sb.from('order_items').insert(rows.slice(i, i + 150)).select('id');
+    if (error) {
+      if (ids.length) await sb.from('order_items').delete().in('id', ids);
+      return { error };
+    }
+    (data || []).forEach(r => ids.push(r.id));
+  }
+  return { error: null, ids };
+}
+
 // ══ Корзина → строки order_items: одна строка на позицию × клиента ══
 function cartToItemRows(orderId) {
   const out = [];
@@ -8828,7 +8853,7 @@ function cartToItemRows(orderId) {
       const q = d[c];
       const fid = o.flower.orig_id || (o.flower.id > 0 ? o.flower.id : null);
       out.push({
-        order_id: orderId, flower_id: fid, flower_snapshot: o.flower,
+        order_id: orderId, flower_id: fid, flower_snapshot: snapLight(o.flower),
         price_type: o.priceType, price_per_bunch: o.price,
         bunches_per_box: o.flower.boxes_per_box, price_per_box: o.pbox,
         qty_boxes: q, subtotal: +((o.pbox || 0) * q).toFixed(2),
@@ -8872,8 +8897,9 @@ function mxModelFromCart() {
 }
 
 // Excel: лист «Общий заказ» + лист «По клиентам» (шт и коробки на каждого клиента — как в таблице клиента)
-function mxExportXlsx(model, fname, title) {
+function mxExportXlsx(model, fname, title, opts = {}) {
   const { rows, cols } = model;
+  const noPrice = !!opts.noPrice;   // для склада — без цен
   const cn = c => c || 'Без клиента';
   const u = r => { const pb = mxPerBox(r.f), w = isWeightItem(r.f); return { pb, w, k: w ? 1000 : 1 }; };
   // 1. общий заказ
@@ -8888,6 +8914,7 @@ function mxExportXlsx(model, fname, title) {
       cols.filter(c => r.by[c] > 0).map(c => `${cn(c)} ${mxFmtB(r.by[c])}`).join(', '), r.comment || '']);
   });
   a1.push([], ['', 'ИТОГО', '', '', '', +tB.toFixed(2), '', +tM.toFixed(2), '', +tS.toFixed(2)]);
+  if (noPrice) a1.forEach((r, i) => { if (i >= 2 && r.length > 9) r.splice(8, 2); });
   const ws1 = XLSX.utils.aoa_to_sheet(a1);
   ws1['!cols'] = [{ wch: 4 }, { wch: 34 }, { wch: 18 }, { wch: 9 }, { wch: 9 }, { wch: 8 }, { wch: 11 }, { wch: 7 }, { wch: 8 }, { wch: 10 }, { wch: 44 }, { wch: 24 }];
   // 2. по клиентам
@@ -15173,6 +15200,8 @@ async function loadWarehouseOrders() {
     return;
   }
 
+  window._whOrders = filtered;
+  let whDv = 'client'; try { whDv = localStorage.getItem('amma-wh-distview') === 'matrix' ? 'matrix' : 'client'; } catch (e) {}
   wrap.innerHTML = filtered.map(order => {
     const client = order.client?.company_name || order.client?.login || '—';
     const items  = (order.order_items || []).map((it, k) => ({ it, k }));
@@ -15255,13 +15284,25 @@ async function loadWarehouseOrders() {
             onclick="whPrintLabels('${order.id}')">
             🏷 Этикетки / 打印标签
           </button>
+          ${hasSub ? `<button class="btn btn-gold btn-sm" style="font-size:12px" onclick="whPrintClientLabels('${order.id}')" title="Стикер с крупным именем клиента на каждый короб">
+            👤 Стикеры клиентов / 客户标签
+          </button>` : ''}
         </div>
       </div>
       <div style="font-size:12px;padding:6px 10px;background:var(--sage-l);border-radius:6px;margin-bottom:8px">${totals} · ${items.length} поз.</div>
       ${order.client_comment ? `<div style="font-size:11px;margin-bottom:8px;color:#92400e">💬 Клиент: ${escHtml(order.client_comment)}</div>` : ''}
       <details class="wh-det" ${filtered.length <= 1 || _whAsmOpen.has(String(order.id)) ? 'open' : ''} ontoggle="whAsmToggle('${order.id}',this.open)">
       <summary>Позиции заказа (${items.length}) / 明细</summary>
-      <div class="tbl-wrap">
+      ${hasSub ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0">
+        <div class="mx-seg">
+          <button class="ltype-btn ${whDv === 'client' ? 'active' : ''}" data-whvb="client" onclick="whDistView('${order.id}','client')">👤 По клиентам / 按客户</button>
+          <button class="ltype-btn ${whDv === 'matrix' ? 'active' : ''}" data-whvb="matrix" onclick="whDistView('${order.id}','matrix')">🧮 Распределение / 分配表</button>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="whDistExport('${order.id}')" title="Excel без цен: общий + по клиентам">📤 Excel</button>
+        <span style="font-size:11px;color:var(--mid)">Распределение: строки — товар, колонки — клиенты, в клетке — сколько коробов кому / 每格 = 箱数</span>
+      </div>
+      <div data-whv="matrix" style="${whDv === 'matrix' ? '' : 'display:none'}">${mxStaticTable(whModelFor(order), { maxH: '65vh' })}</div>` : ''}
+      <div class="tbl-wrap" data-whv="client" style="${hasSub && whDv === 'matrix' ? 'display:none' : ''}">
         <table style="min-width:760px">
           <thead><tr>
             <th style="width:42px">Фото</th>
@@ -15311,7 +15352,7 @@ let _currentLabelOrder = null;
 
 function setLabelType(type, btn) {
   _currentLabelType = type;
-  document.querySelectorAll('.ltype-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.ltype-btn[id^="ltype-"]').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   if (_currentLabelOrder) renderLabels(_currentLabelOrder);
 }
@@ -15383,6 +15424,7 @@ function renderLabels(order) {
   const buyer     = getLabelBuyer(client);
   // Номер на этикетках: из поля (№ инвойса) или номер заказа
   const labelNum  = document.getElementById('wh-label-num')?.value.trim() || String(order.order_number);
+  if (_currentLabelType === 'cl') { renderClientLabels(order, labelNum); return; }
 
   let labelsData = [];
 
@@ -15625,6 +15667,128 @@ function buildLabelsBox(data) {
   </div></div>`).join('');
 
   return css + summary + `<div class="b-area" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px 0">${labels}</div>`;
+}
+
+
+// ══════════════════════════════════════════════════════════
+//  СТИКЕРЫ ПО КЛИЕНТАМ (склад): крупное имя субклиента на каждый короб + № короба этого клиента
+//  и таблица распределения «позиции × клиенты» — что кому класть.
+// ══════════════════════════════════════════════════════════
+let _clLbl = { size: '90x60', mode: 'full', off: new Set(), orderId: null };
+const CL_SIZES = { '90x60': [90, 60], '100x70': [100, 70], '100x100': [100, 100], '58x40': [58, 40] };
+const clName = c => c || 'Без клиента';
+
+// Таблица распределения без цен (для склада)
+function mxStaticTable(m, opts = {}) {
+  const colT = m.cols.map(c => m.rows.reduce((s, r) => s + (r.by[c] || 0), 0));
+  const allT = colT.reduce((s, v) => s + v, 0);
+  const head = m.cols.map((c, ci) => `<th class="mx-colh${c ? '' : ' mx-none'}">
+      ${opts.pick ? `<label style="display:flex;gap:4px;align-items:center;justify-content:center;cursor:pointer">
+        <input type="checkbox" ${_clLbl.off.has(c) ? '' : 'checked'} onchange="clToggle(${ci},this.checked)"><span class="mx-colro">${escHtml(clName(c))}</span></label>
+        <div class="mx-colbtns" style="opacity:1"><button title="Напечатать стикеры только этого клиента" onclick="clPrintOnly(${ci})">🖨 ${mxFmtB(colT[ci])}</button></div>`
+      : `<div class="mx-colro">${escHtml(clName(c))}</div>`}</th>`).join('');
+  return `<div class="tbl-wrap mx-wrap" style="max-height:${opts.maxH || '60vh'}">
+    <table class="mx-table mx-ro"><thead><tr><th class="mx-n">№</th><th class="L mx-name">商品 / Позиция</th><th class="mx-tot">合计<br>Итого 箱</th>${head}</tr></thead>
+    <tbody>${m.rows.map((r, i) => `<tr><td class="mx-n">${i + 1}</td>
+      <td class="L mx-name"><b>${escHtml(r.cn || r.ru)}</b>${r.cn ? `<div class="mx-cn">${escHtml(r.ru)}</div>` : ''}${r.comment ? `<div class="mx-pack" style="color:#92400e">📝 ${escHtml(r.comment)}</div>` : ''}</td>
+      <td class="mx-tot"><b>${mxFmtB(distSum(r.by))}</b></td>
+      ${m.cols.map(c => `<td class="mx-c" style="font-size:14px">${r.by[c] ? `<b>${mxFmtB(r.by[c])}</b>` : '<span style="color:var(--light)">·</span>'}</td>`).join('')}</tr>`).join('')}</tbody>
+    <tfoot><tr><td class="mx-n"></td><td class="L mx-name"><b>合计 / ИТОГО</b></td><td class="mx-tot"><b>${mxFmtB(allT)}</b></td>
+      ${colT.map(t => `<td class="mx-foot"><b>${mxFmtB(t)}</b> 箱</td>`).join('')}</tr></tfoot></table></div>`;
+}
+function whModelFor(order) {
+  // для склада: китайское название из справочника, если в снимке его нет
+  const items = (order.order_items || []).map(it => ({ ...it, flower_snapshot: { ...(it.flower_snapshot || {}), cn: it.flower_snapshot?.cn || it.flower?.cn || '', ru: it.flower_snapshot?.ru || it.flower?.ru || '' } }));
+  return mxModelFromItems(items);
+}
+
+function clFont(name, wMm, max) {
+  const s = String(name || ''), len = s.length || 1;
+  const longest = Math.max(...s.split(/\s+/).map(w => w.length), 1);
+  const eff = len > 10 ? Math.max(longest, Math.ceil(len / 2)) : len;   // длинные имена — в две строки
+  return Math.max(12, Math.min(max, Math.floor((wMm * 2.83 * 0.92) / (eff * 0.62))));
+}
+function renderClientLabels(order, labelNum) {
+  const preview = document.getElementById('wh-labels-preview');
+  const printArea = document.getElementById('wh-labels-print-area');
+  if (_clLbl.orderId !== order.id) { _clLbl.orderId = order.id; _clLbl.off = new Set(); }
+  const m = whModelFor(order);
+  const [W, H] = CL_SIZES[_clLbl.size] || CL_SIZES['90x60'];
+  const small = H < 50;
+  const nameMax = _clLbl.mode === 'name' ? Math.round(H * 1.3) : Math.round(H * (small ? 0.6 : 0.8));
+  const labels = [];
+  m.cols.filter(c => !_clLbl.off.has(c)).forEach(c => {
+    const N = Math.round(m.rows.reduce((s, r) => s + (r.by[c] || 0), 0));
+    let k = 0;
+    m.rows.forEach(r => { for (let i = 0; i < Math.round(r.by[c] || 0); i++) labels.push({ c, k: ++k, N, r }); });
+  });
+  const css = `<style>
+    .cl-area{display:flex;flex-wrap:wrap;gap:6px;padding:8px 0}
+    .clw{width:${W}mm;height:${H}mm;overflow:hidden;flex-shrink:0;background:#fff;border:1px solid #bbb;box-sizing:border-box}
+    .cll{width:${W}mm;height:${H}mm;padding:${small ? 1.5 : 2.5}mm ${small ? 2 : 3.5}mm;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;color:#000;
+      display:flex;flex-direction:column;justify-content:space-between;text-align:center}
+    .cll-top{display:flex;justify-content:space-between;font-size:${small ? 6 : 7.5}pt;color:#333;font-weight:700}
+    .cll-name{font-weight:900;line-height:1.02;word-break:break-word;flex:1;display:flex;align-items:center;justify-content:center;letter-spacing:-.01em}
+    .cll-k{font-size:${small ? 9 : 13}pt;font-weight:800;border-top:0.4mm solid #000;padding-top:${small ? 0.5 : 1}mm}
+    .cll-k span{font-weight:400;font-size:${small ? 6 : 8}pt}
+    .cll-prod{font-size:${small ? 6.5 : 8.5}pt;line-height:1.2;margin-top:${small ? 0.3 : 0.8}mm}
+    .cll-prod i{font-style:normal;color:#444;font-size:${small ? 5.5 : 7}pt}
+    @media screen{.clw{zoom:1.25}}
+    @media print{
+      @page{size:${W}mm ${H}mm;margin:0}
+      body{margin:0;padding:0;background:#fff}
+      .cl-area{display:block;padding:0}
+      .clw{zoom:1!important;border:none!important;page-break-after:always;break-after:page;display:block}
+    }</style>`;
+  printArea.innerHTML = css + `<div class="cl-area">${labels.map(L => `<div class="clw"><div class="cll">
+      <div class="cll-top"><span>#${escHtml(labelNum)}</span><span>${escHtml(order.date_ship || '')}</span></div>
+      <div class="cll-name" style="font-size:${clFont(clName(L.c), W, nameMax)}pt">${escHtml(clName(L.c))}</div>
+      <div class="cll-k">${L.k} / ${L.N} <span>箱 · короб</span></div>
+      ${_clLbl.mode === 'full' ? `<div class="cll-prod"><b>${escHtml(L.r.cn || L.r.ru)}</b>${L.r.cn ? `<br><i>${escHtml(L.r.ru)}</i>` : ''}</div>` : ''}
+    </div></div>`).join('')}</div>`;
+  makeLabelsEditable(printArea);
+
+  const seg = (key, val, label) => `<button class="ltype-btn ${_clLbl[key] === val ? 'active' : ''}" onclick="_clLbl.${key}='${val}';renderLabels(_currentLabelOrder)">${label}</button>`;
+  const client = order.client?.company_name || order.client?.login || '';
+  preview.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--sage-l);border-radius:8px;margin-bottom:10px">
+      <span style="font-size:13px"><b>#${escHtml(order.order_number)}</b> · ${escHtml(client)} · 🚚 ${order.date_ship || '—'}</span>
+      <span style="font-size:12px;color:var(--sage-d);font-weight:700">👤 Стикеры клиентов / 客户标签</span>
+      <div class="mx-seg" title="Размер стикера">${Object.keys(CL_SIZES).map(k => seg('size', k, k.replace('x', '×'))).join('')}</div>
+      <div class="mx-seg">${seg('mode', 'full', 'Клиент + товар / 客户+商品')}${seg('mode', 'name', 'Только клиент / 仅客户')}</div>
+      <span style="font-size:12px;color:var(--mid)"><b>${labels.length}</b> шт.</span>
+      <button class="btn btn-primary btn-sm" onclick="whDoPrint()" ${labels.length ? '' : 'disabled'}>🖨 Печать / 打印</button>
+      <span style="font-size:11px;color:var(--mid);width:100%">На каждом стикере — имя клиента крупно и номер короба этого клиента (5 / 18 = пятый из 18). Галочками выберите, кого печатать; 🖨 под именем — только этот клиент. / 勾选要打印的客户</span>
+    </div>
+    ${m.cols.length ? mxStaticTable(m, { pick: true, maxH: '45vh' }) : '<div style="color:var(--mid);font-size:12px">В заказе нет разбивки по клиентам / 本订单没有子客户</div>'}`;
+}
+function clToggle(ci, on) {
+  const m = whModelFor(_currentLabelOrder), c = m.cols[ci];
+  if (on) _clLbl.off.delete(c); else _clLbl.off.add(c);
+  renderLabels(_currentLabelOrder);
+}
+function clPrintOnly(ci) {
+  const m = whModelFor(_currentLabelOrder);
+  _clLbl.off = new Set(m.cols.filter((c, i) => i !== ci));
+  renderLabels(_currentLabelOrder);
+  whDoPrint();
+}
+// Кнопка со склада: сразу открыть стикеры клиентов по заказу
+async function whPrintClientLabels(orderId) {
+  _currentLabelType = 'cl';
+  await whPrintLabels(orderId);
+  document.querySelectorAll('.ltype-btn[id^="ltype-"]').forEach(b => b.classList.toggle('active', b.id === 'ltype-cl'));
+}
+// Переключатель на карточке заказа склада: список по клиентам ↔ таблица распределения
+function whDistView(orderId, v) {
+  const card = document.getElementById('wh-card-' + orderId); if (!card) return;
+  card.querySelectorAll('[data-whv]').forEach(el => el.style.display = el.dataset.whv === v ? '' : 'none');
+  card.querySelectorAll('[data-whvb]').forEach(b => b.classList.toggle('active', b.dataset.whvb === v));
+  try { localStorage.setItem('amma-wh-distview', v); } catch (e) {}
+}
+function whDistExport(orderId) {
+  const o = (window._whOrders || []).find(x => String(x.id) === String(orderId)); if (!o) return;
+  mxExportXlsx(whModelFor(o), `${o.order_number}_распределение.xlsx`, `${o.order_number} · ${o.client?.company_name || ''}`, { noPrice: true });
 }
 
 // Делает текст этикеток редактируемым кликом (до печати)
