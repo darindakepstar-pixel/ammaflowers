@@ -1244,6 +1244,90 @@ html[data-theme="dark"] .tour-btn.next{background:var(--pistachio);color:#0B110D
   .page.active,.tour-ava,.tour-amm.pop,.amm-empty img{animation:none}
   .tour-hole,.tour-card{transition:none}
 }
+
+/* ── Заказ по клиентам: матрица ── */
+.mx-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.mx-add{position:relative;flex:1;min-width:240px;max-width:420px}
+.mx-add .inp{width:100%}
+.mx-sug{position:absolute;z-index:60;left:0;right:0;top:100%;margin-top:4px;background:var(--paper,#fff);border:1px solid var(--border);border-radius:10px;max-height:300px;overflow:auto;display:none;box-shadow:0 12px 30px rgba(0,0,0,.16)}
+html[data-theme="dark"] .mx-sug{background:#18221C}
+.mx-sug-i{padding:7px 12px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border)}
+.mx-sug-i span{color:var(--mid);font-size:11px}
+.mx-sug-i.on,.mx-sug-i:hover{background:var(--sage-l)}
+.mx-sug-none{padding:10px 12px;font-size:12px;color:var(--mid)}
+.mx-newcol{display:flex;gap:4px;align-items:center}
+.mx-newcol .inp{width:170px}
+.mx-seg{display:inline-flex;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.mx-filter{width:150px}
+.mx-hint{font-size:11px;color:var(--mid);margin:2px 0 8px}
+.mx-wrap{max-height:70vh;overflow:auto;margin-bottom:12px}
+.mx-table{min-width:0;width:auto;border-collapse:separate;border-spacing:0}
+.mx-table th,.mx-table td{border-bottom:1px solid var(--border);border-right:1px solid var(--border)}
+.mx-table thead th{position:sticky;top:0;z-index:3;vertical-align:bottom;padding:6px 6px}
+.mx-table tfoot td{position:sticky;bottom:0;z-index:3;background:linear-gradient(var(--sage-l),var(--sage-l)),var(--bg);font-size:11px;line-height:1.35;padding:6px}
+.mx-table tfoot td div{color:var(--mid);font-size:10px;font-weight:600}
+.mx-table .mx-n{width:30px;min-width:30px;color:var(--light);font-size:10px;position:sticky;left:0;z-index:2;background:var(--bg)}
+.mx-table .mx-name{min-width:230px;max-width:300px;position:sticky;left:30px;z-index:2;background:var(--bg);box-shadow:2px 0 0 var(--border)}
+html[data-theme="light"] .mx-table tbody .mx-n,html[data-theme="light"] .mx-table tbody .mx-name{background:var(--paper,#fff)}
+.mx-table thead .mx-n,.mx-table thead .mx-name,.mx-table tfoot .mx-n,.mx-table tfoot .mx-name{z-index:5}
+.mx-table thead th{background:#2B5A43;backdrop-filter:none}
+html[data-theme="light"] .mx-table thead th{background:#EDF0E6}
+.mx-table tfoot .mx-n,.mx-table tfoot .mx-name{background:linear-gradient(var(--sage-l),var(--sage-l)),var(--bg)}
+.mx-name b{font-size:12px}
+.mx-cn{font-size:10px;color:var(--mid)}
+.mx-pack{font-size:10px;color:var(--mid);margin-top:1px}
+.mx-cmtbtn{border:none;background:none;cursor:pointer;font-size:11px;padding:0 2px;opacity:.45}
+.mx-cmtbtn:hover{opacity:1}
+.mx-table tbody td{padding-top:4px;padding-bottom:4px}
+.mx-cmt{width:100%;margin-top:3px;border:1px dashed transparent;background:transparent;font-size:10.5px;padding:2px 4px;border-radius:6px;color:var(--charcoal);font-family:inherit}
+.mx-cmt:hover,.mx-cmt:focus{border-color:var(--border);background:var(--surface,#fff);outline:none}
+.mx-cmt:not(:placeholder-shown){color:#92400e}
+.mx-tot{min-width:64px;background:rgba(201,169,110,.12);font-size:12px;line-height:1.3}
+.mx-tot div{font-size:10px;color:var(--mid)}
+.mx-colh{min-width:78px}
+.mx-colname{min-width:70px;background:transparent;border:1px solid transparent;border-radius:6px;color:inherit;font:700 11px var(--font-b);text-align:center;padding:3px 2px}
+.mx-colname:hover,.mx-colname:focus{border-color:rgba(255,255,255,.45);background:rgba(255,255,255,.08);outline:none}
+html[data-theme="light"] .mx-colname:hover,html[data-theme="light"] .mx-colname:focus{border-color:var(--line);background:#fff}
+.mx-colro{font-size:11px;font-weight:700;white-space:normal;line-height:1.2}
+.mx-colro span{font-weight:400;font-size:9px;opacity:.8}
+.mx-colbtns{display:flex;gap:2px;justify-content:center;margin-top:3px;opacity:.35;transition:opacity .15s}
+.mx-colh:hover .mx-colbtns,.mx-colh.mx-hl .mx-colbtns{opacity:1}
+.mx-colbtns button{border:none;background:rgba(255,255,255,.18);color:inherit;border-radius:5px;font-size:10px;padding:1px 6px;cursor:pointer}
+html[data-theme="light"] .mx-colbtns button{background:#fff;border:1px solid var(--line)}
+.mx-none{background:repeating-linear-gradient(135deg,transparent 0 6px,rgba(0,0,0,.06) 6px 12px)}
+.mx-c{padding:2px!important}
+.mx-cell{width:100%;min-width:56px;height:28px;border:1px solid transparent;border-radius:6px;background:transparent;text-align:center;font:600 13px var(--font-b);color:var(--charcoal);padding:0 4px}
+.mx-cell:hover{border-color:var(--border)}
+.mx-cell:focus{border-color:var(--sage);background:var(--surface,#fff);box-shadow:0 0 0 3px var(--sage-l);outline:none}
+.mx-cell:not(:placeholder-shown){background:rgba(127,201,160,.16)}
+.mx-cell.mx-bad{background:#fde2e1!important;color:#9A3B31;border-color:#e8a29b}
+.mx-table tbody tr.mx-hl td{background:rgba(201,169,110,.10)}
+.mx-table tbody tr.mx-hl td.mx-n,.mx-table tbody tr.mx-hl td.mx-name{background:linear-gradient(var(--gold-l),var(--gold-l)),var(--bg)}
+.mx-table thead th.mx-hl{box-shadow:inset 0 -3px 0 var(--gold)}
+.mx-table tbody tr:hover td{background:inherit!important}
+.mx-table tbody tr:hover td.mx-n,.mx-table tbody tr:hover td.mx-name{background:linear-gradient(var(--sage-l),var(--sage-l)),var(--bg)!important}
+html[data-theme="light"] .mx-table tbody tr:hover td.mx-n,html[data-theme="light"] .mx-table tbody tr:hover td.mx-name{background:linear-gradient(var(--sage-l),var(--sage-l)),#fff!important}
+.mx-del{width:34px}
+.mx-empty{padding:28px!important;color:var(--mid);font-size:13px;line-height:1.7}
+.mx-foot{min-width:86px}
+@keyframes mxFlash{0%{background:var(--gold-l)}100%{background:transparent}}
+.mx-flash td{animation:mxFlash 1.6s ease-out}
+.mx-ro td{font-size:12px}
+.mx-ro .mx-c{padding:6px!important;font-weight:600}
+.mx-chips{display:flex;gap:5px;flex-wrap:wrap}
+.mx-chip{font-size:11px;background:var(--sage-l);color:var(--sage-d);padding:3px 9px;border-radius:999px}
+.mx-st{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+.mx-st-ok{background:#dcfce7;color:#15803d}
+.mx-st-chk{background:#fef3c7;color:#92400e}
+.mx-st-no{background:#fde2e1;color:#9A3B31}
+.mx-sugbtn{margin-top:3px;font-size:10px;border:1px dashed var(--border);background:none;border-radius:6px;padding:1px 6px;cursor:pointer;color:var(--sage-d)}
+.mxi-off td{opacity:.45}
+.view-sw{display:inline-flex;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+@media (max-width:700px){
+  .mx-table .mx-name{min-width:150px;max-width:170px}
+  .mx-newcol .inp{width:130px}
+  .mx-filter{width:110px}
+}
 </style>
 <script>
 /* Тема: применяем ДО отрисовки, чтобы не мигало */
@@ -7217,7 +7301,7 @@ function addToCart(id, gradeOverride) {
   const pt = gradeOverride || (sel ? sel.value : 'a');
   const price = pt === 'a' ? (f.price_a || 0) : (f.price_ap || 0);
   const pbox = +(price * (f.boxes_per_box || 1)).toFixed(2);
-  if (cart[id]) cart[id].qty += 1;
+  if (cart[id]) { if (cart[id].dist) cartAddDist(cart[id], '', 1); else cart[id].qty += 1; }
   else cart[id] = {flower: f, qty: 1, priceType: pt, price, pbox, client_name: '', comment: ''};
   updateCartUI();
   renderPrice();
@@ -7228,6 +7312,7 @@ function removeFromCart(id) {
   id = parseInt(id);
   delete cart[id];
   delete cart[String(id)];
+  if (!Object.keys(cart).length && !currentEditOrderId) cartDraftClear();
   updateCartUI();
   // Re-render order page if active
   const orderPage = document.getElementById('page-my-order');
@@ -7284,7 +7369,7 @@ function updateCartQty(id, v) {
   id = parseInt(id);
   const q = parseInt(v) || 1;
   if (q < 1) { removeFromCart(id); return; }
-  if (cart[id]) cart[id].qty = q;
+  if (cart[id]) { if (distClients(cart[id]).length <= 1) cart[id].dist = null; cart[id].qty = q; }
 
   // Update row subtotal live
   const subEl = document.getElementById('cart-sub-' + id);
@@ -7304,7 +7389,11 @@ function updateCartQty(id, v) {
 
 function updateCartField(id, field, val) {
   id = parseInt(id);
-  if (cart[id]) cart[id][field] = val;
+  const o = cart[id]; if (!o) return;
+  if (field === 'client_name' && distClients(o).length <= 1) o.dist = null;
+  if (field === 'comment') delete o.cmts;
+  o[field] = val;
+  cartDraftSave();
 }
 
 function updateCartUI() {
@@ -7315,8 +7404,9 @@ function updateCartUI() {
   if (cntEl) cntEl.textContent = cnt;
   document.getElementById('cart-footer').style.display = cnt ? 'flex' : 'none';
   document.getElementById('cart-total').textContent = money(total);
-  const totBoxes = items.reduce((s,o) => s + (parseInt(o.qty)||0), 0);
-  document.getElementById('cart-count').textContent = cnt + ' поз. · ' + totBoxes + ' кор.';
+  const totBoxes = items.reduce((s,o) => s + (parseFloat(o.qty)||0), 0);
+  document.getElementById('cart-count').textContent = cnt + ' поз. · ' + mxFmtB(totBoxes) + ' кор.';
+  cartDraftSave();
 }
 
 function goToOrder() {
@@ -7345,11 +7435,9 @@ function repeatOrder(orderId) {
     const price = pt === 'a' ? (f.price_a || 0) : (f.price_ap || 0);
     const qty = parseInt(item.qty_boxes) || 1;
     const pbox = +(price * (f.boxes_per_box || 1)).toFixed(2);
-    if (cart[f.id]) {
-      cart[f.id].qty += qty;
-    } else {
-      cart[f.id] = { flower: f, qty, priceType: pt, price, pbox, client_name: '', comment: '' };
-    }
+    // с разбивкой по клиентам, как в старом заказе
+    if (!cart[f.id]) cart[f.id] = { flower: f, qty: 0, priceType: pt, price, pbox, client_name: '', comment: item.item_comment || '', dist: {} };
+    cartAddDist(cart[f.id], item.client_name, qty);
     added++;
   });
 
@@ -7392,19 +7480,28 @@ async function editOrder(orderId) {
     return;
   }
   cart = {};
+  // строки одной позиции (разные субклиенты) собираем в одну строку корзины с разбивкой dist
+  let pseudo = -900000000;
   (order.order_items || []).forEach(item => {
-    const f = {...(item.flower_snapshot || {})};
-    f.id = item.flower_id;
-    f.boxes_per_box = item.bunches_per_box;
-    cart[item.flower_id] = {
-      flower: f, qty: item.qty_boxes,
-      priceType: item.price_type,
-      price: item.price_per_bunch,
-      pbox: item.price_per_box,
-      client_name: item.client_name || '',
-      comment: item.item_comment || '',
-    };
+    const snap = item.flower_snapshot || {};
+    const fid = item.flower_id > 0 ? item.flower_id : null;
+    const same = o => o.priceType === item.price_type && +o.pbox === +item.price_per_box && +(o.flower.boxes_per_box || 0) === +(item.bunches_per_box || 0)
+      && (fid ? (o.flower.orig_id || o.flower.id) === fid : (!o.flower.orig_id && o.flower.id < 0 && o.flower.ru === snap.ru));
+    let k = Object.keys(cart).find(key => same(cart[key]));
+    if (!k) {
+      const f = {...snap};
+      k = (fid && !cart[fid]) ? fid : pseudo--;
+      f.id = +k;
+      if (fid && +k !== fid) f.orig_id = fid;   // та же позиция, но другая цена/пакинг — отдельная строка
+      f.boxes_per_box = item.bunches_per_box;
+      cart[k] = { flower: f, qty: 0, priceType: item.price_type, price: item.price_per_bunch, pbox: item.price_per_box,
+        client_name: '', comment: item.item_comment || '', dist: {}, cmts: {} };
+    }
+    const o = cart[k], c = String(item.client_name || '').trim();
+    cartAddDist(o, c, parseFloat(item.qty_boxes) || 0);
+    o.cmts[c] = item.item_comment || '';
   });
+  _ordMeta = { ship: order.date_ship || '', comment: order.client_comment || '' };
   currentEditOrderId = orderId;
   updateCartUI();
   renderMyOrder();
@@ -7422,6 +7519,8 @@ function dismissMgrChangeNote(orderId, changeAt) {
 function cancelEdit() {
   currentEditOrderId = null;
   cart = {};
+  _ordMeta = { ship: '', comment: '' };
+  cartDraftClear();
   updateCartUI();
   renderMyOrder();
 }
@@ -7432,9 +7531,10 @@ function renderMyOrder() {
 
   // ── EDIT / NEW ORDER FORM ──
   let editHTML = '';
-  if (cartItems.length || currentEditOrderId) {
+  const isMatrix = orderView() === 'matrix';
+  if (cartItems.length || currentEditOrderId || isMatrix) {
     let total = 0, rows = '';
-    const totalBoxes = cartItems.reduce((s2,o) => s2 + (parseInt(o.qty)||0), 0);
+    const totalBoxes = mxFmtB(cartItems.reduce((s2,o) => s2 + (parseFloat(o.qty)||0), 0));
     const cartCalc = calcCartTotals();
     cartItems.forEach((o, i) => {
       const sub = o.pbox * o.qty; total += sub;
@@ -7450,15 +7550,19 @@ function renderMyOrder() {
         <td style="font-size:10px;color:var(--mid)">${o.flower.pack||''}</td>
         <td><b>${money(o.pbox,0)}</b>
           <div style="font-size:9px;color:var(--light)">${o.priceType==='a'?'A':'A+'}</div></td>
-        <td><input class="inp" type="number" min="1" value="${o.qty}"
+        <td>${distClients(o).length > 1
+              ? `<b style="cursor:pointer" title="Распределено по клиентам — меняйте в режиме «По клиентам»" onclick="setOrderView('matrix')">${mxFmtB(o.qty)}</b>`
+              : `<input class="inp" type="number" min="1" value="${o.qty}"
               style="width:52px;text-align:center;padding:4px"
-              oninput="updateCartQty(${o.flower.id},this.value)"></td>
+              oninput="updateCartQty(${o.flower.id},this.value)">`}</td>
         <td id="cart-bn-${o.flower.id}" style="color:var(--mid);font-size:11px">${o.qty * (o.flower.boxes_per_box||0) || '—'}</td>
         <td id="cart-un-${o.flower.id}" style="color:var(--mid);font-size:11px">${(o.flower.stems && o.flower.boxes_per_box) ? fmtStems(o.qty * o.flower.boxes_per_box * o.flower.stems, isWeightItem(o.flower)) : '—'}</td>
         <td id="cart-m3-${o.flower.id}" style="color:var(--mid);font-size:11px;white-space:nowrap">${itemBoxM3(o.flower).est?'≈':''}${fmtM3(o.qty * itemBoxM3(o.flower).m3)}</td>
         <td id="cart-sub-${o.flower.id}" style="font-weight:700;color:var(--sage-d)">${money(sub,2)}</td>
-        <td><input class="inp" type="text" value="${o.client_name||''}" placeholder="Субклиент / 子客户..."
-              style="width:95px;padding:4px" oninput="updateCartField(${o.flower.id},'client_name',this.value)"></td>
+        <td>${distClients(o).length > 1
+              ? `<div style="font-size:10px;line-height:1.35;color:var(--sage-d);cursor:pointer;max-width:150px;text-align:left" title="Изменить в режиме «По клиентам»" onclick="setOrderView('matrix')">${distClients(o).map(c => escHtml(c || 'без клиента') + ': <b>' + mxFmtB(distOf(o)[c]) + '</b>').join(' · ')}</div>`
+              : `<input class="inp" type="text" value="${escHtml(o.client_name||'')}" placeholder="Субклиент / 子客户..." list="mx-dl-list"
+              style="width:95px;padding:4px" oninput="updateCartField(${o.flower.id},'client_name',this.value)">`}</td>
         <td><input class="inp" type="text" value="${o.comment||''}" placeholder="Коммент / 备注..."
               style="width:115px;padding:4px" oninput="updateCartField(${o.flower.id},'comment',this.value)"></td>
         <td><button class="btn-icon" onclick="removeFromCart(${o.flower.id})">×</button></td>
@@ -7470,17 +7574,22 @@ function renderMyOrder() {
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
           <div class="card-title" style="margin:0">${editTitle}</div>
           ${currentEditOrderId ? `<button class="btn btn-danger btn-sm" onclick="cancelEdit()">✕ Отменить / 取消</button>` : ''}
+          <div class="view-sw" title="Как заполнять заказ">
+            <button class="ltype-btn ${isMatrix ? '' : 'active'}" onclick="setOrderView('list')">☰ Списком</button>
+            <button class="ltype-btn ${isMatrix ? 'active' : ''}" onclick="setOrderView('matrix')">🧮 По клиентам / 按子客户</button>
+          </div>
           <span style="flex:1"></span>
           <button class="btn btn-secondary btn-sm" onclick="openMixBoxModal()">🧺 Микс-короб / 混合箱</button>
           <button class="btn btn-secondary btn-sm" onclick="openCustomItemModal()">➕ Нет в прайсе / 询价商品</button>
         </div>
         <div class="field-row">
           <div class="field"><label>Дата отгрузки / 出货日期</label>
-            <input type="date" id="order-ship-date"></div>
+            <input type="date" id="order-ship-date" value="${escHtml(_ordMeta.ship || '')}" onchange="_ordMeta.ship=this.value;cartDraftSave()"></div>
           <div class="field" style="flex:2"><label>Комментарий / 备注</label>
-            <input type="text" id="order-comment" placeholder="Особые пожелания / 特殊要求"></div>
+            <input type="text" id="order-comment" placeholder="Особые пожелания / 特殊要求" value="${escHtml(_ordMeta.comment || '')}" oninput="_ordMeta.comment=this.value;cartDraftSave()"></div>
         </div>
       </div>
+      ${isMatrix ? mxHTML() : `<datalist id="mx-dl-list">${mxPastClients().map(c => `<option value="${escHtml(c)}">`).join('')}</datalist>
       <div class="tbl-wrap" style="margin-bottom:12px">
         <table style="min-width:880px">
           <thead><tr>
@@ -7508,7 +7617,7 @@ function renderMyOrder() {
             <td colspan="3"></td>
           </tr></tfoot>
         </table>
-      </div>
+      </div>`}
       <div style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap">
         <button class="btn btn-secondary" onclick="showPage('price',document.querySelectorAll('.nav-tab')[0])">← В прайс / 价格单</button>
         <button class="btn btn-primary" onclick="submitOrder(currentEditOrderId)">
@@ -7516,7 +7625,7 @@ function renderMyOrder() {
         </button>
       </div>`;
   } else {
-    editHTML = `<div class="card" style="margin-bottom:16px">
+    editHTML = cartDraftBanner() + `<div class="card" style="margin-bottom:16px">
       <div class="empty-state" style="padding:20px 0">
         <div class="icon" style="font-size:36px">🌸</div>
         <p>Новый заказ / 新订单</p>
@@ -7528,6 +7637,9 @@ function renderMyOrder() {
         <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap">
           <button class="btn btn-secondary btn-sm" onclick="openMixBoxModal()">🧺 Собрать микс-короб / 混合箱</button>
           <button class="btn btn-secondary btn-sm" onclick="openCustomItemModal()">➕ Позиции нет в прайсе / 询价商品</button>
+          <button class="btn btn-secondary btn-sm" onclick="setOrderView('matrix')" title="Таблица: позиции × ваши клиенты">🧮 Заказ по клиентам / 按子客户</button>
+          <label class="btn btn-gold btn-sm" style="cursor:pointer">📥 Распределение из Excel
+            <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="mxImportFile(this)"></label>
         </div>
       </div>
     </div>`;
@@ -7716,6 +7828,8 @@ function renderMyOrder() {
             <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px"
               onclick="exportMyOrderPDF('${o.id}')" title="Сохранить заказ в PDF">📄 PDF</button>
           </div>
+          ${new Set((o.order_items||[]).map(i => String(i.client_name||'').trim()).filter(Boolean)).size > 1 ? `<button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 8px;margin-top:4px;white-space:nowrap"
+              onclick="event.stopPropagation();exportMyOrderByClients('${o.id}')" title="Общий заказ + разбивка по клиентам (шт и коробки)">🧮 Excel по клиентам</button>` : ''}
           <button class="btn btn-secondary btn-sm" style="margin-top:6px;white-space:nowrap"
             onclick="event.stopPropagation();repeatOrder('${o.id}')" title="Добавить те же позиции в новый заказ">
             🔁 Повторить заказ / 再次订购
@@ -7746,6 +7860,7 @@ function renderMyOrder() {
         История заказов / 订单历史 (${myOrders.length})
       </div>
       ${ordersHTML}` : '');
+  if (isMatrix) mxAfterRender();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -8159,11 +8274,22 @@ function exportMyOrderPDF(orderId) {
 }
 
 async function submitOrder(existingOrderId = null) {
-  const items = Object.values(cart);
-  if (!items.length) { toast('Добавьте позиции / 请添加商品'); return; }
-
-  const shipDate  = document.getElementById('order-ship-date')?.value  || null;
-  const comment   = document.getElementById('order-comment')?.value    || null;
+  const items = Object.values(cart).filter(o => (parseFloat(o.qty) || 0) > 0);
+  if (!items.length) { toast('Добавьте позиции и количество / 请添加商品和数量'); return; }
+  const badBoxes = cartCheckBoxes();
+  if (badBoxes.length) {
+    alert('Есть нецелое число коробок — исправьте, пожалуйста (ячейки подсвечены красным):\n\n' + badBoxes.slice(0, 15).join('\n') + (badBoxes.length > 15 ? `\n… и ещё ${badBoxes.length - 15}` : '') + '\n\n请修改非整数箱数');
+    return;
+  }
+  const emptyN = Object.values(cart).length - items.length;
+  if (emptyN && !confirm(`${emptyN} поз. без количества не попадут в заказ. Отправить? / 无数量的商品不会提交`)) return;
+  if (window._submittingOrder) return;
+  window._submittingOrder = true;
+  try { await _submitOrderInner(existingOrderId, items); } finally { window._submittingOrder = false; }
+}
+async function _submitOrderInner(existingOrderId, items) {
+  const shipDate  = document.getElementById('order-ship-date')?.value  || _ordMeta.ship || null;
+  const comment   = document.getElementById('order-comment')?.value    || _ordMeta.comment || null;
 
   if (existingOrderId) {
     // Check current order status — was this a manager-granted edit on an already-confirmed order,
@@ -8194,21 +8320,14 @@ async function submitOrder(existingOrderId = null) {
     // Replace items: сначала вставляем новые, потом удаляем старые
     // (при сбое лучше задвоение, которое видно, чем пустой заказ)
     const oldIds = (await sb.from('order_items').select('id').eq('order_id', existingOrderId)).data?.map(x => x.id) || [];
-    const itemRows = items.map(o => ({
-      order_id: existingOrderId,
-      flower_id: (o.flower.id > 0 ? o.flower.id : null), flower_snapshot: o.flower,
-      price_type: o.priceType, price_per_bunch: o.price,
-      bunches_per_box: o.flower.boxes_per_box, price_per_box: o.pbox,
-      qty_boxes: o.qty, subtotal: o.pbox * o.qty,
-      client_name: o.client_name || null, item_comment: o.comment || null,
-    }));
+    const itemRows = cartToItemRows(existingOrderId);
     const { error: updErr } = await sb.from('order_items').insert(itemRows);
     if (updErr) {
       toast('❌ Изменения не сохранились: ' + updErr.message + '. Заказ остался прежним, попробуйте ещё раз / 保存失败，请重试');
       return;
     }
     if (oldIds.length) await sb.from('order_items').delete().in('id', oldIds);
-    cart = {}; currentEditOrderId = null;
+    cart = {}; currentEditOrderId = null; _ordMeta = { ship: '', comment: '' }; cartDraftClear();
 
     // Notify managers
     try {
@@ -8222,7 +8341,7 @@ async function submitOrder(existingOrderId = null) {
       }
     } catch(e) {}
     if (items.some(o => flowerCatalog(o.flower) === 'potted'))
-      notifyGz(`✏️ Заказ ${orderNum} изменён / 订单已修改`, 'Проверьте горшечные позиции / 请重新核对盆栽');
+      notifyGz(`✏️ Заказ ${existingOrder?.order_number || ''} изменён / 订单已修改`, 'Проверьте горшечные позиции / 请重新核对盆栽');
 
     toast(wasAlreadyConfirmed
       ? '✅ Изменения сохранены, менеджер уведомлён / 修改已保存，经理已收到通知'
@@ -8238,13 +8357,7 @@ async function submitOrder(existingOrderId = null) {
     }).select().single();
     if (oErr) { toast('Ошибка: ' + oErr.message); return; }
 
-    const itemRows = items.map(o => ({
-      order_id: order.id, flower_id: (o.flower.id > 0 ? o.flower.id : null), flower_snapshot: o.flower,
-      price_type: o.priceType, price_per_bunch: o.price,
-      bunches_per_box: o.flower.boxes_per_box, price_per_box: o.pbox,
-      qty_boxes: o.qty, subtotal: o.pbox * o.qty,
-      client_name: o.client_name || null, item_comment: o.comment || null,
-    }));
+    const itemRows = cartToItemRows(order.id);
     const { error: itErr } = await sb.from('order_items').insert(itemRows);
     if (itErr) {
       // Позиции не записались — убираем пустой заказ, корзину сохраняем
@@ -8252,7 +8365,7 @@ async function submitOrder(existingOrderId = null) {
       toast('❌ Заказ не отправлен: ' + itErr.message + '. Корзина сохранена, попробуйте ещё раз / 提交失败，请重试');
       return;
     }
-    cart = {};
+    cart = {}; _ordMeta = { ship: '', comment: '' }; cartDraftClear();
 
     // Notify managers about new order
     try {
@@ -8272,6 +8385,776 @@ async function submitOrder(existingOrderId = null) {
   updateCartUI();
   await loadMyOrders();
   showPage('my-order', document.querySelectorAll('.nav-tab')[1]);
+}
+
+
+// ══════════════════════════════════════════════════════════
+//  ЗАКАЗ ПО КЛИЕНТАМ — МАТРИЦА «позиции × субклиенты»
+//  Строки — позиции, колонки — клиенты/точки клиента (Оренбург, Уфа…), в ячейке — коробки.
+//  cart[k].dist = { 'Оренбург': 18, 'Уфа': 6, '': 2 }   ('' — ещё не распределено)
+//  qty = сумма dist. При отправке каждая заполненная ячейка → своя строка order_items с client_name,
+//  поэтому закуп видит общий заказ по позиции, а склад и документы — разбивку по клиентам.
+// ══════════════════════════════════════════════════════════
+const MX_NONE = '';
+let _mx = { uid: null, cols: [], rcols: [], unit: 'box', q: '', sug: [], sugI: 0, imp: null };
+let _ordMeta = { ship: '', comment: '' };   // дата и комментарий формы заказа не теряются при перерисовке
+
+function orderView() { try { return localStorage.getItem('amma-order-view') === 'matrix' ? 'matrix' : 'list'; } catch (e) { return 'list'; } }
+function setOrderView(v) { try { localStorage.setItem('amma-order-view', v); } catch (e) {} renderMyOrder(); }
+
+function distOf(o) {
+  if (o.dist) return o.dist;
+  const q = parseFloat(o.qty) || 0;
+  return q ? { [String(o.client_name || '').trim()]: q } : {};
+}
+function distSum(d) { return +Object.values(d || {}).reduce((s, v) => s + (parseFloat(v) || 0), 0).toFixed(3); }
+function distClients(o) { const d = distOf(o); return Object.keys(d).filter(k => d[k] > 0); }
+function distPut(o, d) {
+  Object.keys(d).forEach(k => { if (!(d[k] > 0)) delete d[k]; });
+  o.dist = d; o.qty = distSum(d);
+  const ks = Object.keys(d); if (ks.length === 1) o.client_name = ks[0];
+}
+// Добавить коробки клиенту (k = '' — без клиента)
+function cartAddDist(o, k, q) {
+  const d = { ...distOf(o) };
+  k = String(k || '').trim();
+  d[k] = +((parseFloat(d[k]) || 0) + (parseFloat(q) || 0)).toFixed(3);
+  distPut(o, d);
+}
+const mxFrac = v => Math.abs(v - Math.round(v)) > 0.001;
+const mxFmtB = v => String(+(+v || 0).toFixed(2));
+
+// ── колонки-клиенты: запоминаются на устройстве, а если их нет — берутся из последнего заказа ──
+function mxColsKey() { return 'amma-mx-cols-' + (currentUser?.id || ''); }
+function mxSaveCols() { try { localStorage.setItem(mxColsKey(), JSON.stringify(_mx.cols)); } catch (e) {} }
+function mxPastClients() {
+  const out = [], seen = new Set();
+  (myOrders || []).forEach(ord => (ord.order_items || []).forEach(it => {
+    const k = String(it.client_name || '').trim();
+    if (k && !seen.has(k)) { seen.add(k); out.push(k); }
+  }));
+  return out;
+}
+function mxInitCols() {
+  if (_mx.uid !== currentUser?.id) {
+    _mx.uid = currentUser?.id;
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(mxColsKey()) || 'null'); } catch (e) {}
+    try { _mx.unit = localStorage.getItem('amma-mx-unit') === 'pcs' ? 'pcs' : 'box'; } catch (e) {}
+    _mx.cols = Array.isArray(saved) ? saved.filter(Boolean) : [];
+    if (!Array.isArray(saved)) {
+      const last = (myOrders || []).find(ord => (ord.order_items || []).some(it => String(it.client_name || '').trim()));
+      (last?.order_items || []).forEach(it => { const k = String(it.client_name || '').trim(); if (k && !_mx.cols.includes(k)) _mx.cols.push(k); });
+    }
+  }
+  Object.values(cart).forEach(o => distClients(o).forEach(k => { if (k && !_mx.cols.includes(k)) _mx.cols.push(k); }));
+}
+function mxRenderCols() {
+  const hasNone = Object.values(cart).some(o => (distOf(o)[MX_NONE] || 0) > 0);
+  return (_mx.rcols = (hasNone ? [MX_NONE] : []).concat(_mx.cols));
+}
+
+// ── единицы: коробки или штуки/кг ──
+function mxPerBox(f) { const b = parseFloat(f?.boxes_per_box) || 0, s = parseFloat(f?.stems) || 0; return b && s ? b * s : 0; }
+function mxShow(f, boxes) {
+  if (!(boxes > 0)) return '';
+  const pb = mxPerBox(f);
+  if (_mx.unit !== 'pcs' || !pb) return mxFmtB(boxes);
+  const u = boxes * pb;
+  return String(isWeightItem(f) ? +(u / 1000).toFixed(2) : Math.round(u));
+}
+function mxParse(f, raw) {
+  let v = parseFloat(String(raw ?? '').replace(/\s/g, '').replace(',', '.'));
+  if (!(v > 0)) return 0;
+  const pb = mxPerBox(f);
+  if (_mx.unit === 'pcs' && pb) v = (isWeightItem(f) ? v * 1000 : v) / pb;
+  return +v.toFixed(3);
+}
+function mxTotHTML(o) {
+  const t = distSum(distOf(o)), pb = mxPerBox(o.flower);
+  return `<b>${mxFmtB(t)}</b>${pb && t ? `<div>${fmtStems(t * pb, isWeightItem(o.flower))}</div>` : ''}`;
+}
+function mxColTotals() {
+  const ent = Object.values(cart);
+  const one = c => { let b = 0, m3 = 0, sum = 0; ent.forEach(o => { const v = distOf(o)[c] || 0; b += v; m3 += v * itemBoxM3(o.flower).m3; sum += v * (o.pbox || 0); }); return { b, m3, sum }; };
+  const cols = _mx.rcols.map(one);
+  const all = ent.reduce((a, o) => { const v = distSum(distOf(o)); a.b += v; a.m3 += v * itemBoxM3(o.flower).m3; a.sum += v * (o.pbox || 0); return a; }, { b: 0, m3: 0, sum: 0 });
+  return { cols, all };
+}
+const mxFootCell = t => `<b>${mxFmtB(t.b)}</b> кор.<div>${fmtM3(t.m3)} м³</div><div>${money(t.sum, 0)}</div>`;
+
+// ── HTML матрицы (вставляется в форму «Мой заказ») ──
+function mxHTML() {
+  mxInitCols();
+  const cols = mxRenderCols();
+  const ent = Object.entries(cart);
+  const known = [...new Set([...mxPastClients(), ..._mx.cols])];
+  const head = cols.map((c, ci) => c === MX_NONE
+    ? `<th class="mx-colh mx-none" data-c="${ci}"><div class="mx-colro" title="Коробки, которые ещё не отданы ни одному клиенту">Без клиента<br><span>未分配</span></div>
+        <div class="mx-colbtns"><button title="Отдать все эти коробки клиенту" onclick="mxAssignNone()">→ клиенту</button><button title="Убрать эти коробки" onclick="mxDelCol(${ci})">×</button></div></th>`
+    : `<th class="mx-colh" data-c="${ci}"><input class="mx-colname" value="${escHtml(c)}" size="${Math.min(18, Math.max(7, c.length + 1))}" list="mx-dl" title="${escHtml(c)} — название можно исправить" onchange="mxRenameCol(${ci},this.value)">
+        <div class="mx-colbtns"><button title="Левее" onclick="mxMoveCol(${ci},-1)">‹</button><button title="Правее" onclick="mxMoveCol(${ci},1)">›</button><button title="Удалить клиента" onclick="mxDelCol(${ci})">×</button></div></th>`).join('');
+  const rows = ent.map(([k, o], i) => {
+    const f = o.flower || {}, d = distOf(o), pb = mxPerBox(f);
+    const pack = [f.boxes_per_box ? f.boxes_per_box + ' банч/кор' : (f.pack || ''), pb ? fmtStems(pb, isWeightItem(f)) + '/кор' : '', o.pbox ? money(o.pbox, 0) + '/кор' : ''].filter(Boolean).join(' · ');
+    const cells = cols.map((c, ci) => {
+      const v = d[c] || 0;
+      return `<td class="mx-c"><input class="mx-cell${v && mxFrac(v) ? ' mx-bad' : ''}" inputmode="decimal" autocomplete="off" placeholder=" " data-k="${k}" data-c="${ci}" value="${mxShow(f, v)}"${v && mxFrac(v) ? ` title="${mxFmtB(v)} кор. — не целое число коробок"` : ''}></td>`;
+    }).join('');
+    return `<tr data-k="${k}" data-q="${escHtml(impNorm((f.ru || '') + (f.cn || '')))}">
+      <td class="mx-n">${i + 1}</td>
+      <td class="L mx-name"><b>${escHtml(f.ru || '—')}</b>${f.cn ? ` <span class="mx-cn">${escHtml(f.cn)}</span>` : ''}
+        <div class="mx-pack">${escHtml(pack)}${o.comment ? '' : ` <button class="mx-cmtbtn" title="Комментарий к позиции" onclick="this.style.display='none';const i=this.closest('td').querySelector('.mx-cmt');i.style.display='';i.focus()">💬</button>`}</div>
+        <input class="mx-cmt" value="${escHtml(o.comment || '')}" placeholder="комментарий / 备注" oninput="mxSetCmt('${k}',this.value)"${o.comment ? '' : ' style="display:none"'}></td>
+      <td class="mx-tot" id="mx-t-${k}">${mxTotHTML(o)}</td>
+      ${cells}
+      <td class="mx-del"><button class="btn-icon" title="Убрать позицию из заказа" onclick="removeFromCart(${k})">×</button></td>
+    </tr>`;
+  }).join('');
+  const T = mxColTotals();
+  const pcsMode = _mx.unit === 'pcs';
+  return `
+    <div class="mx-bar">
+      <div class="mx-add">
+        <input class="inp" id="mx-add-q" placeholder="＋ Позиция: начните вводить название / 添加商品" autocomplete="off"
+          oninput="mxSuggest(this.value)" onkeydown="mxSuggestKey(event)" onblur="setTimeout(()=>{const s=document.getElementById('mx-sug');if(s)s.style.display='none'},150)">
+        <div id="mx-sug" class="mx-sug"></div>
+      </div>
+      <div class="mx-newcol">
+        <input class="inp" id="mx-newcol" list="mx-dl" placeholder="＋ Клиент / 子客户" autocomplete="off"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();mxAddCol(this.value)}">
+        <button class="btn btn-secondary btn-sm" onclick="mxAddCol(document.getElementById('mx-newcol').value)">＋</button>
+      </div>
+      <div class="mx-seg" title="В чём вводить количество">
+        <button class="ltype-btn ${pcsMode ? '' : 'active'}" onclick="mxSetUnit('box')">Коробки 箱</button>
+        <button class="ltype-btn ${pcsMode ? 'active' : ''}" onclick="mxSetUnit('pcs')">Шт / кг 枝</button>
+      </div>
+      <input class="inp mx-filter" placeholder="🔍 Фильтр строк" value="${escHtml(_mx.q)}" oninput="mxFilter(this.value)">
+      <span style="flex:1"></span>
+      <label class="btn btn-gold btn-sm" style="cursor:pointer" title="Таблица: позиции в строках, клиенты в колонках (как ваша «Разбивка по клиентам»)">📥 Загрузить из Excel
+        <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="mxImportFile(this)"></label>
+      <button class="btn btn-secondary btn-sm" onclick="mxExportCart()" title="Общий заказ + разбивка по клиентам">📤 Excel</button>
+    </div>
+    <datalist id="mx-dl">${known.map(c => `<option value="${escHtml(c)}">`).join('')}</datalist>
+    <div class="mx-hint">Вводите ${pcsMode ? '<b>штуки</b> (для весовых — <b>кг</b>), система пересчитает в коробки' : '<b>коробки</b>'} ·
+      Enter и стрелки — переход по ячейкам · можно вставить столбец или блок из Excel (Ctrl+V) · «Итого» считается само</div>
+    <div class="tbl-wrap mx-wrap">
+      <table class="mx-table" id="mx-table">
+        <thead><tr>
+          <th class="mx-n">№</th><th class="L mx-name">Позиция / 商品</th><th class="mx-tot">Итого<br>кор. 箱</th>
+          ${head}
+          <th class="mx-del"></th>
+        </tr></thead>
+        <tbody>${rows || `<tr><td colspan="${cols.length + 4}" class="mx-empty">
+          Добавьте позиции — поиск выше или из прайса, — а клиентов кнопкой «＋ Клиент».<br>
+          Или загрузите готовую таблицу распределения: <b>📥 Загрузить из Excel</b>.</td></tr>`}</tbody>
+        ${ent.length ? `<tfoot><tr>
+          <td class="mx-n"></td><td class="L mx-name"><b>ИТОГО / 合计</b> · ${ent.length} поз.</td>
+          <td class="mx-tot" id="mx-f-all">${mxFootCell(T.all)}</td>
+          ${T.cols.map((t, ci) => `<td class="mx-foot" id="mx-f-${ci}">${mxFootCell(t)}</td>`).join('')}
+          <td class="mx-del"></td>
+        </tr></tfoot>` : ''}
+      </table>
+    </div>
+    ${!cols.length && ent.length ? `<div class="mx-hint" style="color:#b45309">Пока нет ни одного клиента — добавьте первого: «＋ Клиент» вверху.</div>` : ''}`;
+}
+
+function mxAfterRender() {
+  const t = document.getElementById('mx-table');
+  if (!t) return;
+  t.addEventListener('input', e => { const el = e.target; if (el.classList?.contains('mx-cell')) mxSet(el.dataset.k, +el.dataset.c, el.value, el); });
+  t.addEventListener('keydown', mxKey);
+  t.addEventListener('paste', mxPaste);
+  t.addEventListener('focusin', e => { if (e.target.classList?.contains('mx-cell')) { e.target.select(); mxHi(e.target); } });
+  t.addEventListener('focusout', e => {
+    const el = e.target; if (!el.classList?.contains('mx-cell')) return;
+    mxHi(null);
+    const o = cart[el.dataset.k]; if (o) el.value = mxShow(o.flower, distOf(o)[_mx.rcols[+el.dataset.c]] || 0);
+  });
+  if (_mx.q) mxFilter(_mx.q);
+}
+function mxHi(el) {
+  document.querySelectorAll('#mx-table .mx-hl').forEach(x => x.classList.remove('mx-hl'));
+  if (!el) return;
+  el.closest('tr')?.classList.add('mx-hl');
+  document.querySelector(`#mx-table thead th[data-c="${el.dataset.c}"]`)?.classList.add('mx-hl');
+}
+
+function mxSet(k, ci, raw, el) {
+  const o = cart[k]; if (!o) return;
+  const v = mxParse(o.flower, raw);
+  const d = { ...distOf(o) };
+  const c = _mx.rcols[ci];
+  if (v > 0) d[c] = v; else delete d[c];
+  distPut(o, d);
+  if (el) { const bad = v > 0 && mxFrac(v); el.classList.toggle('mx-bad', bad); el.title = bad ? `${mxFmtB(v)} кор. — не целое число коробок` : ''; }
+  const t = document.getElementById('mx-t-' + k); if (t) t.innerHTML = mxTotHTML(o);
+  mxRefreshFoot();
+  updateCartUI();
+}
+function mxRefreshFoot() {
+  const T = mxColTotals();
+  const a = document.getElementById('mx-f-all'); if (a) a.innerHTML = mxFootCell(T.all);
+  T.cols.forEach((t, ci) => { const el = document.getElementById('mx-f-' + ci); if (el) el.innerHTML = mxFootCell(t); });
+}
+function mxSetCmt(k, v) { const o = cart[k]; if (!o) return; o.comment = v; delete o.cmts; cartDraftSave(); }
+function mxSetUnit(u) { _mx.unit = u === 'pcs' ? 'pcs' : 'box'; try { localStorage.setItem('amma-mx-unit', _mx.unit); } catch (e) {} renderMyOrder(); }
+function mxFilter(q) {
+  _mx.q = q || '';
+  const n = impNorm(_mx.q);
+  document.querySelectorAll('#mx-table tbody tr[data-k]').forEach(tr => { tr.style.display = !n || tr.dataset.q.includes(n) ? '' : 'none'; });
+}
+
+// ── клавиатура: Enter/стрелки как в Excel ──
+function mxKey(e) {
+  const el = e.target; if (!el.classList?.contains('mx-cell')) return;
+  const all = el.selectionStart === 0 && el.selectionEnd === el.value.length;
+  let dr = 0, dc = 0;
+  if (e.key === 'Enter' || e.key === 'ArrowDown') dr = (e.key === 'Enter' && e.shiftKey) ? -1 : 1;
+  else if (e.key === 'ArrowUp') dr = -1;
+  else if (e.key === 'ArrowLeft' && (all || el.selectionStart === 0)) dc = -1;
+  else if (e.key === 'ArrowRight' && (all || el.selectionEnd === el.value.length)) dc = 1;
+  else return;
+  e.preventDefault();
+  const trs = [...document.querySelectorAll('#mx-table tbody tr[data-k]')].filter(tr => tr.style.display !== 'none');
+  const r = trs.indexOf(el.closest('tr')) + dr, c = +el.dataset.c + dc;
+  const nx = trs[r]?.querySelector(`.mx-cell[data-c="${c}"]`);
+  if (nx) nx.focus();
+}
+// ── вставка блока из Excel (строки × колонки, табами) ──
+function mxPaste(e) {
+  const el = e.target; if (!el.classList?.contains('mx-cell')) return;
+  const txt = (e.clipboardData || window.clipboardData)?.getData('text') || '';
+  if (!/[\t\n]/.test(txt.replace(/\r?\n$/, ''))) return;   // одно число — обычная вставка
+  e.preventDefault();
+  const grid = txt.replace(/\r/g, '').replace(/\n$/, '').split('\n').map(l => l.split('\t'));
+  const trs = [...document.querySelectorAll('#mx-table tbody tr[data-k]')].filter(tr => tr.style.display !== 'none');
+  const r0 = trs.indexOf(el.closest('tr')), c0 = +el.dataset.c;
+  let n = 0;
+  grid.forEach((line, dr) => {
+    const o = cart[trs[r0 + dr]?.dataset.k]; if (!o) return;
+    const d = { ...distOf(o) };
+    line.forEach((v, dc) => {
+      const c = _mx.rcols[c0 + dc]; if (c === undefined) return;
+      const b = mxParse(o.flower, v);
+      if (b > 0) d[c] = b; else delete d[c];
+      n++;
+    });
+    distPut(o, d);
+  });
+  renderMyOrder(); updateCartUI();
+  toast(`📋 Вставлено ячеек: ${n} / 已粘贴`);
+}
+
+// ── операции с колонками-клиентами ──
+function mxMoveBoxes(from, to) {
+  Object.values(cart).forEach(o => {
+    const d = { ...distOf(o) };
+    if (!(d[from] > 0)) return;
+    const q = d[from]; delete d[from];
+    if (to !== null) d[to] = +((d[to] || 0) + q).toFixed(3);
+    if (o.cmts && from in o.cmts) { if (to !== null && !(to in o.cmts)) o.cmts[to] = o.cmts[from]; delete o.cmts[from]; }
+    distPut(o, d);
+  });
+}
+function mxAddCol(name) {
+  name = String(name || '').trim();
+  if (!name) { document.getElementById('mx-newcol')?.focus(); return; }
+  if (_mx.cols.includes(name)) { toast('Такой клиент уже есть / 已存在'); return; }
+  _mx.cols.push(name); mxSaveCols(); renderMyOrder();
+  setTimeout(() => { document.querySelector(`#mx-table .mx-cell[data-c="${_mx.rcols.indexOf(name)}"]`)?.focus(); document.querySelector('.mx-wrap')?.scrollTo({ left: 99999, behavior: 'smooth' }); }, 30);
+}
+function mxRenameCol(ci, nv) {
+  const old = _mx.rcols[ci]; nv = String(nv || '').trim();
+  if (nv === old) return;
+  if (!nv) { renderMyOrder(); return; }
+  const exists = _mx.cols.includes(nv);
+  if (exists && !confirm(`Клиент «${nv}» уже есть. Объединить с ним «${old || 'Без клиента'}»? Коробки сложатся. / 合并?`)) { renderMyOrder(); return; }
+  mxMoveBoxes(old, nv);
+  const i = _mx.cols.indexOf(old);
+  if (exists) { if (i >= 0) _mx.cols.splice(i, 1); }
+  else if (i >= 0) _mx.cols[i] = nv;
+  else _mx.cols.unshift(nv);
+  mxSaveCols(); renderMyOrder(); updateCartUI();
+}
+function mxAssignNone() {
+  const nm = prompt('Какому клиенту отдать нераспределённые коробки? / 分配给哪个客户?', _mx.cols[0] || '');
+  if (nm && nm.trim()) mxRenameCol(_mx.rcols.indexOf(MX_NONE), nm);
+}
+function mxDelCol(ci) {
+  const c = _mx.rcols[ci];
+  const boxes = Object.values(cart).reduce((s, o) => s + (distOf(o)[c] || 0), 0);
+  if (boxes > 0 && !confirm(`Убрать «${c || 'Без клиента'}» из заказа вместе с его ${mxFmtB(boxes)} кор.? / 删除?`)) return;
+  mxMoveBoxes(c, null);
+  const i = _mx.cols.indexOf(c); if (i >= 0) _mx.cols.splice(i, 1);
+  mxSaveCols(); renderMyOrder(); updateCartUI();
+}
+function mxMoveCol(ci, dir) {
+  const i = _mx.cols.indexOf(_mx.rcols[ci]), j = i + dir;
+  if (i < 0 || j < 0 || j >= _mx.cols.length) return;
+  [_mx.cols[i], _mx.cols[j]] = [_mx.cols[j], _mx.cols[i]];
+  mxSaveCols(); renderMyOrder();
+}
+
+// ── добавление позиции поиском прямо из матрицы ──
+function mxSuggest(q) {
+  const box = document.getElementById('mx-sug'); if (!box) return;
+  const toks = String(q || '').toLowerCase().replace(/ё/g, 'е').split(/\s+/).filter(Boolean);
+  if (!toks.length) { box.style.display = 'none'; return; }
+  const list = (flowers || []).filter(f => {
+    const s = ((f.ru || '') + ' ' + (f.cn || '') + ' ' + (f.en || '')).toLowerCase().replace(/ё/g, 'е');
+    return toks.every(t => s.includes(t));
+  }).sort((a, b) => (b.in_stock !== false) - (a.in_stock !== false)).slice(0, 14);
+  _mx.sug = list; _mx.sugI = 0;
+  box.innerHTML = list.length ? list.map((f, i) => `<div class="mx-sug-i${i ? '' : ' on'}" onmousedown="event.preventDefault();mxAddFlower(${f.id})">
+      ${cart[f.id] ? '✓ ' : ''}<b>${escHtml(f.ru)}</b> <span>${escHtml(f.cn || '')}${f.pack ? ' · ' + escHtml(f.pack) : ''}${f.in_stock === false ? ' · нет в наличии' : ''}</span></div>`).join('')
+    : '<div class="mx-sug-none">Не найдено. Можно добавить «➕ Нет в прайсе» — кнопка вверху формы</div>';
+  box.style.display = 'block';
+}
+function mxSuggestKey(e) {
+  const box = document.getElementById('mx-sug'); if (!box || box.style.display === 'none') return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    _mx.sugI = Math.max(0, Math.min(_mx.sug.length - 1, _mx.sugI + (e.key === 'ArrowDown' ? 1 : -1)));
+    box.querySelectorAll('.mx-sug-i').forEach((x, i) => x.classList.toggle('on', i === _mx.sugI));
+  } else if (e.key === 'Enter') { e.preventDefault(); const f = _mx.sug[_mx.sugI]; if (f) mxAddFlower(f.id); }
+  else if (e.key === 'Escape') box.style.display = 'none';
+}
+function mxNewLine(f) {
+  const price = f.price_a || 0;
+  return { flower: f, qty: 0, priceType: 'a', price, pbox: +(price * (f.boxes_per_box || 1)).toFixed(2), client_name: '', comment: '', dist: {} };
+}
+function mxAddFlower(id) {
+  const f = (flowers || []).find(x => x.id === id); if (!f) return;
+  const isNew = !cart[id];
+  if (isNew) cart[id] = mxNewLine(f);
+  if (f.in_stock === false) toast('⚠️ Позиции сейчас нет в наличии — менеджер уточнит / 当前缺货');
+  renderMyOrder(); updateCartUI();
+  setTimeout(() => {
+    const tr = document.querySelector(`#mx-table tr[data-k="${id}"]`);
+    tr?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    tr?.classList.add('mx-flash');
+    (tr?.querySelector('.mx-cell') || document.getElementById('mx-add-q'))?.focus();
+  }, 30);
+  if (!isNew) toast('Эта позиция уже в заказе — подсветила строку / 已在订单中');
+}
+
+// ══ Черновик заказа: корзина не теряется при обновлении страницы или закрытии вкладки ══
+function cartDraftKey() { return 'amma-cart-draft-' + (currentUser?.id || '') + (currentMember?.id ? '-' + currentMember.id : ''); }
+function cartDraftSave() {
+  if (!currentUser || currentUser.role === 'guest') return;
+  clearTimeout(window._cartDraftT);
+  window._cartDraftT = setTimeout(() => {
+    const items = Object.entries(cart);
+    if (!items.length) return;
+    try {
+      localStorage.setItem(cartDraftKey(), JSON.stringify({
+        at: Date.now(), edit: currentEditOrderId || null, meta: _ordMeta, cols: _mx.cols,
+        items: items.map(([k, o]) => ({ k, ...o })),
+      }));
+    } catch (e) {}
+  }, 400);
+}
+function cartDraftClear() { clearTimeout(window._cartDraftT); try { localStorage.removeItem(cartDraftKey()); } catch (e) {} }
+function cartDraftGet() { try { const d = JSON.parse(localStorage.getItem(cartDraftKey()) || 'null'); return d?.items?.length ? d : null; } catch (e) { return null; } }
+function cartDraftRestore() {
+  const d = cartDraftGet(); if (!d) return;
+  cart = {};
+  d.items.forEach(({ k, ...o }) => { cart[k] = o; });
+  _ordMeta = { ship: '', comment: '', ...(d.meta || {}) };
+  (d.cols || []).forEach(c => { if (c && !_mx.cols.includes(c)) _mx.cols.push(c); });
+  const ord = d.edit && myOrders.find(o => o.id === d.edit);
+  currentEditOrderId = ord && (['needs_revision', 'draft'].includes(ord.status) || ord.client_edit_allowed) ? d.edit : null;
+  if (d.edit && !currentEditOrderId) toast('Заказ, который вы правили, уже нельзя менять — черновик открыт как новый заказ');
+  updateCartUI(); renderMyOrder(); if (typeof renderPrice === 'function') renderPrice();
+  toast('📝 Черновик восстановлен / 草稿已恢复');
+}
+function cartDraftBanner() {
+  const d = cartDraftGet(); if (!d) return '';
+  const boxes = d.items.reduce((s, o) => s + distSum(o.dist || (o.qty ? { x: o.qty } : {})), 0);
+  const when = new Date(d.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return `<div class="card" style="border-left:4px solid var(--gold);margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <div style="flex:1;min-width:200px;font-size:13px">📝 <b>Неотправленный черновик</b> от ${when}: ${d.items.length} поз., ${mxFmtB(boxes)} кор.${d.edit ? ' (правки заказа)' : ''}
+      <div style="font-size:11px;color:var(--mid)">未提交的草稿</div></div>
+    <button class="btn btn-primary btn-sm" onclick="cartDraftRestore()">↩ Восстановить / 恢复</button>
+    <button class="btn btn-secondary btn-sm" onclick="cartDraftClear();renderMyOrder()">Удалить / 删除</button>
+  </div>`;
+}
+
+// ══ Корзина → строки order_items: одна строка на позицию × клиента ══
+function cartToItemRows(orderId) {
+  const out = [];
+  const colIdx = c => c === MX_NONE ? -1 : (_mx.cols.indexOf(c) + 1 || 9999);
+  Object.values(cart).forEach(o => {
+    const d = distOf(o);
+    Object.keys(d).filter(c => d[c] > 0).sort((a, b) => colIdx(a) - colIdx(b)).forEach(c => {
+      const q = d[c];
+      const fid = o.flower.orig_id || (o.flower.id > 0 ? o.flower.id : null);
+      out.push({
+        order_id: orderId, flower_id: fid, flower_snapshot: o.flower,
+        price_type: o.priceType, price_per_bunch: o.price,
+        bunches_per_box: o.flower.boxes_per_box, price_per_box: o.pbox,
+        qty_boxes: q, subtotal: +((o.pbox || 0) * q).toFixed(2),
+        client_name: c || null,
+        item_comment: ((o.cmts && o.cmts[c] != null) ? o.cmts[c] : o.comment) || null,
+      });
+    });
+  });
+  return out;
+}
+// Проверка перед отправкой: нецелые коробки
+function cartCheckBoxes() {
+  const bad = [];
+  Object.values(cart).forEach(o => { const d = distOf(o); Object.keys(d).forEach(c => { if (d[c] > 0 && mxFrac(d[c])) bad.push(`${o.flower.ru}${c ? ' · ' + c : ''}: ${mxFmtB(d[c])} кор.`); }); });
+  return bad;
+}
+
+// ══ Позиции заказа → модель «позиции × клиенты» (для просмотра и Excel) ══
+function mxModelFromItems(items) {
+  const rows = [], map = {}, cols = [];
+  (items || []).forEach(it => {
+    const snap = it.flower_snapshot || {};
+    const ru = snap.ru || it.flower?.ru || '—';
+    const k = [it.flower_id || ru, it.price_per_box, it.bunches_per_box].join('|');
+    const r = map[k] || (map[k] = rows[rows.push({
+      ru, cn: snap.cn || it.flower?.cn || '', f: { ...snap, boxes_per_box: it.bunches_per_box },
+      pbox: parseFloat(it.price_per_box) || 0, by: {}, cmt: new Set(),
+    }) - 1]);
+    const c = String(it.client_name || '').trim();
+    if (!cols.includes(c)) cols.push(c);
+    r.by[c] = (r.by[c] || 0) + (parseFloat(it.qty_boxes) || 0);
+    if (it.item_comment) r.cmt.add(it.item_comment);
+  });
+  cols.sort((a, b) => (a === '' ? -1 : b === '' ? 1 : 0));
+  rows.forEach(r => { r.comment = [...r.cmt].join(' · '); });
+  return { rows, cols };
+}
+function mxModelFromCart() {
+  mxInitCols(); const cols = mxRenderCols();
+  return { cols, rows: Object.values(cart).map(o => ({ ru: o.flower.ru, cn: o.flower.cn || '', f: o.flower, pbox: o.pbox || 0, by: distOf(o), comment: o.comment || '' })) };
+}
+
+// Excel: лист «Общий заказ» + лист «По клиентам» (шт и коробки на каждого клиента — как в таблице клиента)
+function mxExportXlsx(model, fname, title) {
+  const { rows, cols } = model;
+  const cn = c => c || 'Без клиента';
+  const u = r => { const pb = mxPerBox(r.f), w = isWeightItem(r.f); return { pb, w, k: w ? 1000 : 1 }; };
+  // 1. общий заказ
+  const a1 = [[title || 'AMMA FLOWERS · Заказ'], [],
+    ['№', 'Название', '名称', 'Банч/кор 扎/箱', 'Ст(г)/банч', 'Кор. 箱', 'Всего шт / кг', 'м³', `${fxSym()}/кор`, `Сумма ${fxSym()}`, 'Клиенты', 'Комментарий']];
+  let tB = 0, tM = 0, tS = 0;
+  rows.forEach((r, i) => {
+    const b = distSum(r.by), x = u(r), m3 = b * itemBoxM3(r.f).m3;
+    tB += b; tM += m3; tS += b * r.pbox;
+    a1.push([i + 1, r.ru, r.cn, r.f.boxes_per_box || '', r.f.stems ? (x.w ? r.f.stems + ' г' : r.f.stems) : '', b,
+      x.pb ? +(b * x.pb / x.k).toFixed(2) : '', +m3.toFixed(3), r.pbox || '', +(b * r.pbox).toFixed(2),
+      cols.filter(c => r.by[c] > 0).map(c => `${cn(c)} ${mxFmtB(r.by[c])}`).join(', '), r.comment || '']);
+  });
+  a1.push([], ['', 'ИТОГО', '', '', '', +tB.toFixed(2), '', +tM.toFixed(2), '', +tS.toFixed(2)]);
+  const ws1 = XLSX.utils.aoa_to_sheet(a1);
+  ws1['!cols'] = [{ wch: 4 }, { wch: 34 }, { wch: 18 }, { wch: 9 }, { wch: 9 }, { wch: 8 }, { wch: 11 }, { wch: 7 }, { wch: 8 }, { wch: 10 }, { wch: 44 }, { wch: 24 }];
+  // 2. по клиентам
+  const h1 = ['№', 'Наименование', 'шт (кг) в коробке', 'Всего кор.', 'Всего шт / кг'], h2 = ['', '', '', '', ''];
+  const merges = [];
+  cols.forEach((c, i) => { const j = 5 + i * 2; h1.push(cn(c), ''); h2.push('штуки', 'коробки'); merges.push({ s: { r: 0, c: j }, e: { r: 0, c: j + 1 } }); });
+  const a2 = [h1, h2];
+  const colT = cols.map(() => ({ p: 0, b: 0 }));
+  rows.forEach((r, i) => {
+    const x = u(r), b = distSum(r.by);
+    const line = [i + 1, r.ru, x.pb ? +(x.pb / x.k).toFixed(2) : '', b, x.pb ? +(b * x.pb / x.k).toFixed(2) : ''];
+    cols.forEach((c, ci) => {
+      const v = r.by[c] || 0, p = x.pb ? +(v * x.pb / x.k).toFixed(2) : '';
+      line.push(v ? p : '', v || ''); colT[ci].b += v; if (v && p) colT[ci].p += p;
+    });
+    a2.push(line);
+  });
+  const tot = ['', 'ИТОГО', '', +tB.toFixed(2), ''];
+  colT.forEach(t => tot.push('', +t.b.toFixed(2)));
+  a2.push(tot);
+  const ws2 = XLSX.utils.aoa_to_sheet(a2);
+  ws2['!merges'] = merges;
+  ws2['!cols'] = [{ wch: 4 }, { wch: 34 }, { wch: 9 }, { wch: 8 }, { wch: 10 }, ...cols.flatMap(() => [{ wch: 8 }, { wch: 8 }])];
+  ws2['!freeze'] = { xSplit: 2, ySplit: 2 };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws1, 'Общий заказ');
+  XLSX.utils.book_append_sheet(wb, ws2, 'По клиентам');
+  XLSX.writeFile(wb, fname);
+}
+function mxExportCart() {
+  if (!Object.keys(cart).length) { toast('Заказ пуст / 订单为空'); return; }
+  const d = new Date().toLocaleDateString('ru-RU');
+  mxExportXlsx(mxModelFromCart(), `Заказ_по_клиентам_${d}.xlsx`, `${currentUser?.company_name || ''} · заказ от ${d}`);
+  toast('📤 Excel сохранён / 已导出');
+}
+function exportMyOrderByClients(orderId) {
+  const o = myOrders.find(x => x.id === orderId); if (!o) return;
+  mxExportXlsx(mxModelFromItems(o.order_items), `${o.order_number}_по_клиентам.xlsx`, `${o.order_number} · ${currentUser?.company_name || ''}`);
+  toast('📤 Excel сохранён / 已导出');
+}
+
+// Матрица заказа для менеджера / склада (только просмотр + Excel)
+async function mxOrderMatrix(orderId) {
+  const { data: order, error } = await sb.from('orders').select(`order_number, client:users!orders_client_id_fkey(company_name,login),
+    order_items(*, flower:flowers(ru,cn))`).eq('id', orderId).single();
+  if (error || !order) { toast('❌ ' + (error?.message || 'заказ не найден')); return; }
+  const m = mxModelFromItems(order.order_items);
+  const cn = c => c || 'Без клиента';
+  const colT = m.cols.map(c => m.rows.reduce((s, r) => s + (r.by[c] || 0), 0));
+  const allT = colT.reduce((s, v) => s + v, 0);
+  const mc = document.getElementById('modal-content');
+  mc.classList.add('op-wide');
+  window._mxOrd = { m, name: `${order.order_number}_по_клиентам.xlsx`, title: `${order.order_number} · ${order.client?.company_name || order.client?.login || ''}` };
+  mc.innerHTML = `
+    <div class="modal-title">🧮 ${escHtml(order.order_number)} — по клиентам / 按子客户</div>
+    <div style="font-size:12px;color:var(--mid);margin-bottom:8px">${escHtml(order.client?.company_name || order.client?.login || '')} · ${m.rows.length} поз. · ${m.cols.filter(Boolean).length} клиент(ов) · ${mxFmtB(allT)} кор.</div>
+    <div class="tbl-wrap mx-wrap" style="max-height:62vh">
+      <table class="mx-table mx-ro"><thead><tr><th class="mx-n">№</th><th class="L mx-name">Позиция / 商品</th><th class="mx-tot">Итого 箱</th>
+        ${m.cols.map(c => `<th class="mx-colh${c ? '' : ' mx-none'}"><div class="mx-colro">${escHtml(cn(c))}</div></th>`).join('')}</tr></thead>
+      <tbody>${m.rows.map((r, i) => `<tr><td class="mx-n">${i + 1}</td>
+        <td class="L mx-name"><b>${escHtml(r.ru)}</b> <span class="mx-cn">${escHtml(r.cn)}</span>${r.comment ? `<div class="mx-pack">💬 ${escHtml(r.comment)}</div>` : ''}</td>
+        <td class="mx-tot"><b>${mxFmtB(distSum(r.by))}</b></td>
+        ${m.cols.map(c => `<td class="mx-c">${r.by[c] ? mxFmtB(r.by[c]) : '<span style="color:var(--light)">·</span>'}</td>`).join('')}</tr>`).join('')}</tbody>
+      <tfoot><tr><td class="mx-n"></td><td class="L mx-name"><b>ИТОГО</b></td><td class="mx-tot"><b>${mxFmtB(allT)}</b></td>
+        ${colT.map(t => `<td class="mx-foot"><b>${mxFmtB(t)}</b></td>`).join('')}</tr></tfoot></table>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Закрыть / 关闭</button>
+      <button class="btn btn-primary" onclick="mxExportXlsx(_mxOrd.m,_mxOrd.name,_mxOrd.title)">📤 Excel: общий + по клиентам</button>
+    </div>`;
+  openModal();
+}
+
+// ══ Импорт таблицы распределения из Excel ══
+//  Понимает таблицу клиента: «Наименование | пачек/штук в коробке | … | Оренбург (штуки|коробки) | Уфа (штуки|коробки) …»
+//  и простую матрицу «Название | Клиент1 | Клиент2 …» с коробками в ячейках.
+function mxParseAoa(aoa) {
+  const T = v => String(v ?? '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
+  const NAME = /наимен|нимен|назван|позици|品名|名称/;
+  const h = aoa.findIndex(r => r && r.some(c => NAME.test(T(c))));
+  if (h < 0) return null;
+  const hr = aoa[h], sub = aoa[h + 1] || [];
+  const nameC = hr.findIndex(c => NAME.test(T(c)));
+  const isSub = v => /^(шт|штук|коробк|кор\b|кор\.|箱|枝)/.test(T(v));
+  const hasSub = sub.filter(isSub).length >= 2;
+  const packC = hr.findIndex(c => /пачек|штук в|в коробк|в короб|шт\s*\/\s*кор|банч\s*\/\s*кор|в упак/.test(T(c)));
+  const SKIP = /наимен|нимен|назван|позици|пачек|штук в|в короб|шт\s*\/\s*кор|банч|^шт|^штук|остат|общ|всего|итого|кол-?во|^№|^n$|цена|сумм|¥|куб|м³|коммент|примеч|размер|^ед|中文|名称|^фото|^изобр/;
+  const clients = [];
+  let cur = null;
+  const width = Math.max(hr.length, sub.length);
+  for (let j = nameC + 1; j < width; j++) {
+    if (j === packC) { cur = null; continue; }
+    const ht = String(hr[j] ?? '').trim();
+    if (ht) cur = SKIP.test(T(ht)) ? null : { name: ht, pcsJ: null, boxJ: null };
+    if (!cur) continue;
+    if (hasSub) {
+      const s = T(sub[j]);
+      if (/^(шт|枝)/.test(s)) cur.pcsJ = j; else if (/^(кор|箱)/.test(s)) cur.boxJ = j; else continue;
+    } else cur.boxJ = j;
+    if (!clients.includes(cur)) clients.push(cur);
+  }
+  // одинаковые названия колонок («Карелия» дважды) — разные клиенты
+  const cnt = {};
+  clients.forEach((c, i) => { c.key = 'c' + i; const n = c.name; cnt[n] = (cnt[n] || 0) + 1; if (cnt[n] > 1) c.name = `${n} (${cnt[n]})`; });
+  const num = v => typeof v === 'number' ? v : (parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')) || 0);
+  const rows = [];
+  for (let i = h + (hasSub ? 2 : 1); i < aoa.length; i++) {
+    const r = aoa[i]; if (!r) continue;
+    const name = String(r[nameC] ?? '').trim();
+    if (!name) continue;
+    if (/^(итого|всего|合计|总计|total)/i.test(name)) break;
+    const pack = packC >= 0 ? num(r[packC]) : 0;
+    const by = {}, pcs = {};
+    clients.forEach(c => {
+      const b = c.boxJ != null ? num(r[c.boxJ]) : 0, p = c.pcsJ != null ? num(r[c.pcsJ]) : 0;
+      if (b > 0) by[c.key] = +b.toFixed(3);
+      else if (p > 0) { if (pack) by[c.key] = +(p / pack).toFixed(3); else pcs[c.key] = p; }
+    });
+    if (Object.keys(by).length || Object.keys(pcs).length) rows.push({ name, pack, by, pcs });
+  }
+  const used = clients.filter(c => rows.some(r => r.by[c.key] > 0 || r.pcs[c.key] > 0));
+  return { rows, clients: used };
+}
+
+// ── сопоставление названий из файла с прайсом ──
+function mxStem(t) {
+  if (/^\d/.test(t) || /^[a-z]/.test(t)) return t;
+  t = t.replace(/(ого|его|ому|ему|ыми|ими|ая|яя|ый|ий|ой|ое|ее|ые|ие|ую|юю|ых|их|ым|им)$/, '');
+  if (t.length > 4) t = t.replace(/[аяыиоеьй]$/, '');
+  return t;
+}
+function mxTokens(s) {
+  s = ' ' + String(s || '').toLowerCase().replace(/ё/g, 'е') + ' ';
+  s = s.replace(/\((к|k)\.?\)/g, ' ')
+    .replace(/(\d)([a-zа-я])/g, '$1 $2')
+    .replace(/(^|[\s(])1\s*-?\s*гол[а-я]*\.?/g, '$1 одноголов ')
+    .replace(/одноголов[а-я]*/g, ' одноголов ')
+    .replace(/многоголов[а-я]*|кустов[а-я]*/g, ' кустов ')
+    .replace(/(^|[\s(])куст\.?(?=[\s)])/g, '$1кустов ')
+    .replace(/[^a-zа-я0-9一-鿿]+/g, ' ');
+  const STOP = new Set(['с', 'и', 'в', 'на', 'см', 'cm', 'шт', 'кг', 'kg', 'г', 'g', 'к', 'k', 'для', 'ягодами', 'ягоды', 'ягод']);
+  return [...new Set(s.split(' ').filter(t => t && !STOP.has(t)).map(mxStem).filter(Boolean))];
+}
+function mxTokEq(a, b) {
+  if (a === b) return true;
+  if (/^\d/.test(a) || /^\d/.test(b)) return false;
+  return Math.min(a.length, b.length) >= 3 && (a.startsWith(b) || b.startsWith(a));
+}
+function mxScore(A, B) {
+  if (!A.length || !B.length || !B.some(b => mxTokEq(A[0], b))) return 0;   // первое слово (род) должно совпасть
+  const hA = A.filter(a => B.some(b => mxTokEq(a, b))).length, hB = B.filter(b => A.some(a => mxTokEq(a, b))).length;
+  return (hA + hB) / (A.length + B.length);
+}
+function mxAliasKey() { return 'amma-mx-alias-' + (currentUser?.id || ''); }
+function mxAliasGet() { try { return JSON.parse(localStorage.getItem(mxAliasKey()) || '{}') || {}; } catch (e) { return {}; } }
+function mxAliasSave(a) { try { localStorage.setItem(mxAliasKey(), JSON.stringify(a)); } catch (e) {} }
+const _mxTokCache = new Map();
+function mxMatch(name, list, alias) {
+  const n = impNorm(name);
+  const al = (alias || {})[n];
+  if (al) { const f = list.find(x => String(x.id) === String(al)); if (f) return { f, s: 1, how: 'alias' }; }
+  const n2 = impNorm(String(name).replace(/\((к|k)\.?\)/gi, ''));
+  const ex = list.find(f => impNorm(f.ru) === n || impNorm(f.ru) === n2);
+  if (ex) return { f: ex, s: 1, how: 'exact' };
+  const A = mxTokens(name);
+  let best = null, bs = 0;
+  list.forEach(f => {
+    let B = _mxTokCache.get(f.id); if (!B) { B = mxTokens(f.ru); _mxTokCache.set(f.id, B); }
+    const s = mxScore(A, B);
+    if (s > bs + 1e-9 || (Math.abs(s - bs) < 1e-9 && best && f.in_stock !== false && best.in_stock === false)) { bs = s; best = f; }
+  });
+  // последнее слово названия (без пояснений в скобках) — обычно сорт или цвет: если оно не совпало, это другая позиция
+  const core = mxTokens(String(name).replace(/\([^)]*\)/g, ' '));
+  const last = core.length > 1 ? core[core.length - 1] : null;
+  const lastOk = !last || !best || (_mxTokCache.get(best.id) || []).some(b => mxTokEq(last, b));
+  if (bs >= 0.86 && lastOk) return { f: best, s: bs, how: 'good' };
+  if (bs >= 0.5 && lastOk) return { f: best, s: bs, how: 'check' };
+  return { f: null, s: bs, how: 'none', sug: bs >= 0.4 ? best : null };
+}
+
+async function mxImportFile(input) {
+  const file = input.files?.[0]; input.value = '';
+  if (!file) return;
+  try {
+    const list = (typeof flowers !== 'undefined' && flowers.length) ? flowers : await impLoadFlowers();
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    let best = null;
+    wb.SheetNames.forEach(sn => {
+      const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: null });
+      const p = mxParseAoa(aoa);
+      if (p && p.rows.length && p.clients.length && (!best || p.rows.length > best.rows.length)) best = { ...p, sheet: sn };
+    });
+    if (!best) { toast('Не нашла таблицу распределения: нужна колонка «Наименование» и колонки клиентов / 未找到分配表'); return; }
+    const alias = mxAliasGet();
+    best.rows.forEach(r => { r.m = mxMatch(r.name, list, alias); r.on = true; });
+    _mx.imp = { ...best, file: file.name, list, filter: 'all' };
+    mxImpRender(); openModal();
+  } catch (e) { toast('❌ Не удалось прочитать файл: ' + (e.message || e)); }
+}
+function mxImpBoxes(r) {
+  const pb = r.m?.f ? mxPerBox(r.m.f) : 0;
+  const by = { ...r.by };
+  Object.entries(r.pcs || {}).forEach(([k, p]) => { if (pb) by[k] = +(p / pb).toFixed(3); });
+  return by;
+}
+function mxImpStatus(r, i) {
+  if (!r.m?.f) return '<span class="mx-st mx-st-no" title="Не нашлось в прайсе — уйдёт как позиция «вне прайса», менеджер сопоставит">✗ вне прайса</span>'
+    + (r.m?.sug ? `<div><button class="mx-sugbtn" title="Похожая позиция из прайса" onclick="mxImpAcceptSug(${i})">это «${escHtml(r.m.sug.ru)}»?</button></div>` : '');
+  if (r.m.how === 'check') return `<span class="mx-st mx-st-chk" title="Похоже, но проверьте">≈ проверьте</span>`;
+  return `<span class="mx-st mx-st-ok">✓${r.m.how === 'alias' ? ' как в прошлый раз' : r.m.how === 'manual' ? ' выбрано' : ''}</span>`;
+}
+function mxImpOptLabel(f) { return `${f.ru}${f.pack ? ' · ' + f.pack : ''} #${f.id}`; }
+function mxImpRender() {
+  const I = _mx.imp; if (!I) return;
+  const mc = document.getElementById('modal-content');
+  mc.classList.add('op-wide');
+  const names = Object.fromEntries(I.clients.map(c => [c.key, c.name]));
+  const cntOk = I.rows.filter(r => r.m?.f && r.m.how !== 'check').length, cntChk = I.rows.filter(r => r.m?.how === 'check').length, cntNo = I.rows.filter(r => !r.m?.f).length;
+  const vis = r => I.filter === 'all' || (I.filter === 'check' && r.m?.how === 'check') || (I.filter === 'none' && !r.m?.f);
+  const totals = I.clients.map(c => I.rows.reduce((s, r) => s + (r.on ? (mxImpBoxes(r)[c.key] || 0) : 0), 0));
+  const allBoxes = totals.reduce((s, v) => s + v, 0);
+  const prevScroll = mc.querySelector('.mxi-wrap')?.scrollTop || 0;
+  const hasCart = Object.keys(cart).length > 0;
+  mc.innerHTML = `
+    <div class="modal-title">📥 Распределение из Excel / 从Excel导入</div>
+    <div style="font-size:12px;color:var(--mid);margin-bottom:8px">📎 ${escHtml(I.file)}${I.sheet ? ' · лист «' + escHtml(I.sheet) + '»' : ''} ·
+      <b>${I.rows.length}</b> поз. · <b>${I.clients.length}</b> клиентов · <b>${mxFmtB(allBoxes)}</b> кор.</div>
+    <div class="mx-chips">${I.clients.map((c, i) => `<span class="mx-chip">${escHtml(c.name)} <b>${mxFmtB(totals[i])}</b></span>`).join('')}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0">
+      <div class="mx-seg">
+        <button class="ltype-btn ${I.filter === 'all' ? 'active' : ''}" onclick="_mx.imp.filter='all';mxImpRender()">Все ${I.rows.length}</button>
+        <button class="ltype-btn ${I.filter === 'check' ? 'active' : ''}" onclick="_mx.imp.filter='check';mxImpRender()">≈ Проверить ${cntChk}</button>
+        <button class="ltype-btn ${I.filter === 'none' ? 'active' : ''}" onclick="_mx.imp.filter='none';mxImpRender()">✗ Нет в прайсе ${cntNo}</button>
+      </div>
+      <span style="font-size:11px;color:var(--mid)">✓ найдено: ${cntOk}. Если система ошиблась — выберите нужную позицию в поле, она запомнит на следующий раз.</span>
+    </div>
+    <datalist id="mxi-dl">${I.list.map(f => `<option value="${escHtml(mxImpOptLabel(f))}">`).join('')}</datalist>
+    <div class="tbl-wrap mxi-wrap" style="max-height:48vh;overflow-y:auto">
+      <table style="min-width:860px"><thead><tr><th style="width:26px"></th><th class="L">В файле</th><th class="L">Позиция в системе / 系统商品</th><th></th><th>Кор.</th><th class="L">Клиенты</th></tr></thead>
+      <tbody>${I.rows.map((r, i) => vis(r) ? `<tr class="${i % 2 ? 'stripe' : ''}${r.on ? '' : ' mxi-off'}" id="mxi-r${i}">
+        <td><input type="checkbox" ${r.on ? 'checked' : ''} onchange="_mx.imp.rows[${i}].on=this.checked;mxImpRender()"></td>
+        <td class="L" style="font-size:12px">${escHtml(r.name)}${r.pack ? `<div style="font-size:10px;color:var(--light)">${r.pack} в кор.</div>` : ''}</td>
+        <td class="L"><input class="inp" list="mxi-dl" style="width:300px;padding:4px 8px;font-size:12px" placeholder="— не найдено, выберите / 选择 —"
+          value="${r.m?.f ? escHtml(mxImpOptLabel(r.m.f)) : ''}" onchange="mxImpPick(${i},this.value)"></td>
+        <td id="mxi-s${i}" style="white-space:nowrap">${mxImpStatus(r, i)}</td>
+        <td><b>${mxFmtB(distSum(mxImpBoxes(r)))}</b></td>
+        <td class="L" style="font-size:10px;color:var(--mid);max-width:280px">${Object.entries(mxImpBoxes(r)).map(([k, b]) => `${escHtml(names[k])} ${mxFmtB(b)}`).join(' · ')}${Object.keys(r.pcs || {}).length && !r.m?.f ? ' · <span style="color:#b45309">штуки без пакинга</span>' : ''}</td>
+      </tr>` : '').join('')}</tbody></table>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+      ${hasCart ? `<button class="btn btn-secondary" onclick="mxImpApply(false)" title="Позиции из файла добавятся к уже набранным">➕ Добавить к заказу</button>` : ''}
+      <button class="btn btn-primary" onclick="mxImpApply(true)">${hasCart ? '🔄 Заменить заказ файлом' : '✅ Перенести в заказ'} / 导入</button>
+    </div>`;
+  const w = mc.querySelector('.mxi-wrap'); if (w) w.scrollTop = prevScroll;
+}
+function mxImpPick(i, val) {
+  const I = _mx.imp, r = I.rows[i];
+  const id = (String(val).match(/#(\d+)\s*$/) || [])[1];
+  const f = id ? I.list.find(x => String(x.id) === id) : null;
+  if (val && !f) { toast('Выберите позицию из списка подсказок / 请从列表中选择'); return; }
+  r.m = f ? { f, s: 1, how: 'manual' } : { f: null, s: 0, how: 'none' };
+  mxImpRender();
+}
+function mxImpAcceptSug(i) { const r = _mx.imp?.rows[i]; if (r?.m?.sug) { r.m = { f: r.m.sug, s: 1, how: 'manual' }; mxImpRender(); } }
+function mxImpApply(replace) {
+  const I = _mx.imp; if (!I) return;
+  const rows = I.rows.filter(r => r.on);
+  if (!rows.length) { toast('Ни одной строки не выбрано'); return; }
+  if (replace && Object.keys(cart).length && !confirm('Текущий набранный заказ заменится содержимым файла. Продолжить? / 替换当前订单?')) return;
+  if (replace) cart = {};
+  const names = Object.fromEntries(I.clients.map(c => [c.key, c.name]));
+  const alias = mxAliasGet();
+  let pseudo = -(Math.floor(Date.now() % 1e8) * 10) - 7, nCustom = 0;
+  rows.forEach(r => {
+    let o;
+    if (r.m?.f) {
+      const f = r.m.f;
+      if (r.m.how !== 'exact') alias[impNorm(r.name)] = f.id;   // запоминаем сопоставление для следующих файлов
+      const isNew = !cart[f.id];
+      o = cart[f.id] || (cart[f.id] = mxNewLine(f));
+      // неуверенное совпадение — оставляем исходное название, чтобы менеджер мог перепроверить
+      if (isNew && r.m.how === 'check') o.comment = `в файле: ${r.name}`;
+    } else {
+      const id = pseudo--;
+      nCustom++;
+      o = cart[id] = { flower: { id, ru: '❓ ' + r.name.replace(/\s*\((к|k)\.?\)\s*$/i, ''), cn: '询价商品（待翻译）', pack: '', boxes_per_box: null, stems: null,
+        price_a: 0, photo_url: null, cat_ru: '❓ Вне прайса', custom: true }, qty: 0, priceType: 'a', price: 0, pbox: 0,
+        client_name: '', comment: r.pack ? `в коробе ${r.pack} шт (по файлу клиента)` : '', dist: {} };
+    }
+    Object.entries(mxImpBoxes(r)).forEach(([k, b]) => cartAddDist(o, names[k], b));
+  });
+  mxAliasSave(alias);
+  mxInitCols();
+  const fileCols = I.clients.map(c => c.name);
+  _mx.cols = replace ? [...fileCols, ..._mx.cols.filter(c => !fileCols.includes(c) && Object.values(cart).some(o => distOf(o)[c] > 0))]
+    : [..._mx.cols, ...fileCols.filter(c => !_mx.cols.includes(c))];
+  mxSaveCols();
+  _mx.imp = null;
+  closeModal();
+  try { localStorage.setItem('amma-order-view', 'matrix'); } catch (e) {}
+  updateCartUI(); renderMyOrder(); if (typeof renderPrice === 'function') renderPrice();
+  const bad = cartCheckBoxes().length;
+  toast(`✅ Перенесено ${rows.length} поз.${nCustom ? `, вне прайса: ${nCustom}` : ''}${bad ? ` · ⚠️ нецелых коробок: ${bad} — подсвечены` : ''}`);
 }
 
 // Track if client is editing existing order
@@ -8849,6 +9732,7 @@ function renderOrderDetail(order) {
       <button class="btn btn-gold" onclick="openInvoice('${id}')">🧾 Инвойс / 创建发票</button>
       <button class="btn btn-secondary" onclick="createWaybillFromOrder('${id}');showPage('waybills',document.querySelectorAll('.nav-tab')[2])">📦 Накладная / 出货单</button>
       <button class="btn btn-secondary" onclick="exportOrderExcel('${id}')">📊 Excel / 导出</button>
+      ${new Set((order.order_items||[]).map(i => String(i.client_name||'').trim()).filter(Boolean)).size > 1 ? `<button class="btn btn-secondary" onclick="mxOrderMatrix('${id}')" title="Позиции × субклиенты клиента, Excel: общий + разбивка">🧮 По клиентам / 按子客户</button>` : ''}
       <div style="flex:1"></div>
       <button class="btn btn-danger" onclick="confirmDeleteOrder('${id}','${order.order_number}')">
         🗑 Удалить заказ / 删除订单
