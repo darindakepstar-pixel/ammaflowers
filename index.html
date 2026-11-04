@@ -8426,7 +8426,43 @@ const mxFmtB = v => String(+(+v || 0).toFixed(2));
 
 // ── колонки-клиенты: запоминаются на устройстве, а если их нет — берутся из последнего заказа ──
 function mxColsKey() { return 'amma-mx-cols-' + (currentUser?.id || ''); }
-function mxSaveCols() { try { localStorage.setItem(mxColsKey(), JSON.stringify(_mx.cols)); } catch (e) {} }
+function mxSaveCols() {
+  try { localStorage.setItem(mxColsKey(), JSON.stringify(_mx.cols)); } catch (e) {}
+  // в базу — чтобы клиенты были одни на всех логинах и устройствах аккаунта
+  clearTimeout(window._mxColsT);
+  window._mxColsT = setTimeout(() => mxPrefsPush({ p_sub_clients: _mx.cols }), 800);
+}
+
+// ── Настройки заказа аккаунта в базе (таблица client_order_prefs, функции order_prefs_get / order_prefs_save):
+//    список клиентов-колонок и сопоставления «название в файле → позиция прайса».
+//    Общие для всех логинов компании (владелец + сотрудники). Если функций в базе нет — работает локально.
+async function mxPrefsLoad() {
+  if (!currentUser || currentUser.role === 'guest') return;
+  if (_mx.prefsFor === currentUser.id) return _mx.prefsP;
+  _mx.prefsFor = currentUser.id;
+  _mx.prefsP = (async () => {
+    const { data, error } = await sb.rpc('order_prefs_get');
+    if (error || !data) return;
+    if (Array.isArray(data.aliases) === false && data.aliases && typeof data.aliases === 'object') {
+      const loc = mxAliasGet();
+      try { localStorage.setItem(mxAliasKey(), JSON.stringify({ ...loc, ...data.aliases })); } catch (e) {}
+      _mx.aliasSrv = data.aliases;
+    }
+    if (Array.isArray(data.sub_clients) && data.sub_clients.length) {
+      mxInitCols();
+      const srv = data.sub_clients.filter(Boolean).map(String);
+      const before = _mx.cols.join('\u0001');
+      _mx.cols = [...srv, ..._mx.cols.filter(c => !srv.includes(c))];
+      try { localStorage.setItem(mxColsKey(), JSON.stringify(_mx.cols)); } catch (e) {}
+      if (_mx.cols.join('\u0001') !== before && orderView() === 'matrix' && document.getElementById('page-my-order')?.classList.contains('active')) renderMyOrder();
+    }
+  })().catch(() => {});
+  return _mx.prefsP;
+}
+async function mxPrefsPush(args) {
+  if (!currentUser || currentUser.role === 'guest') return;
+  try { await sb.rpc('order_prefs_save', { p_sub_clients: null, p_aliases_add: null, ...args }); } catch (e) {}
+}
 function mxPastClients() {
   const out = [], seen = new Set();
   (myOrders || []).forEach(ord => (ord.order_items || []).forEach(it => {
@@ -8442,6 +8478,7 @@ function mxInitCols() {
     try { saved = JSON.parse(localStorage.getItem(mxColsKey()) || 'null'); } catch (e) {}
     try { _mx.unit = localStorage.getItem('amma-mx-unit') === 'pcs' ? 'pcs' : 'box'; } catch (e) {}
     _mx.cols = Array.isArray(saved) ? saved.filter(Boolean) : [];
+    mxPrefsLoad();
     if (!Array.isArray(saved)) {
       const last = (myOrders || []).find(ord => (ord.order_items || []).some(it => String(it.client_name || '').trim()));
       (last?.order_items || []).forEach(it => { const k = String(it.client_name || '').trim(); if (k && !_mx.cols.includes(k)) _mx.cols.push(k); });
@@ -9044,6 +9081,7 @@ async function mxImportFile(input) {
       if (p && p.rows.length && p.clients.length && (!best || p.rows.length > best.rows.length)) best = { ...p, sheet: sn };
     });
     if (!best) { toast('Не нашла таблицу распределения: нужна колонка «Наименование» и колонки клиентов / 未找到分配表'); return; }
+    await mxPrefsLoad();
     const alias = mxAliasGet();
     best.rows.forEach(r => { r.m = mxMatch(r.name, list, alias); r.on = true; });
     _mx.imp = { ...best, file: file.name, list, filter: 'all' };
@@ -9123,13 +9161,13 @@ function mxImpApply(replace) {
   if (replace && Object.keys(cart).length && !confirm('Текущий набранный заказ заменится содержимым файла. Продолжить? / 替换当前订单?')) return;
   if (replace) cart = {};
   const names = Object.fromEntries(I.clients.map(c => [c.key, c.name]));
-  const alias = mxAliasGet();
+  const alias = mxAliasGet(), aliasNew = {};
   let pseudo = -(Math.floor(Date.now() % 1e8) * 10) - 7, nCustom = 0;
   rows.forEach(r => {
     let o;
     if (r.m?.f) {
       const f = r.m.f;
-      if (r.m.how !== 'exact') alias[impNorm(r.name)] = f.id;   // запоминаем сопоставление для следующих файлов
+      if (r.m.how !== 'exact' && String(alias[impNorm(r.name)]) !== String(f.id)) alias[impNorm(r.name)] = aliasNew[impNorm(r.name)] = f.id;   // запоминаем сопоставление для следующих файлов
       const isNew = !cart[f.id];
       o = cart[f.id] || (cart[f.id] = mxNewLine(f));
       // неуверенное совпадение — оставляем исходное название, чтобы менеджер мог перепроверить
@@ -9144,6 +9182,7 @@ function mxImpApply(replace) {
     Object.entries(mxImpBoxes(r)).forEach(([k, b]) => cartAddDist(o, names[k], b));
   });
   mxAliasSave(alias);
+  if (Object.keys(aliasNew).length) mxPrefsPush({ p_aliases_add: aliasNew });
   mxInitCols();
   const fileCols = I.clients.map(c => c.name);
   _mx.cols = replace ? [...fileCols, ..._mx.cols.filter(c => !fileCols.includes(c) && Object.values(cart).some(o => distOf(o)[c] > 0))]
