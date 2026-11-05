@@ -7639,8 +7639,9 @@ function renderMyOrder() {
           <button class="btn btn-secondary btn-sm" onclick="openMixBoxModal()">🧺 Собрать микс-короб / 混合箱</button>
           <button class="btn btn-secondary btn-sm" onclick="openCustomItemModal()">➕ Позиции нет в прайсе / 询价商品</button>
           <button class="btn btn-secondary btn-sm" onclick="setOrderView('matrix')" title="Таблица: позиции × ваши клиенты">🧮 Заказ по клиентам / 按子客户</button>
-          <label class="btn btn-gold btn-sm" style="cursor:pointer">📥 Распределение из Excel
+          <label class="btn btn-gold btn-sm" style="cursor:pointer">📥 Заказ из Excel / 导入
             <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="mxImportFile(this)"></label>
+          <button class="btn btn-secondary btn-sm" onclick="amBlankForm()" title="Бланк в формате таблицы AMMA: позиции прошлого заказа и ваши клиенты, без количеств">📄 Бланк заказа (Excel)</button>
         </div>
       </div>
     </div>`;
@@ -8574,7 +8575,8 @@ function mxHTML() {
       <span style="flex:1"></span>
       <label class="btn btn-gold btn-sm" style="cursor:pointer" title="Таблица: позиции в строках, клиенты в колонках (как ваша «Разбивка по клиентам»)">📥 Загрузить из Excel
         <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="mxImportFile(this)"></label>
-      <button class="btn btn-secondary btn-sm" onclick="mxExportCart()" title="Общий заказ + разбивка по клиентам">📤 Excel</button>
+      <button class="btn btn-secondary btn-sm" onclick="mxExportCart()" title="Таблица заказа AMMA: общий + разбивка по клиентам">📤 Excel</button>
+      <button class="btn btn-secondary btn-sm" onclick="amBlankForm()" title="Пустой бланк в формате таблицы AMMA: ваши позиции и клиенты, без количеств">📄 Бланк</button>
     </div>
     <datalist id="mx-dl">${known.map(c => `<option value="${escHtml(c)}">`).join('')}</datalist>
     <div class="mx-hint">Вводите ${pcsMode ? '<b>штуки</b> (для весовых — <b>кг</b>), система пересчитает в коробки' : '<b>коробки</b>'} ·
@@ -8898,6 +8900,9 @@ function mxModelFromCart() {
 
 // Excel: лист «Общий заказ» + лист «По клиентам» (шт и коробки на каждого клиента — как в таблице клиента)
 function mxExportXlsx(model, fname, title, opts = {}) {
+  return amExportTable(model, fname, title, opts);   // единый формат «Таблица заказа AMMA»
+}
+function mxExportXlsxOld(model, fname, title, opts = {}) {
   const { rows, cols } = model;
   const noPrice = !!opts.noPrice;   // для склада — без цен
   const cn = c => c || 'Без клиента';
@@ -9101,6 +9106,11 @@ async function mxImportFile(input) {
   try {
     const list = (typeof flowers !== 'undefined' && flowers.length) ? flowers : await impLoadFlowers();
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    // Таблица заказа AMMA (с китайскими названиями и колонками клиентов) — берём как есть
+    for (const sn of wb.SheetNames) {
+      const am = amParseTable(XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: null }));
+      if (am) { amImportPreview(am, file.name, list); return; }
+    }
     let best = null;
     wb.SheetNames.forEach(sn => {
       const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: null });
@@ -9221,6 +9231,260 @@ function mxImpApply(replace) {
   updateCartUI(); renderMyOrder(); if (typeof renderPrice === 'function') renderPrice();
   const bad = cartCheckBoxes().length;
   toast(`✅ Перенесено ${rows.length} поз.${nCustom ? `, вне прайса: ${nCustom}` : ''}${bad ? ` · ⚠️ нецелых коробок: ${bad} — подсвечены` : ''}`);
+}
+
+
+// ══════════════════════════════════════════════════════════
+//  ТАБЛИЦА ЗАКАЗА AMMA — один формат для клиента, менеджера и склада
+//  «№ | Позиция RU | 名称 CN | Кор. итого | Банч/кор | Шт(г)/банч | В коробе | Всего | Короб, см | м³/кор | Кубы |
+//   单价 | Примечание клиента | Примечание для склада | [клиент 1] [клиент 2] … | Название у клиента | Проверка»
+//  Клиент загружает её как заказ, менеджер — вносит за клиента, склад и все выгрузки получают её же.
+//  Названия, китайские названия и пакинг берутся из таблицы как есть (сверены с закупкой),
+//  с прайсом позиция только связывается — для цены и фото.
+// ══════════════════════════════════════════════════════════
+const AM_NONE = /^(не\s*распредел|без\s*клиента|未分配)/i;
+const amT = v => String(v ?? '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
+const amFirstLine = v => String(v ?? '').split(/\n/)[0].trim();
+
+function amParseTable(aoa) {
+  const h = aoa.findIndex(r => r && r.some(c => /позиция\s*ru|^позиция$/.test(amT(c))) && r.some(c => /名称|中文|\bcn\b/.test(amT(c))));
+  if (h < 0) return null;
+  const hr = aoa[h], col = {};
+  hr.forEach((c, j) => {
+    const t = amT(c); if (!t) return;
+    const set = k => { if (col[k] == null) col[k] = j; };
+    if (/^№|^n$|^#/.test(t)) return set('n');
+    if (/позиция\s*ru|^позиция/.test(t)) return set('ru');
+    if (/名称|中文|^cn/.test(t) && !/客户表|у клиента/.test(t)) return set('cn');
+    if (/^кор.*итого|箱.*итого|^кор\.?\s*箱/.test(t)) return set('boxes');
+    if (/банч\s*\/\s*кор|每箱扎/.test(t)) return set('bpb');
+    if (/шт.*\/\s*банч|每扎/.test(t)) return set('stems');
+    if (/^в коробе|每箱数量/.test(t)) return set('perbox');
+    if (/^всего|总数/.test(t)) return set('total');
+    if (/^короб,?\s*см|箱规/.test(t)) return set('size');
+    if (/м³\s*\/\s*кор|单箱体积/.test(t)) return set('m3');
+    if (/^кубы|总体积/.test(t)) return set('cubes');
+    if (/单价|^цена/.test(t)) return set('price');
+    if (/примечание\s*клиента|客户备注/.test(t)) return set('noteC');
+    if (/примечание\s*для\s*склада|仓库备注/.test(t)) return set('noteW');
+    if (/название\s*у\s*клиента|客户表名称/.test(t)) return set('orig');
+    if (/^проверка|核对/.test(t)) return set('check');
+  });
+  if (col.ru == null) return null;
+  // колонки клиентов — между последней «служебной» колонкой и «Названием у клиента» / «Проверкой»
+  const known = Object.values(col);
+  const startC = Math.max(...['noteW', 'noteC', 'price', 'cubes', 'm3', 'size', 'total', 'perbox', 'stems', 'bpb', 'boxes', 'cn', 'ru']
+    .map(k => col[k] ?? -1)) + 1;
+  const endC = Math.min(...['orig', 'check'].map(k => col[k] ?? Infinity), hr.length);
+  const clients = [];
+  for (let j = startC; j < endC; j++) {
+    if (known.includes(j)) continue;
+    const name = amFirstLine(hr[j]);
+    if (!name) continue;
+    clients.push({ j, name: AM_NONE.test(name) ? '' : name });
+  }
+  // заголовок над таблицей: «… · выезд 09.11.2026 · ОБЩЕЕ ТРЕБОВАНИЕ: …»
+  const title = aoa.slice(0, h).map(r => (r || []).filter(x => x != null && x !== '').join(' ')).join(' ').trim();
+  const meta = { title };
+  const md = title.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if (md) meta.ship = `${md[3]}-${md[2].padStart(2, '0')}-${md[1].padStart(2, '0')}`;
+  const req = title.match(/требовани[ея]\s*:?\s*(.+)$/i);
+  if (req) meta.req = req[1].trim();
+  const num = v => typeof v === 'number' ? v : (parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')) || 0);
+  const str = v => (v == null ? '' : String(v).trim());
+  const rows = [];
+  for (let i = h + 1; i < aoa.length; i++) {
+    const r = aoa[i]; if (!r) continue;
+    const ru = str(r[col.ru]).replace(/\s+/g, ' ');
+    if (!ru) continue;
+    if (/^(итого|всего|合计|总计|total|кубы по клиенту|как пользоваться)/i.test(ru)) break;
+    const by = {};
+    clients.forEach(c => { const v = num(r[c.j]); if (v > 0) by[c.name] = +((by[c.name] || 0) + v).toFixed(3); });
+    const total = col.boxes != null ? num(r[col.boxes]) : 0;
+    if (!Object.keys(by).length && total > 0) by[''] = total;
+    if (!Object.keys(by).length) continue;
+    rows.push({
+      ru, cn: str(r[col.cn]), bpb: num(r[col.bpb]) || '', stems: r[col.stems] ?? '', perbox: str(r[col.perbox]),
+      size: str(r[col.size]), m3: num(r[col.m3]) || null, price: num(r[col.price]) || '',
+      noteC: str(r[col.noteC]), noteW: str(r[col.noteW]), orig: str(r[col.orig]), by,
+    });
+  }
+  const used = clients.filter(c => rows.some(r => r.by[c.name] > 0));
+  const names = [...new Set(used.map(c => c.name))];
+  return rows.length ? { rows, clients: names, meta } : null;
+}
+
+// Строка таблицы → снимок позиции (как в order_items.flower_snapshot)
+function amSnapFromRow(r, f) {
+  const st = impParseStems(r.stems);
+  const bpb = parseInt(r.bpb) || parseInt(f?.boxes_per_box) || 0;
+  const snap = {
+    ...(f ? snapLight(f) : {}), ru: r.ru, cn: r.cn || f?.cn || '',
+    boxes_per_box: bpb || null, stems: st.v ?? (f?.stems || null), box_size: r.size || f?.box_size || null,
+    pack: bpb ? `${bpb} банч/кор` : (f?.pack || ''), imported: true,
+  };
+  if (st.w) snap.is_weight = true; else if (st.v != null) snap.is_weight = false;
+  if (/\d\s*[\/\\-]\s*\d/.test(String(r.stems || ''))) snap.stems_label = String(r.stems).trim();
+  if (f?.catalog) snap.catalog = f.catalog;
+  delete snap._mxT;
+  return snap;
+}
+function amItemComment(r) {
+  return [r.noteC, r.noteW ? 'склад: ' + r.noteW : ''].filter(Boolean).join(' · ');
+}
+// Связь с прайсом: только точное совпадение названия (тире и регистр не важны) — без угадываний
+function amFindFlower(r, list) {
+  const n = impNorm(r.ru), c = impNorm(r.cn);
+  return (n && list.find(f => impNorm(f.ru) === n)) || (c && c.length > 2 && list.find(f => impNorm(f.cn) === c)) || null;
+}
+
+// ── Клиент: загрузить таблицу AMMA в корзину ──
+function amImportPreview(parsed, fileName, list) {
+  _mx.amImp = { ...parsed, file: fileName, list };
+  const P = parsed, mc = document.getElementById('modal-content');
+  mc.classList.add('op-wide');
+  const tot = c => P.rows.reduce((s, r) => s + (r.by[c] || 0), 0);
+  const all = P.rows.reduce((s, r) => s + distSum(r.by), 0);
+  const linked = P.rows.filter(r => amFindFlower(r, list)).length;
+  const hasCart = Object.keys(cart).length > 0;
+  mc.innerHTML = `
+    <div class="modal-title">📥 Таблица заказа AMMA / 订单表</div>
+    <div style="font-size:12px;color:var(--mid);margin-bottom:8px">📎 ${escHtml(fileName)}</div>
+    ${P.meta.title ? `<div style="font-size:12px;background:var(--sage-l);border-radius:8px;padding:8px 10px;margin-bottom:8px">${escHtml(P.meta.title)}</div>` : ''}
+    <div style="font-size:14px;margin-bottom:8px"><b>${P.rows.length}</b> поз. · <b>${mxFmtB(all)}</b> кор. · <b>${P.clients.filter(Boolean).length}</b> клиентов${P.meta.ship ? ` · выезд <b>${P.meta.ship}</b>` : ''}</div>
+    <div class="mx-chips" style="margin-bottom:10px">${P.clients.map(c => `<span class="mx-chip">${escHtml(c || 'Не распределено')} <b>${mxFmtB(tot(c))}</b></span>`).join('')}</div>
+    <div style="font-size:12px;line-height:1.6;color:var(--mid)">
+      ✓ Названия, китайские названия, пакинг и примечания возьмутся из таблицы как есть.<br>
+      ✓ Каждой позиции — разбивка по клиентам из колонок таблицы.<br>
+      🔗 Связано с прайсом: ${linked} из ${P.rows.length} (по точному названию). Остальные уйдут по названию из таблицы, цену проставит менеджер.</div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Отмена / 取消</button>
+      ${hasCart ? `<button class="btn btn-secondary" onclick="amImportApply(false)">➕ Добавить к заказу</button>` : ''}
+      <button class="btn btn-primary" onclick="amImportApply(true)">${hasCart ? '🔄 Заменить заказ таблицей' : '✅ Перенести в заказ'} / 导入</button>
+    </div>`;
+  openModal();
+}
+function amImportApply(replace) {
+  const P = _mx.amImp; if (!P) return;
+  if (replace && Object.keys(cart).length && !confirm('Текущий набранный заказ заменится таблицей. Продолжить? / 替换当前订单?')) return;
+  if (replace) cart = {};
+  let pseudo = -(Math.floor(Date.now() % 1e8) * 10) - 3;
+  P.rows.forEach(r => {
+    const f = amFindFlower(r, P.list);
+    const id = pseudo--;
+    const snap = amSnapFromRow(r, f);
+    snap.id = id;
+    if (f) snap.orig_id = f.id;
+    const price = r.price !== '' ? opNum(r.price) : (f?.price_a || 0);
+    const bpb = parseInt(snap.boxes_per_box) || 1;
+    cart[id] = { flower: snap, qty: 0, priceType: 'a', price, pbox: +(price * bpb).toFixed(2), client_name: '', comment: amItemComment(r), dist: {} };
+    Object.entries(r.by).forEach(([c, b]) => cartAddDist(cart[id], c, b));
+  });
+  mxInitCols();
+  const fileCols = P.clients.filter(Boolean);
+  _mx.cols = replace ? [...fileCols, ..._mx.cols.filter(c => !fileCols.includes(c) && Object.values(cart).some(o => distOf(o)[c] > 0))]
+    : [..._mx.cols, ...fileCols.filter(c => !_mx.cols.includes(c))];
+  mxSaveCols();
+  if (P.meta.ship && !_ordMeta.ship) _ordMeta.ship = P.meta.ship;
+  if (P.meta.req && !_ordMeta.comment) _ordMeta.comment = P.meta.req;
+  _mx.amImp = null;
+  closeModal();
+  try { localStorage.setItem('amma-order-view', 'matrix'); } catch (e) {}
+  updateCartUI(); renderMyOrder();
+  toast(`✅ Перенесено ${P.rows.length} поз. — проверьте и нажмите «Отправить» / 已导入`);
+}
+
+// ── Модель заказа → таблица AMMA (Excel). opts.noPrice — для склада, opts.blank — пустой бланк ──
+function amModelRows(model) {
+  return model.rows.map(r => {
+    const f = r.f || {}, bpb = parseFloat(f.boxes_per_box) || 0, st = parseFloat(f.stems) || 0, w = isWeightItem(f);
+    const notes = String(r.comment || '').split(' · ');
+    const noteW = notes.filter(x => /^склад:/i.test(x)).map(x => x.replace(/^склад:\s*/i, '')).join(' · ');
+    const noteC = notes.filter(x => x && !/^склад:/i.test(x)).join(' · ');
+    return { ru: r.ru, cn: r.cn, bpb, st, w, label: f.stems_label || '', size: f.box_size || '', m3: itemBoxM3(f).m3,
+      price: bpb ? +((r.pbox || 0) / bpb).toFixed(2) : '', by: r.by, noteC, noteW };
+  });
+}
+function amExportTable(model, fname, title, opts = {}) {
+  const cols = model.cols.length ? model.cols : [''];
+  const rows = amModelRows(model);
+  const H = ['№', 'Позиция RU', '名称 CN', 'Кор. 箱\n(итого)', 'Банч/кор\n每箱扎数', 'Шт(г)/банч\n每扎枝数(克)', 'В коробе\n每箱数量', 'Всего\n总数',
+    'Короб, см\n箱规', 'м³/кор\n单箱体积', 'Кубы, м³\n总体积'];
+  if (!opts.noPrice) H.push('单价\nЦена');
+  H.push('Примечание клиента\n客户备注', 'Примечание для склада\n仓库备注');
+  const C0 = H.length;
+  cols.forEach(c => H.push(c ? c : 'Не распределено\n未分配'));
+  const ws = {}, put = (r, c, v) => { if (v === '' || v == null) return; const ref = XLSX.utils.encode_cell({ r, c });
+    ws[ref] = typeof v === 'object' && v.f ? { t: 'n', f: v.f, v: v.v } : { t: typeof v === 'number' ? 'n' : 's', v }; };
+  put(0, 0, title || 'AMMA FLOWERS · заказ / 订单');
+  H.forEach((h, j) => put(1, j, h));
+  const cl = XLSX.utils.encode_col;
+  const fmtUnit = (x, v) => x.w ? +(v / 1000).toFixed(2) + 'kg' : v;
+  rows.forEach((x, i) => {
+    const R = i + 2, ex = R + 1;
+    const boxes = opts.blank ? 0 : distSum(x.by);
+    const perBox = x.bpb && x.st ? x.bpb * x.st : 0;
+    let j = 0;
+    put(R, j++, i + 1); put(R, j++, x.ru); put(R, j++, x.cn);
+    put(R, j++, { f: `SUM(${cl(C0)}${ex}:${cl(C0 + cols.length - 1)}${ex})`, v: boxes });
+    put(R, j++, x.bpb || ''); put(R, j++, x.label || (x.st ? (x.w ? x.st + 'g' : x.st) : ''));
+    put(R, j++, perBox ? fmtUnit(x, perBox) : ''); put(R, j++, perBox && boxes ? fmtUnit(x, perBox * boxes) : '');
+    put(R, j++, x.size); put(R, j++, x.m3 ? +x.m3.toFixed(3) : '');
+    put(R, j++, x.m3 ? { f: `D${ex}*J${ex}`, v: +(boxes * x.m3).toFixed(3) } : '');
+    if (!opts.noPrice) put(R, j++, x.price || '');
+    put(R, j++, x.noteC); put(R, j++, x.noteW);
+    cols.forEach((c, k) => { const v = opts.blank ? 0 : (x.by[c] || 0); if (v) put(R, C0 + k, v); });
+  });
+  const last = rows.length + 1, T = last + 1;
+  put(T, 1, 'ИТОГО / 合计');
+  // итоги — формулами, но с готовыми значениями (иначе часть программ покажет 0 до пересчёта)
+  const bx = x => opts.blank ? 0 : distSum(x.by), r2 = v => +v.toFixed(3);
+  const sumCol = (c, v) => ({ f: `SUM(${cl(c)}3:${cl(c)}${last + 1})`, v: r2(v) });
+  put(T, 3, sumCol(3, rows.reduce((a, x) => a + bx(x), 0)));
+  put(T, 10, sumCol(10, rows.reduce((a, x) => a + bx(x) * (x.m3 || 0), 0)));
+  cols.forEach((c, k) => put(T, C0 + k, sumCol(C0 + k, opts.blank ? 0 : rows.reduce((a, x) => a + (x.by[c] || 0), 0))));
+  put(T + 1, 1, 'Кубы по клиенту, м³ / 各客户体积');
+  cols.forEach((c, k) => put(T + 1, C0 + k, { f: `SUMPRODUCT(${cl(C0 + k)}3:${cl(C0 + k)}${last + 1},$J$3:$J$${last + 1})`,
+    v: opts.blank ? 0 : r2(rows.reduce((a, x) => a + (x.by[c] || 0) * (x.m3 || 0), 0)) }));
+  put(T + 3, 1, 'Количество меняйте только в колонках клиентов — «Кор. итого», кубы и итоги пересчитаются сами. Новую позицию — новой строкой выше ИТОГО. / 只改客户列的箱数');
+  ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: T + 3, c: C0 + cols.length - 1 } });
+  ws['!cols'] = [{ wch: 4 }, { wch: 34 }, { wch: 26 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 7 }, { wch: 8 },
+    ...(opts.noPrice ? [] : [{ wch: 7 }]), { wch: 26 }, { wch: 26 }, ...cols.map(() => ({ wch: 10 }))];
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: Math.min(C0 + cols.length - 1, 20) } }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Заказ 订单');
+  if (!opts.blank) {
+    // По клиентам: блок на каждого — для сборки и маркировки
+    const a = [['Что кому: отдельный блок на каждого клиента / 按客户分拣']];
+    cols.forEach(c => {
+      const items = rows.filter(x => x.by[c] > 0);
+      if (!items.length) return;
+      const b = items.reduce((s, x) => s + x.by[c], 0), m = items.reduce((s, x) => s + x.by[c] * (x.m3 || 0), 0);
+      a.push([], [`${c || 'Не распределено / 未分配'}  ·  ${mxFmtB(b)} кор. 箱  ·  ${m.toFixed(2)} м³  ·  ${items.length} поз.`],
+        ['№', '名称 CN', 'Позиция RU', 'Кор. 箱', 'Короб, см 箱规', 'Примечание / 备注']);
+      items.forEach((x, n) => a.push([n + 1, x.cn, x.ru, x.by[c], x.size, [x.noteW, x.noteC].filter(Boolean).join(' · ')]));
+      a.push(['', '', 'ИТОГО / 合计', +b.toFixed(2)]);
+    });
+    const w2 = XLSX.utils.aoa_to_sheet(a);
+    w2['!cols'] = [{ wch: 4 }, { wch: 28 }, { wch: 36 }, { wch: 8 }, { wch: 12 }, { wch: 40 }];
+    XLSX.utils.book_append_sheet(wb, w2, 'По клиентам 按客户');
+  }
+  XLSX.writeFile(wb, fname);
+}
+// Бланк для клиента: позиции последнего заказа (или текущей корзины) и свои клиенты-колонки, без количеств
+function amBlankForm() {
+  mxInitCols();
+  let model;
+  if (Object.keys(cart).length) model = mxModelFromCart();
+  else {
+    const last = (myOrders || []).find(o => (o.order_items || []).length);
+    model = last ? mxModelFromItems(last.order_items) : { rows: [], cols: [] };
+  }
+  const cols = _mx.cols.length ? _mx.cols : model.cols.filter(Boolean);
+  model = { rows: model.rows, cols: cols.length ? cols : ['Клиент 1', 'Клиент 2'] };
+  amExportTable(model, `Бланк_заказа_${currentUser?.company_name || 'AMMA'}.xlsx`,
+    `${currentUser?.company_name || ''} · бланк заказа AMMA · выезд __.__.____ · ОБЩЕЕ ТРЕБОВАНИЕ: `, { blank: true });
+  toast('📄 Бланк скачан: впишите коробки в колонки клиентов и загрузите обратно / 已下载');
 }
 
 // Track if client is editing existing order
@@ -19384,8 +19648,8 @@ function impRender() {
       <td style="color:var(--light);font-size:10px">${i + 1}</td>
       <td class="L">${inp(i, 'ru', 170)}</td>
       <td>${inp(i, 'cn', 120)}</td>
-      <td>${inp(i, 'client', 100, 'placeholder="—"')}</td>
-      <td>${inp(i, 'boxes', 50, 'type="number" min="0" step="any"')}</td>
+      <td>${r.dist ? `<span style="font-size:11px;color:var(--sage-d);cursor:help;white-space:nowrap" title="${escHtml(Object.entries(r.dist).map(([c, v]) => (c || 'не распределено') + ': ' + v).join('\n'))}">👤 ${Object.keys(r.dist).length} кл.</span>` : inp(i, 'client', 100, 'placeholder="—"')}</td>
+      <td>${r.dist ? `<b>${mxFmtB(r.boxes)}</b>` : inp(i, 'boxes', 50, 'type="number" min="0" step="any"')}</td>
       <td>${inp(i, 'bpb', 50, 'type="number" min="0"')}</td>
       <td>${inp(i, 'stems', 56, 'title="Стеблей в банче или граммов (для веса допишите g: 500g)"')}</td>
       <td>${inp(i, 'price', 56, 'type="number" min="0" step="0.1"')}</td>
@@ -19403,6 +19667,10 @@ function impRender() {
       <button class="btn btn-secondary btn-sm" onclick="impTemplate()">📄 Пустой шаблон / 模板</button>
       <span style="font-size:10px;color:var(--mid)">${_imp.file ? '📎 ' + escHtml(_imp.file) + ' · ' : ''}Можно загрузить таблицу и поправить, или заполнить строки вручную</span>
     </div>
+    ${_imp.rows.some(r => r.dist) ? (() => { const t = {}; _imp.rows.forEach(r => Object.entries(r.dist || {}).forEach(([c, v]) => t[c] = (t[c] || 0) + v));
+      return `<div style="font-size:12px;background:var(--sage-l);border-radius:8px;padding:8px 10px;margin-bottom:10px">🧮 <b>Таблица заказа AMMA с разбивкой по клиентам.</b> Каждая позиция уйдёт отдельной строкой на каждого клиента — склад увидит распределение и напечатает стикеры.
+        <div class="mx-chips" style="margin-top:6px">${Object.entries(t).map(([c, v]) => `<span class="mx-chip">${escHtml(c || 'Не распределено')} <b>${mxFmtB(v)}</b></span>`).join('')}</div>
+        ${_imp.meta.req ? `<div style="margin-top:6px">💬 В комментарий заказа: ${escHtml(_imp.meta.req)}</div>` : ''}</div>`; })() : ''}
     ${_imp.dup ? `<div style="font-size:12px;background:#fef3c7;color:#92400e;border-radius:6px;padding:8px 10px;margin-bottom:10px">
       ⚠️ Заказ <b>${escHtml(_imp.dup.order_number)}</b> из этого файла уже есть в системе.
       <button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="closeModal();openOrder('${_imp.dup.id}')">Открыть его</button>
@@ -19536,6 +19804,22 @@ function impParseAoa(aoa) {
   return { rows, meta, col };
 }
 
+// Таблица заказа AMMA → строки формы менеджера (по одной на позицию, с разбивкой dist)
+function amToImpRows(am) {
+  const list = _impFlowers || [];
+  const rows = am.rows.map(r => {
+    const f = amFindFlower(r, list);
+    const st = impParseStems(r.stems);
+    return {
+      ru: r.ru, cn: r.cn || f?.cn || '', client: '', boxes: distSum(r.by), dist: r.by,
+      bpb: r.bpb || f?.boxes_per_box || '', stems: r.stems !== '' && r.stems != null ? String(r.stems).trim() : (f?.stems || ''),
+      weight: st.v != null ? st.w : (f ? isWeightItem(f) : false), price: r.price,
+      box_size: r.size || f?.box_size || '', comment: amItemComment(r), catalog: f?.catalog || '', fid: f?.id || null,
+    };
+  });
+  return { rows, meta: { ship: am.meta.ship, req: am.meta.req } };
+}
+
 // Расходы под таблицей склада: «项目名称 | 数量 | 金额» → [{label, qty, amount, pack}]
 // pack — упаковка (коробки, поддоны, пенопласт), остальное — сборы (GPS, декларирование, фумигация).
 function impParseCosts(aoa) {
@@ -19577,11 +19861,12 @@ async function impLoadFile(input) {
     await impLoadFlowers();
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
     const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: null });
-    const { rows, meta } = impParseAoa(aoa);
+    const am = amParseTable(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: null }));
+    const { rows, meta } = am ? amToImpRows(am) : impParseAoa(aoa);
     if (!rows.length) { toast('В файле не нашлось позиций / 未找到商品'); return; }
     _imp.rows = rows;
     _imp.file = file.name;
-    _imp.meta = { ..._imp.meta, ...(meta.ship ? { ship: meta.ship } : {}), orig: meta.orig || '' };
+    _imp.meta = { ..._imp.meta, ...(meta.ship ? { ship: meta.ship } : {}), orig: meta.orig || '', req: meta.req || '' };
     _imp.dup = null;
     if (meta.orig) {
       const { data } = await sb.from('orders').select('id, order_number').eq('order_number', meta.orig).limit(1);
@@ -19614,7 +19899,9 @@ function impTemplate() {
 async function impCreate() {
   if (!_imp.clientId) { toast('Выберите клиента / 请选择客户'); return; }
   // Неполные коробы (0.86 кор., 4.29 кор.) → целые коробы + отдельная строка «неполный короб» на остаток штук
-  const rows = _imp.rows.filter(r => (String(r.ru).trim() || String(r.cn).trim()) && opNum(r.boxes) > 0).flatMap(r => {
+  // Строки таблицы AMMA с разбивкой → отдельная строка на каждого клиента
+  const srcRows = _imp.rows.flatMap(r => r.dist ? Object.entries(r.dist).filter(([, v]) => v > 0).map(([c, v]) => ({ ...r, dist: null, client: c, boxes: v })) : [r]);
+  const rows = srcRows.filter(r => (String(r.ru).trim() || String(r.cn).trim()) && opNum(r.boxes) > 0).flatMap(r => {
     const b = opNum(r.boxes), bpb = parseInt(r.bpb) || 0;
     if (!(b % 1) || !bpb) return [r];
     const pcs = Math.round(b * bpb), whole = Math.floor(pcs / bpb), rest = pcs - whole * bpb;
@@ -19623,7 +19910,7 @@ async function impCreate() {
     if (rest) out.push({ ...r, boxes: 1, bpb: rest, comment: [r.comment, `неполный короб: ${rest} из ${bpb}`].filter(Boolean).join(' · ') });
     return out;
   });
-  const skipped = _imp.rows.filter(r => (String(r.ru).trim() || String(r.cn).trim()) && !(opNum(r.boxes) > 0));
+  const skipped = srcRows.filter(r => (String(r.ru).trim() || String(r.cn).trim()) && !(opNum(r.boxes) > 0));
   if (!rows.length) { toast('Нет позиций с количеством коробок / 请填写箱数'); return; }
   if (skipped.length && !confirm(`${skipped.length} поз. без коробок не попадут в заказ:\n${skipped.slice(0, 8).map(r => r.ru || r.cn).join(', ')}${skipped.length > 8 ? '…' : ''}\n\nПродолжить? / 继续?`)) return;
   await impLoadFlowers();
@@ -19633,7 +19920,7 @@ async function impCreate() {
     order_number: num, client_id: _imp.clientId,
     status: _imp.meta.status || 'confirmed',
     date_order: opToday(), date_ship: _imp.meta.ship || null,
-    manager_comment: note,
+    manager_comment: note, ...(_imp.meta.req ? { client_comment: _imp.meta.req } : {}),
   }).select().single();
   if (oErr) { toast('❌ ' + oErr.message); return; }
   const items = rows.map(r => {
@@ -19662,7 +19949,7 @@ async function impCreate() {
       client_name: String(r.client || '').trim() || null, item_comment: String(r.comment || '').trim() || null,
     };
   });
-  const { error: itErr } = await sb.from('order_items').insert(items);
+  const { error: itErr } = await insertOrderItems(items);
   if (itErr) {
     await sb.from('orders').delete().eq('id', order.id);
     toast('❌ Заказ не создан: ' + itErr.message); return;
